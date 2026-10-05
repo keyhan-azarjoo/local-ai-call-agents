@@ -1,25 +1,140 @@
 {
   "version": 1,
   "llm": [
-    {"id": "qwen2.5:0.5b", "name": "Qwen2.5 0.5B", "sizeGb": 0.4, "params": 0.5, "note": "Tiny and very fast. Good for testing."},
-    {"id": "qwen3:1.7b", "name": "Qwen3 1.7B", "sizeGb": 1.4, "params": 1.7, "note": "For small machines. Quick replies."},
-    {"id": "llama3.2:3b", "name": "Llama 3.2 3B", "sizeGb": 2.0, "params": 3, "note": "Light, friendly English conversation."},
-    {"id": "qwen3:4b", "name": "Qwen3 4B", "sizeGb": 2.5, "params": 4, "note": "Good balance on 8–16 GB machines."},
-    {"id": "gemma3:4b", "name": "Gemma 3 4B", "sizeGb": 3.3, "params": 4, "note": "Strong multilingual for its size."},
-    {"id": "llama3.1:8b", "name": "Llama 3.1 8B", "sizeGb": 4.9, "params": 8, "note": "Strong English conversation."},
-    {"id": "qwen3:8b", "name": "Qwen3 8B", "sizeGb": 5.2, "params": 8, "note": "Best all-round for calls. Good tool use."},
-    {"id": "gemma3:12b", "name": "Gemma 3 12B", "sizeGb": 8.1, "params": 12, "note": "Better reasoning, slower first word."},
-    {"id": "mistral-small3.2:24b", "name": "Mistral Small 3.2 24B", "sizeGb": 15.0, "params": 24, "note": "Needs a big GPU or 32 GB+ memory."},
-    {"id": "qwen3:32b", "name": "Qwen3 32B", "sizeGb": 20.0, "params": 32, "note": "Power users with 24 GB+ GPUs."}
+    {
+      "id": "qwen2.5:0.5b",
+      "name": "Qwen2.5 0.5B",
+      "sizeGb": 0.4,
+      "params": 0.5,
+      "note": "Tiny and very fast. Good for testing."
+    },
+    {
+      "id": "qwen3:1.7b",
+      "name": "Qwen3 1.7B",
+      "sizeGb": 1.4,
+      "params": 1.7,
+      "note": "For small machines. Quick replies.",
+      "think": "off"
+    },
+    {
+      "id": "llama3.2:3b",
+      "name": "Llama 3.2 3B",
+      "sizeGb": 2.0,
+      "params": 3,
+      "note": "Light, friendly English conversation."
+    },
+    {
+      "id": "qwen3:4b-instruct",
+      "name": "Qwen3 4B Instruct",
+      "sizeGb": 2.5,
+      "params": 4,
+      "note": "Answers straight away — great for calls on 8–16 GB machines."
+    },
+    {
+      "id": "qwen3:4b",
+      "name": "Qwen3 4B (thinking)",
+      "sizeGb": 2.5,
+      "params": 4,
+      "think": "separate",
+      "slow": true,
+      "note": "Thinks before answering — smarter, but slower on calls."
+    },
+    {
+      "id": "gemma3:4b",
+      "name": "Gemma 3 4B",
+      "sizeGb": 3.3,
+      "params": 4,
+      "note": "Strong multilingual for its size."
+    },
+    {
+      "id": "llama3.1:8b",
+      "name": "Llama 3.1 8B",
+      "sizeGb": 4.9,
+      "params": 8,
+      "note": "Strong English conversation."
+    },
+    {
+      "id": "qwen3:8b",
+      "name": "Qwen3 8B",
+      "sizeGb": 5.2,
+      "params": 8,
+      "note": "Best all-round for calls. Good tool use.",
+      "think": "off"
+    },
+    {
+      "id": "gemma3:12b",
+      "name": "Gemma 3 12B",
+      "sizeGb": 8.1,
+      "params": 12,
+      "note": "Better reasoning, slower first word."
+    },
+    {
+      "id": "qwen3:30b-a3b-instruct-2507-q4_K_M",
+      "name": "Qwen3 30B-A3B Instruct",
+      "sizeGb": 18.6,
+      "params": 30,
+      "note": "Big but fast (only 3B active). Needs 24 GB+."
+    },
+    {
+      "id": "mistral-small3.2:24b",
+      "name": "Mistral Small 3.2 24B",
+      "sizeGb": 15.0,
+      "params": 24,
+      "note": "Needs a big GPU or 32 GB+ memory."
+    },
+    {
+      "id": "qwen3:32b",
+      "name": "Qwen3 32B",
+      "sizeGb": 20.0,
+      "params": 32,
+      "note": "Power users with 24 GB+ GPUs.",
+      "think": "off"
+    }
   ],
   "stt": [
-    {"id": "ggml-base.en.bin", "name": "Whisper base (English)", "sizeMb": 148, "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin", "note": "Fast, English only."},
-    {"id": "ggml-small.bin", "name": "Whisper small (multilingual)", "sizeMb": 488, "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin", "note": "99 languages, good accuracy."},
-    {"id": "ggml-large-v3-turbo-q5_0.bin", "name": "Whisper large-v3 turbo", "sizeMb": 574, "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin", "note": "Best accuracy, needs a GPU or Apple Silicon."}
+    {
+      "id": "ggml-base.en.bin",
+      "name": "Whisper base (English)",
+      "sizeMb": 148,
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
+      "note": "Fast, English only."
+    },
+    {
+      "id": "ggml-small.bin",
+      "name": "Whisper small (multilingual)",
+      "sizeMb": 488,
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
+      "note": "99 languages, good accuracy."
+    },
+    {
+      "id": "ggml-large-v3-turbo-q5_0.bin",
+      "name": "Whisper large-v3 turbo",
+      "sizeMb": 574,
+      "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q5_0.bin",
+      "note": "Best accuracy, needs a GPU or Apple Silicon."
+    }
   ],
   "tts": [
-    {"id": "en_GB-alba-medium", "name": "Alba (UK English)", "sizeMb": 63, "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium/en_GB-alba-medium.onnx", "note": "Piper · clear, warm."},
-    {"id": "en_US-amy-medium", "name": "Amy (US English)", "sizeMb": 63, "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx", "note": "Piper · friendly."},
-    {"id": "fa_IR-amir-medium", "name": "Amir (Persian)", "sizeMb": 63, "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx", "note": "Piper · فارسی"}
+    {
+      "id": "en_GB-alba-medium",
+      "name": "Alba (UK English)",
+      "sizeMb": 63,
+      "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/alba/medium/en_GB-alba-medium.onnx",
+      "note": "Piper · clear, warm."
+    },
+    {
+      "id": "en_US-amy-medium",
+      "name": "Amy (US English)",
+      "sizeMb": 63,
+      "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx",
+      "note": "Piper · friendly."
+    },
+    {
+      "id": "fa_IR-amir-medium",
+      "name": "Amir (Persian)",
+      "sizeMb": 63,
+      "url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fa/fa_IR/amir/medium/fa_IR-amir-medium.onnx",
+      "note": "Piper · فارسی"
+    }
   ]
 }

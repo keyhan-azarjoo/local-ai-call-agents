@@ -113,7 +113,7 @@ class _TalkPageState extends State<TalkPage> {
     Duration? first;
     final buf = StringBuffer();
     try {
-      await for (final piece in s.ollama.chat(s.llmModel!, history)) {
+      await for (final piece in s.chat(history)) {
         first ??= DateTime.now().difference(t0);
         buf.write(piece);
         reply.text = _visible(buf.toString());

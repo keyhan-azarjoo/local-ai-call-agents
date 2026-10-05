@@ -67,6 +67,28 @@ void main() {
     await waitFor(t, find.text('Latest calls'));
     expect(state.user?.username, 'keyhan');
 
+    // ---- Model picker: shows downloaded models and picks the best one ----
+    await state.refreshEngine();
+    debugPrint('Installed: ${state.installedModels.map((m) => m.name).toList()} → using ${state.llmModel}');
+    if (state.installedModels.any((m) => m.name == 'qwen3:4b-instruct')) expect(state.llmModel, 'qwen3:4b-instruct');
+
+    // ---- Chat (text) ----
+    await tapText(t, 'Chat');
+    await waitFor(t, find.text('Ask anything'));
+    if (state.llmReady) {
+      (find.byType(TextField).last.evaluate().first.widget as TextField).controller!.text = 'Reply with one short sentence: what is 2 + 2?';
+      await tapText(t, 'Send');
+      for (var i = 0; i < 900; i++) {
+        await t.pump(const Duration(milliseconds: 100));
+        if (find.text('Send').evaluate().isNotEmpty && (await state.db.count('chat_messages')) >= 2) break;
+      }
+      final msgs = await state.db.all('chat_messages', orderBy: 'id');
+      expect(msgs.length, 2);
+      debugPrint('Chat reply: ${msgs.last['content']}');
+      expect((msgs.last['content'] as String).trim(), isNotEmpty);
+      expect((msgs.last['content'] as String).length, lessThan(400), reason: 'reply should be the answer, not reasoning');
+    }
+
     // ---- Talk to Ava (caller) ----
     await tapText(t, 'Talk to Ava');
     await waitFor(t, find.textContaining('How can I help'));

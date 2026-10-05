@@ -145,6 +145,22 @@ class Db {
       what TEXT NOT NULL
     )
     ''',
+    '''
+    CREATE TABLE chats(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      title TEXT NOT NULL,
+      model TEXT,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE chat_messages(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      at INTEGER NOT NULL
+    )
+    ''',
   ];
 
   // ---------- settings ----------

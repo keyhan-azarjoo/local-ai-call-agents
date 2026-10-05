@@ -16,6 +16,7 @@ enum Gate { loading, setup, signIn, app }
 enum PageId {
   home('Home'),
   talk('Talk to Ava'),
+  chat('Chat'),
   calls('Calls'),
   outbound('Make a call'),
   assistant('My assistant'),
@@ -42,6 +43,7 @@ enum PageId {
 
 const simplePages = [
   PageId.home,
+  PageId.chat,
   PageId.talk,
   PageId.calls,
   PageId.outbound,
@@ -51,7 +53,7 @@ const simplePages = [
 ];
 
 const advancedGroups = <String, List<PageId>>{
-  'Operate': [PageId.home, PageId.talk, PageId.calls, PageId.outbound, PageId.contacts],
+  'Operate': [PageId.home, PageId.chat, PageId.talk, PageId.calls, PageId.outbound, PageId.contacts],
   'Assistant': [PageId.assistant, PageId.agents, PageId.automations, PageId.knowledge, PageId.tools, PageId.skills],
   'Engine': [PageId.models, PageId.speech, PageId.hardware],
   'Connect': [PageId.lines, PageId.voiceServer, PageId.devices],
@@ -100,10 +102,13 @@ class AppState extends ChangeNotifier {
         installedModels = await ollama.installed();
         loadedModels = await ollama.loaded();
       } catch (_) {}
-      if (llmModel == null && installedModels.isNotEmpty) {
-        final rec = hardware == null ? null : catalog.recommend(hardware!).id;
-        final pick = installedModels.any((m) => m.name == rec) ? rec! : installedModels.first.name;
-        await setLlmModel(pick);
+      // Pick the best downloaded model when none is chosen, or the chosen one is gone.
+      // A model the user picked by hand is kept as long as it is still downloaded.
+      final manual = await db.setting('llm.manual') == '1';
+      final missing = llmModel == null || !installedModels.any((m) => m.name == llmModel);
+      if (installedModels.isNotEmpty && (missing || !manual)) {
+        final pick = catalog.bestInstalled(hardware, installedModels.map((m) => m.name).toList());
+        if (pick != null && pick != llmModel) await setLlmModel(pick);
       }
     } else {
       installedModels = [];
@@ -111,6 +116,13 @@ class AppState extends ChangeNotifier {
     }
     engineChecked = true;
     notifyListeners();
+  }
+
+  /// Chat with the chosen (or given) model, using the right thinking setting.
+  Stream<String> chat(List<ChatMessage> messages, {String? model}) {
+    final m = model ?? llmModel!;
+    final entry = catalog.llm.where((e) => e.id == m).firstOrNull;
+    return ollama.chat(m, messages, disableThinking: entry?.think == 'off');
   }
 
   bool get llmReady => ollamaVersion != null && llmModel != null && installedModels.any((m) => m.name == llmModel);
@@ -186,9 +198,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> setLlmModel(String m) async {
+  Future<void> setLlmModel(String m, {bool manual = false}) async {
     llmModel = m;
     await db.setSetting('llm.model', m);
+    if (manual) await db.setSetting('llm.manual', '1');
     notifyListeners();
   }
 
@@ -246,14 +259,15 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       }
       await log('Downloaded model $id');
-      llmModel ??= id;
-      await db.setSetting('llm.model', llmModel!);
-      toast('$id downloaded.');
+      // The user just chose this model: use it for calls.
+      await setLlmModel(id, manual: true);
+      await refreshEngine();
+      toast('$id downloaded and selected.');
     } catch (e) {
       toast('Download of $id failed: $e');
     } finally {
       pulls.remove(id);
-      notifyListeners();
+      await refreshEngine();
     }
   }
 

@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'auth_pages.dart' show Brand;
 import 'pages/admin_pages.dart';
+import 'pages/chat_page.dart';
 import 'pages/engine_pages.dart';
 import 'pages/main_pages.dart';
 import 'pages/talk_page.dart';
@@ -13,6 +14,7 @@ import 'widgets.dart';
 const pageIcons = <PageId, IconData>{
   PageId.home: Icons.space_dashboard_outlined,
   PageId.talk: Icons.mic_none_rounded,
+  PageId.chat: Icons.chat_bubble_outline_rounded,
   PageId.calls: Icons.call_outlined,
   PageId.outbound: Icons.phone_forwarded_outlined,
   PageId.assistant: Icons.smart_toy_outlined,
@@ -36,6 +38,7 @@ const pageIcons = <PageId, IconData>{
 Widget pageFor(PageId p) => switch (p) {
       PageId.home => const HomePage(),
       PageId.talk => const TalkPage(),
+      PageId.chat => const ChatPage(),
       PageId.calls => const CallsPage(),
       PageId.outbound => const OutboundPage(),
       PageId.assistant => const AssistantPage(),

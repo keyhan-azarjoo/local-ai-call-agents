@@ -79,6 +79,12 @@ void main() {
       expect(await db.setting('k'), 'v2');
       expect(await db.setting('missing'), isNull);
     });
+    test('chats cascade-delete their messages', () async {
+      final id = await db.insert('chats', {'title': 't', 'updated_at': 1});
+      await db.insert('chat_messages', {'chat_id': id, 'role': 'user', 'content': 'hi', 'at': 1});
+      await db.delete('chats', id);
+      expect(await db.count('chat_messages'), 0);
+    });
   });
 
   group('model fit', () {
@@ -96,6 +102,25 @@ void main() {
       final h = hw(ram: 8, unified: false);
       expect(m('qwen3:8b').fitFor(h), Fit.tooLarge);
       expect(catalog.recommend(h).params, lessThan(4));
+    });
+    test('choices: best first, then smarter and lighter options that fit', () {
+      final c = catalog.choices(hw(ram: 18));
+      expect(c.first.$2, 'Best for this computer');
+      expect(c.first.$1.id, catalog.recommend(hw(ram: 18)).id);
+      for (final (m, _) in c) {
+        expect(m.fitFor(hw(ram: 18)), isNot(Fit.tooLarge));
+      }
+      expect(c.length, greaterThan(2));
+      expect(c.any((x) => x.$1.slow), isFalse);
+    });
+    test('bestInstalled picks the strongest downloaded model that fits', () {
+      expect(catalog.bestInstalled(hw(ram: 18), ['qwen2.5:0.5b', 'qwen3:4b-instruct']), 'qwen3:4b-instruct');
+      // Thinking-only models are too slow for calls and are not auto-picked.
+      expect(catalog.bestInstalled(hw(ram: 18), ['qwen2.5:0.5b', 'qwen3:4b']), 'qwen2.5:0.5b');
+      expect(catalog.bestInstalled(hw(ram: 18), ['qwen3:4b']), 'qwen3:4b');
+      expect(catalog.bestInstalled(hw(ram: 8, unified: false), ['qwen2.5:0.5b', 'qwen3:32b']), 'qwen2.5:0.5b');
+      expect(catalog.bestInstalled(hw(), ['my-custom-model']), 'my-custom-model');
+      expect(catalog.bestInstalled(hw(), []), isNull);
     });
     test('24 GB NVIDIA GPU fits 24B', () {
       final h = hw(ram: 64, vram: 24, unified: false);

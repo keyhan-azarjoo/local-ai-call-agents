@@ -37,6 +37,10 @@ class _ChatPageState extends State<ChatPage> {
   String? progress;
   DateTime? started;
 
+  /// Live plan and helper agents for the answer being written.
+  List<Map<String, dynamic>> plan = [];
+  final agents = <String, Map<String, dynamic>>{};
+
   static const system = 'You are a helpful, concise assistant running privately on the user’s own computer inside LocalAILine. '
       'Answer clearly. Use short paragraphs and simple lists when helpful. '
       'When tools from the user’s connected services are available and the question is about their data, use the tools instead of guessing.';
@@ -135,6 +139,8 @@ class _ChatPageState extends State<ChatPage> {
     unawaited(_loadChats()); // show the new chat in the list straight away
     started = DateTime.now();
     progress = 'Thinking…';
+    plan = [];
+    agents.clear();
     final user = ChatMessage('user', text);
     final reply = ChatMessage('assistant', '');
     setState(() {
@@ -156,8 +162,19 @@ class _ChatPageState extends State<ChatPage> {
           });
           _scrollDown();
         }, onEvent: (e) async {
+          if (e.binding.fnName == 'update_plan') {
+            setState(() => plan = (e.args['steps'] as List).cast<Map<String, dynamic>>());
+            return;
+          }
+          if (e.binding.fnName == 'delegate') {
+            setState(() {
+              agents['${e.args['agent']}'] = {'state': e.args['state'], 'ms': e.args['ms']};
+              progress = '${agents.values.where((a) => a['state'] == 'working').length} helper agent(s) working…';
+            });
+            return;
+          }
           final note = ChatMessage('tool', jsonEncode({
-            'server': e.binding.serverName,
+            'server': e.args['_agent'] == null ? e.binding.serverName : '${e.args['_agent']} (helper)',
             'tool': e.binding.tool.title ?? e.binding.tool.name,
             'args': e.args,
             'ok': e.ok,
@@ -320,6 +337,7 @@ class _ChatPageState extends State<ChatPage> {
                   },
                 ),
         ),
+        if (plan.isNotEmpty || agents.isNotEmpty) _WorkCard(plan: plan, agents: agents, active: busy),
         if (busy && progress != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -461,4 +479,66 @@ class _ElapsedState extends State<_Elapsed> {
 
   @override
   Widget build(BuildContext context) => Muted('${widget.label} · ${DateTime.now().difference(widget.since).inSeconds} s');
+}
+
+/// The plan Ava is following and the helper agents she started.
+class _WorkCard extends StatelessWidget {
+  const _WorkCard({required this.plan, required this.agents, required this.active});
+  final List<Map<String, dynamic>> plan;
+  final Map<String, Map<String, dynamic>> agents;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.c;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: c.canvas, borderRadius: BorderRadius.circular(LL.r), border: Border.all(color: c.line)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (plan.isNotEmpty) ...[
+          const Eyebrow('Plan'),
+          const SizedBox(height: 6),
+          for (final st in plan)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(children: [
+                Icon(
+                    st['status'] == 'done'
+                        ? Icons.check_circle
+                        : st['status'] == 'doing'
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                    size: 15,
+                    color: st['status'] == 'done' ? LL.green : st['status'] == 'doing' ? LL.amber : c.muted),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('${st['step']}',
+                      style: TextStyle(
+                          fontSize: 13, decoration: st['status'] == 'done' ? TextDecoration.lineThrough : null, color: st['status'] == 'done' ? c.muted : c.ink)),
+                ),
+              ]),
+            ),
+        ],
+        if (agents.isNotEmpty) ...[
+          if (plan.isNotEmpty) const SizedBox(height: 8),
+          const Eyebrow('Helper agents'),
+          const SizedBox(height: 6),
+          for (final e in agents.entries)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3),
+              child: Row(children: [
+                if (e.value['state'] == 'working' && active)
+                  const SizedBox(width: 13, height: 13, child: CircularProgressIndicator(strokeWidth: 1.6))
+                else
+                  const Icon(Icons.check_circle, size: 15, color: LL.green),
+                const SizedBox(width: 8),
+                Expanded(child: Text(e.key, style: const TextStyle(fontSize: 13))),
+                if (e.value['ms'] != null) Muted('${((e.value['ms'] as int) / 1000).toStringAsFixed(1)} s · finished, removed', mono: true, size: 11),
+              ]),
+            ),
+        ],
+      ]),
+    );
+  }
 }

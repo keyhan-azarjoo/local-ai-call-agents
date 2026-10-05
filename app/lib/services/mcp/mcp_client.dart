@@ -6,7 +6,10 @@ import 'package:http/http.dart' as http;
 
 /// A tool offered by an MCP server.
 class McpTool {
-  McpTool({required this.name, required this.description, required this.inputSchema, required this.readOnly, this.title});
+  McpTool({required this.name, required this.description, required this.inputSchema, required this.readOnly, this.title, this.hint});
+
+  /// The server's own readOnlyHint, if it gave one.
+  final bool? hint;
   final String name, description;
   final String? title;
   final Map<String, dynamic> inputSchema;
@@ -14,16 +17,38 @@ class McpTool {
   /// From the server's `readOnlyHint`. Anything else asks before running.
   final bool readOnly;
 
-  Map<String, Object?> toJson() =>
-      {'name': name, 'description': description, 'inputSchema': inputSchema, 'readOnly': readOnly, 'title': title};
+  Map<String, Object?> toJson() => {
+        'name': name,
+        'description': description,
+        'inputSchema': inputSchema,
+        'title': title,
+        if (hint != null) 'annotations': {'readOnlyHint': hint},
+      };
 
-  static McpTool fromJson(Map<String, dynamic> j) => McpTool(
-        name: j['name'] as String,
-        title: j['title'] as String? ?? j['annotations']?['title'] as String?,
-        description: (j['description'] as String?) ?? '',
-        inputSchema: (j['inputSchema'] as Map?)?.cast<String, dynamic>() ?? {'type': 'object', 'properties': {}},
-        readOnly: (j['readOnly'] as bool?) ?? (j['annotations']?['readOnlyHint'] == true),
-      );
+  static McpTool fromJson(Map<String, dynamic> j) {
+    final description = (j['description'] as String?) ?? '';
+    final hint = j['annotations']?['readOnlyHint'];
+    return McpTool(
+      name: j['name'] as String,
+      title: j['title'] as String? ?? j['annotations']?['title'] as String?,
+      description: description,
+      inputSchema: (j['inputSchema'] as Map?)?.cast<String, dynamic>() ?? {'type': 'object', 'properties': {}},
+      hint: hint is bool ? hint : null,
+      readOnly: hint is bool ? hint : inferReadOnly(j['name'] as String, description),
+    );
+  }
+
+  /// When a server doesn't say, guess from the description and name.
+  /// Errs on the safe side: anything that might write asks first.
+  static bool inferReadOnly(String name, String description) {
+    final d = description.toLowerCase();
+    if (RegExp(r'writes data|destructive|deletes?\b|creates?\b|updates?\b|modif').hasMatch(d.split('\n').first) ||
+        d.contains('writes data')) {
+      return false;
+    }
+    if (RegExp(r'\bread[- ]only\b').hasMatch(d)) return true;
+    return RegExp(r'^(get|list|query|count|search|find|read|fetch|describe|show)_').hasMatch(name.toLowerCase());
+  }
 }
 
 /// The server wants a login. [challenge] is its WWW-Authenticate header.

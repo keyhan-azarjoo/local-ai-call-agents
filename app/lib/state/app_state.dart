@@ -201,7 +201,10 @@ class AppState extends ChangeNotifier {
   ModelTarget get modelTarget {
     if (usingCloud && cloud != null) return CloudTarget(cloud!);
     final entry = catalog.llm.where((e) => e.id == llmModel).firstOrNull;
-    return LocalTarget(llmModel!, disableThinking: entry?.think == 'off');
+    // Memory left after the model itself decides how much context we can afford.
+    final spare = (hardware?.modelBudgetGb ?? 6) - (entry?.sizeGb ?? 4);
+    final maxCtx = spare > 6 ? 32768 : spare > 3 ? 16384 : 8192;
+    return LocalTarget(llmModel!, disableThinking: entry?.think == 'off', maxCtx: maxCtx);
   }
 
   /// Tools the AI may use. [scopes]: 'me' (owner), 'contacts', 'all' (any caller).

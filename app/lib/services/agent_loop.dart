@@ -39,9 +39,66 @@ typedef ToolRunner = Future<({String text, bool isError})> Function(ToolBinding 
 sealed class ModelTarget {}
 
 class LocalTarget extends ModelTarget {
-  LocalTarget(this.model, {this.base = 'http://127.0.0.1:11434', this.disableThinking = false});
+  LocalTarget(this.model, {this.base = 'http://127.0.0.1:11434', this.disableThinking = false, this.maxCtx = 32768});
   final String model, base;
   final bool disableThinking;
+
+  /// Largest context this computer can hold for the model.
+  final int maxCtx;
+}
+
+/// Picks the few tools that matter for a question, so small local models
+/// aren't buried under every tool a server offers.
+class ToolSelector {
+  static const _stop = {
+    'the', 'and', 'for', 'with', 'from', 'that', 'this', 'what', 'which', 'give', 'show', 'tell', 'please', 'can', 'you',
+    'all', 'any', 'how', 'many', 'much', 'are', 'there', 'about', 'into', 'have', 'has', 'get', 'list', 'me', 'my', 'our',
+  };
+
+  static String _stem(String w) {
+    if (w.length > 4 && w.endsWith('ies')) return '${w.substring(0, w.length - 3)}y';
+    if (w.length > 4 && w.endsWith('ing')) return w.substring(0, w.length - 3);
+    if (w.length > 3 && w.endsWith('es') && !w.endsWith('ses')) return w.substring(0, w.length - 2);
+    if (w.length > 3 && w.endsWith('s') && !w.endsWith('ss')) return w.substring(0, w.length - 1);
+    return w;
+  }
+
+  static Set<String> words(String s, {bool keepCommon = false}) => {
+        for (final w in s.toLowerCase().split(RegExp(r'[^a-z0-9]+')))
+          if (w.length >= 2 && (keepCommon || !_stop.contains(w))) _stem(w)
+      };
+
+  static double score(Set<String> q, Set<String> verbs, ToolBinding b) {
+    final name = words(b.tool.name.replaceAll('_', ' '), keepCommon: true);
+    final title = words(b.tool.title ?? '');
+    final desc = words(b.tool.description.length > 300 ? b.tool.description.substring(0, 300) : b.tool.description);
+    final server = words(b.serverName);
+    var sc = 0.0;
+    for (final w in q) {
+      if (name.contains(w)) sc += 4;
+      if (title.contains(w)) sc += 2;
+      if (desc.contains(w)) sc += 1;
+      if (server.contains(w)) sc += .5;
+    }
+    // "list/get/count/how many" words favour matching tool verbs.
+    for (final v in verbs) {
+      if (name.contains(v)) sc += 1.5;
+    }
+    if (sc > 0 && b.tool.readOnly) sc += .25;
+    return sc;
+  }
+
+  static List<ToolBinding> rank(String query, List<ToolBinding> tools, int k) {
+    final q = words(query);
+    final all = words(query, keepCommon: true);
+    final verbs = {
+      if (all.contains('list') || all.contains('show') || all.contains('all')) ...['list', 'query'],
+      if (all.contains('how') && all.contains('many') || all.contains('count') || all.contains('number')) ...['count', 'query'],
+      if (all.contains('get') || all.contains('find') || all.contains('detail')) ...['get', 'find', 'search'],
+    };
+    final scored = [for (final t in tools) (t, score(q, verbs, t))]..sort((a, b) => b.$2.compareTo(a.$2));
+    return [for (final (t, sc) in scored.take(k)) if (sc > 0) t];
+  }
 }
 
 class CloudTarget extends ModelTarget {
@@ -67,9 +124,62 @@ class ToolLoop {
   }) async {
     final byName = {for (final t in tools) t.fnName: t};
 
+    // Only the most relevant tools are offered; find_tools reaches the rest.
+    final limit = target is LocalTarget ? 10 : 40;
+    final lastUser = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
+    final recent = messages.where((m) => m.role == 'user').toList().reversed.take(3).map((m) => m.content).join(' ');
+    final active = <ToolBinding>[
+      ...ToolSelector.rank(lastUser, tools, limit),
+    ];
+    if (active.length < 4) {
+      for (final t in ToolSelector.rank(recent, tools, limit)) {
+        if (!active.contains(t)) active.add(t);
+      }
+    }
+    if (tools.length <= limit) {
+      active
+        ..clear()
+        ..addAll(tools);
+    }
+    final finder = tools.length > active.length
+        ? ToolBinding(
+            serverId: -1,
+            serverName: 'LocalAILine',
+            fnName: 'find_tools',
+            tool: McpTool(
+              name: 'find_tools',
+              readOnly: true,
+              description: 'Search the user’s connected tools by keywords (${tools.length} available from '
+                  '${tools.map((t) => t.serverName).toSet().join(', ')}). Use it when none of the offered tools fit. '
+                  'Matching tools become available to call.',
+              inputSchema: {
+                'type': 'object',
+                'properties': {
+                  'query': {'type': 'string', 'description': 'What you need, e.g. "list users" or "job weight"'}
+                },
+                'required': ['query'],
+              },
+            ),
+          )
+        : null;
+    final offered = <ToolBinding>[...active, ?finder];
+
     Future<(String, bool)> exec(String name, Map<String, dynamic> args) async {
+      if (name == 'find_tools') {
+        final found = ToolSelector.rank('${args['query'] ?? ''}', tools, 8);
+        for (final f in found) {
+          if (!offered.contains(f)) offered.insert(offered.length - 1, f);
+        }
+        return (
+          found.isEmpty
+              ? 'No matching tools. Try other words.'
+              : 'Now available:\n${found.map((f) => '- ${f.fnName}: ${_short(f.tool.description, 120)}').join('\n')}',
+          false
+        );
+      }
       final b = byName[name];
-      if (b == null) return ('Unknown tool $name.', true);
+      if (b == null) return ('Unknown tool $name. Use find_tools to search.', true);
+      if (!offered.contains(b)) offered.insert(offered.length - (finder == null ? 0 : 1), b);
       final ev = ToolEvent(b, args);
       if (!b.tool.readOnly && !await approve(b, args)) {
         ev
@@ -95,11 +205,11 @@ class ToolLoop {
     }
 
     return switch (target) {
-      LocalTarget t => _ollama(t, messages, tools, exec),
+      LocalTarget t => _ollama(t, messages, offered, exec),
       CloudTarget t => switch (t.config.provider) {
-          CloudProvider.openai || CloudProvider.azure => _openai(t.config, messages, tools, exec),
-          CloudProvider.anthropic => _anthropic(t.config, messages, tools, exec),
-          CloudProvider.google => _google(t.config, messages, tools, exec),
+          CloudProvider.openai || CloudProvider.azure => _openai(t.config, messages, offered, exec),
+          CloudProvider.anthropic => _anthropic(t.config, messages, offered, exec),
+          CloudProvider.google => _google(t.config, messages, offered, exec),
         },
     };
   }
@@ -124,12 +234,37 @@ class ToolLoop {
         'function': {
           'name': b.fnName,
           'description': _describe(b),
-          'parameters': b.tool.inputSchema,
+          'parameters': compactSchema(b.tool.inputSchema),
         },
       };
 
+  static String _short(String s, int n) {
+    final one = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return one.length <= n ? one : '${one.substring(0, n)}…';
+  }
+
   static String _describe(ToolBinding b) =>
-      '${b.tool.description.isEmpty ? b.tool.name : b.tool.description} (from ${b.serverName}${b.tool.readOnly ? '' : '; changes data, the user must approve'})';
+      '${b.tool.description.isEmpty ? b.tool.name : _short(b.tool.description, 600)} (from ${b.serverName}${b.tool.readOnly ? '' : '; changes data, the user must approve'})';
+
+  /// Same schema, with long property descriptions shortened and noise removed.
+  static Object? compactSchema(Object? s) {
+    if (s is List) return s.map(compactSchema).toList();
+    if (s is! Map) return s;
+    return {
+      for (final e in s.entries)
+        if (e.key != r'$schema' && e.key != 'title' && e.key != 'examples')
+          e.key: e.key == 'description' && e.value is String ? _short(e.value as String, 200) : compactSchema(e.value),
+    };
+  }
+
+  /// Context size for a request: small when possible (fast), bigger when needed.
+  static int ctxFor(Object request, int maxCtx) {
+    final est = jsonEncode(request).length ~/ 3 + 2048;
+    for (final c in [8192, 16384, 32768, 65536]) {
+      if (est <= c && c <= maxCtx) return c;
+    }
+    return maxCtx;
+  }
 
   static Map<String, dynamic> _args(Object? a) {
     if (a is Map) return a.cast<String, dynamic>();
@@ -146,15 +281,23 @@ class ToolLoop {
       Future<(String, bool)> Function(String, Map<String, dynamic>) exec) async {
     final msgs = <Map<String, Object?>>[for (final m in messages) m.toJson()];
     for (var round = 0; round < maxRounds; round++) {
-      final r = await _post('${t.base}/api/chat', {}, {
-        'model': t.model,
-        'messages': msgs,
-        if (tools.isNotEmpty) 'tools': tools.map(_fn).toList(),
-        'stream': false,
-        'keep_alive': -1,
-        'think': ?(t.disableThinking ? false : null),
-        'options': {'num_ctx': 8192, 'temperature': 0.4},
-      });
+      final fns = tools.map(_fn).toList();
+      final ctx = ctxFor([msgs, fns], t.maxCtx);
+      Map<String, dynamic> r;
+      try {
+        r = await _post('${t.base}/api/chat', {}, {
+          'model': t.model,
+          'messages': msgs,
+          if (fns.isNotEmpty) 'tools': fns,
+          'stream': false,
+          'keep_alive': -1,
+          'think': ?(t.disableThinking ? false : null),
+          'options': {'num_ctx': ctx, 'temperature': 0.4},
+        });
+      } on CloudError catch (e) {
+        if (!e.message.contains('context')) rethrow;
+        throw CloudError('This is more than the model can hold at once. Start a new chat, or use a bigger model or a cloud AI.');
+      }
       final m = (r['message'] as Map).cast<String, dynamic>();
       final calls = (m['tool_calls'] as List?) ?? [];
       if (calls.isEmpty) return _stripThink((m['content'] as String?) ?? '');
@@ -214,7 +357,7 @@ class ToolLoop {
         'messages': msgs,
         if (tools.isNotEmpty)
           'tools': [
-            for (final b in tools) {'name': b.fnName, 'description': _describe(b), 'input_schema': b.tool.inputSchema}
+            for (final b in tools) {'name': b.fnName, 'description': _describe(b), 'input_schema': compactSchema(b.tool.inputSchema)}
           ],
       });
       final content = (r['content'] as List).cast<Map<String, dynamic>>();
@@ -261,7 +404,7 @@ class ToolLoop {
           'tools': [
             {
               'functionDeclarations': [
-                for (final b in tools) {'name': b.fnName, 'description': _describe(b), 'parameters': geminiSchema(b.tool.inputSchema)}
+                for (final b in tools) {'name': b.fnName, 'description': _describe(b), 'parameters': geminiSchema(compactSchema(b.tool.inputSchema))}
               ]
             }
           ],

@@ -43,7 +43,7 @@ enum PageId {
   automations('Automations & loops'),
   contacts('Contacts & rules'),
   knowledge('Knowledge'),
-  tools('Tools (MCP)'),
+  tools('Tools & connectors'),
   skills('Skills'),
   models('Language models'),
   speech('Voice & hearing'),

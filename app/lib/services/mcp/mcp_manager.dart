@@ -146,6 +146,13 @@ class McpManager extends ChangeNotifier {
             await _save(s.id, {'secret': jsonEncode(auth.toJson())});
           }
         }
+        // Services like Google answer without a login but refuse every tool: sign in first.
+        if (auth.preset != null && !auth.hasToken) {
+          if (!interactive) throw McpNeedsAuth(null);
+          final fresh = await oauth.signIn(s.target, null, auth);
+          await _save(s.id, {'secret': jsonEncode(fresh.toJson())});
+          return attempt({'Authorization': 'Bearer ${fresh.accessToken}'});
+        }
         try {
           return await attempt({if (auth.hasToken) 'Authorization': 'Bearer ${auth.accessToken}'});
         } on McpNeedsAuth catch (e) {
@@ -169,7 +176,9 @@ class McpManager extends ChangeNotifier {
 
   Future<void> signOut(int id) async {
     await _sessions.remove(id)?.close();
-    await _save(id, {'secret': null, 'status': 'needs_sign_in', 'tools': null});
+    // Keep a known sign-in setup (e.g. the Google client), drop the login itself.
+    final preset = (await _get(id))?.secret['preset'];
+    await _save(id, {'secret': preset == null ? null : jsonEncode({'preset': preset}), 'status': 'needs_sign_in', 'tools': null});
     _set(id, McpStatus.needsSignIn);
   }
 

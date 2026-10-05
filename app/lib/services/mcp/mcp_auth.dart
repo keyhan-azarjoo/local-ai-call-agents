@@ -16,9 +16,14 @@ class McpAuthState {
     this.expiresAt,
     this.tokenEndpoint,
     this.resource,
+    this.preset,
   });
 
   String? clientId, redirectUri, accessToken, refreshToken, tokenEndpoint, resource;
+
+  /// A sign-in known in advance, for services without automatic app registration (e.g. Google):
+  /// authorization_endpoint, token_endpoint, scope, client_id, client_secret, params.
+  Map<String, dynamic>? preset;
   int? expiresAt; // ms since epoch
 
   bool get hasToken => accessToken != null && accessToken!.isNotEmpty;
@@ -32,6 +37,7 @@ class McpAuthState {
         'expiresAt': expiresAt,
         'tokenEndpoint': tokenEndpoint,
         'resource': resource,
+        'preset': ?preset,
       };
 
   static McpAuthState fromJson(Map<String, dynamic>? j) => McpAuthState(
@@ -42,6 +48,7 @@ class McpAuthState {
         expiresAt: j?['expiresAt'],
         tokenEndpoint: j?['tokenEndpoint'],
         resource: j?['resource'],
+        preset: (j?['preset'] as Map?)?.cast<String, dynamic>(),
       );
 }
 
@@ -136,16 +143,20 @@ class McpOAuth {
 
   /// Full interactive sign-in. Returns the new auth state.
   Future<McpAuthState> signIn(String mcpUrl, String? wwwAuthenticate, McpAuthState prev) async {
-    final d = await discover(mcpUrl, wwwAuthenticate);
+    final preset = prev.preset;
+    final d = preset != null
+        ? (as: preset, resource: null as String?, scope: preset['scope'] as String?)
+        : await discover(mcpUrl, wwwAuthenticate);
     final authEndpoint = d.as['authorization_endpoint'] as String?;
     final tokenEndpoint = d.as['token_endpoint'] as String?;
+    final clientSecret = preset?['client_secret'] as String?;
     if (authEndpoint == null || tokenEndpoint == null) throw McpAuthError('The server’s sign-in details are incomplete.');
 
     final server = await _bindLoopback();
     final redirectUri = 'http://127.0.0.1:${server.port}/callback';
     try {
       // Register this app with the sign-in server (once per redirect address).
-      var clientId = prev.redirectUri == redirectUri ? prev.clientId : null;
+      var clientId = (preset?['client_id'] as String?) ?? (prev.redirectUri == redirectUri ? prev.clientId : null);
       if (clientId == null) {
         final reg = d.as['registration_endpoint'] as String?;
         if (reg == null) throw McpAuthError('This server needs a pre-registered app. Use “API key or token” instead.');
@@ -175,6 +186,7 @@ class McpOAuth {
         'state': state,
         if (d.scope != null && d.scope!.isNotEmpty) 'scope': d.scope!,
         if (d.resource != null) 'resource': d.resource!,
+        ...?(preset?['params'] as Map?)?.cast<String, String>(),
       });
 
       final codeFuture = server.firstWhere((req) => req.uri.path == '/callback').then((req) async {
@@ -199,11 +211,19 @@ class McpOAuth {
         'code': code,
         'redirect_uri': redirectUri,
         'client_id': clientId,
+        'client_secret': ?clientSecret,
         'code_verifier': verifier,
         if (d.resource != null) 'resource': d.resource!,
       });
-      if (t.statusCode != 200) throw McpAuthError('The sign-in server refused the login (${t.statusCode}).');
-      return _fromToken(jsonDecode(t.body) as Map<String, dynamic>, clientId, redirectUri, tokenEndpoint, d.resource, null);
+      if (t.statusCode != 200) {
+        var why = '';
+        try {
+          final j = jsonDecode(t.body) as Map;
+          why = ': ${j['error_description'] ?? j['error'] ?? ''}';
+        } catch (_) {}
+        throw McpAuthError('The sign-in server refused the login (${t.statusCode}$why).');
+      }
+      return _fromToken(jsonDecode(t.body) as Map<String, dynamic>, clientId, redirectUri, tokenEndpoint, d.resource, null)..preset = preset;
     } finally {
       await server.close(force: true);
     }
@@ -217,10 +237,11 @@ class McpOAuth {
         'grant_type': 'refresh_token',
         'refresh_token': s.refreshToken!,
         'client_id': s.clientId!,
+        'client_secret': ?(s.preset?['client_secret'] as String?),
         if (s.resource != null) 'resource': s.resource!,
       });
       if (t.statusCode != 200) return null;
-      return _fromToken(jsonDecode(t.body) as Map<String, dynamic>, s.clientId!, s.redirectUri, s.tokenEndpoint!, s.resource, s.refreshToken);
+      return _fromToken(jsonDecode(t.body) as Map<String, dynamic>, s.clientId!, s.redirectUri, s.tokenEndpoint!, s.resource, s.refreshToken)..preset = s.preset;
     } catch (_) {
       return null;
     }

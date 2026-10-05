@@ -7,7 +7,7 @@
 - Ollama, llama.cpp, LM Studio, MLX, vLLM · Whisper, Parakeet · Kokoro, Piper
 - Multi-user with roles, approvals for AI actions, encrypted local database
 
-> **Status:** design phase. See the [architecture & plan](docs/PLAN.md) and the clickable [UI demo](demo/).
+> **Status:** early. The [Flutter app](app/) runs: setup, accounts, local models, Talk to Ava and call tasks. Real phone calls are the next milestone. See the [architecture & plan](docs/PLAN.md) and the [UI demo](demo/).
 
 ## Try the UI demo
 

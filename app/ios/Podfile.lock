@@ -2,33 +2,85 @@ PODS:
   - audioplayers_darwin (0.0.1):
     - Flutter
     - FlutterMacOS
+  - connectivity_plus (0.0.1):
+    - Flutter
+  - device_info_plus (0.0.1):
+    - Flutter
+  - file_selector_ios (0.0.1):
+    - Flutter
   - Flutter (1.0.0)
+  - flutter_webrtc (1.6.2):
+    - Flutter
+    - WebRTC-SDK (= 150.7871.01)
   - integration_test (0.0.1):
     - Flutter
+  - livekit_client (2.13.0):
+    - Flutter
+    - flutter_webrtc
+    - WebRTC-SDK (= 150.7871.01)
+  - pdfium_flutter (0.1.5):
+    - Flutter
+    - FlutterMacOS
   - record_ios (2.0.0):
     - Flutter
+  - url_launcher_ios (0.0.1):
+    - Flutter
+  - WebRTC-SDK (150.7871.01)
 
 DEPENDENCIES:
   - audioplayers_darwin (from `.symlinks/plugins/audioplayers_darwin/darwin`)
+  - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
+  - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
+  - file_selector_ios (from `.symlinks/plugins/file_selector_ios/ios`)
   - Flutter (from `Flutter`)
+  - flutter_webrtc (from `.symlinks/plugins/flutter_webrtc/ios`)
   - integration_test (from `.symlinks/plugins/integration_test/ios`)
+  - livekit_client (from `.symlinks/plugins/livekit_client/ios`)
+  - pdfium_flutter (from `.symlinks/plugins/pdfium_flutter/darwin`)
   - record_ios (from `.symlinks/plugins/record_ios/ios`)
+  - url_launcher_ios (from `.symlinks/plugins/url_launcher_ios/ios`)
+
+SPEC REPOS:
+  trunk:
+    - WebRTC-SDK
 
 EXTERNAL SOURCES:
   audioplayers_darwin:
     :path: ".symlinks/plugins/audioplayers_darwin/darwin"
+  connectivity_plus:
+    :path: ".symlinks/plugins/connectivity_plus/ios"
+  device_info_plus:
+    :path: ".symlinks/plugins/device_info_plus/ios"
+  file_selector_ios:
+    :path: ".symlinks/plugins/file_selector_ios/ios"
   Flutter:
     :path: Flutter
+  flutter_webrtc:
+    :path: ".symlinks/plugins/flutter_webrtc/ios"
   integration_test:
     :path: ".symlinks/plugins/integration_test/ios"
+  livekit_client:
+    :path: ".symlinks/plugins/livekit_client/ios"
+  pdfium_flutter:
+    :path: ".symlinks/plugins/pdfium_flutter/darwin"
   record_ios:
     :path: ".symlinks/plugins/record_ios/ios"
+  url_launcher_ios:
+    :path: ".symlinks/plugins/url_launcher_ios/ios"
 
 SPEC CHECKSUMS:
   audioplayers_darwin: 835ced6edd4c9fc8ebb0a7cc9e294a91d99917d5
+  connectivity_plus: cb623214f4e1f6ef8fe7403d580fdad517d2f7dd
+  device_info_plus: 21fcca2080fbcd348be798aa36c3e5ed849eefbe
+  file_selector_ios: ec57ec07954363dd730b642e765e58f199bb621a
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_webrtc: 99283145164f482a16bf7122ef407b5d59d43158
   integration_test: 4a889634ef21a45d28d50d622cf412dc6d9f586e
+  livekit_client: 55f2f6afa597719985fa4913f6e889eb2b7eacd8
+  pdfium_flutter: e5a6e881af0b182d5b0465ebad23a8a20caa28d4
   record_ios: 390a30c7caaf8b5d0fb1cb1d2fd5064b48b4520c
+  url_launcher_ios: 7a95fa5b60cc718a708b8f2966718e93db0cef1b
+  WebRTC-SDK: 7dc931c64c00c735a614382f1a59cf65019c3c17
 
 PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
 

@@ -83,6 +83,8 @@ class _LiveTalkState extends State<LiveTalk> {
   String? phase; // null = not connected
   String agentState = '';
   bool muted = false;
+  String? agentIdentity;
+  Timer? _reopen;
 
   @override
   void didUpdateWidget(LiveTalk old) {
@@ -115,12 +117,15 @@ class _LiveTalkState extends State<LiveTalk> {
       final id = Random().nextInt(1 << 32).toRadixString(36);
       final roomName = 'talk-${widget.mode}-${s.voiceLanguage}-$id';
       final token = await v.token(identity: 'you-$id', room: roomName, name: s.user?.name ?? 'You');
-      final r = Room(roomOptions: const RoomOptions(defaultAudioCaptureOptions: AudioCaptureOptions(echoCancellation: true, noiseSuppression: true, autoGainControl: true)));
+      final r = Room(roomOptions: const RoomOptions(defaultAudioCaptureOptions: AudioCaptureOptions(echoCancellation: true, noiseSuppression: true, autoGainControl: true, stopAudioCaptureOnMute: false)));
       room = r;
       events = r.createListener()
         ..on<ParticipantAttributesChanged>((e) {
           final st = e.participant.attributes['lk.agent.state'];
-          if (st != null && mounted) setState(() => agentState = st);
+          if (st == null || !mounted) return;
+          agentIdentity = e.participant.identity;
+          setState(() => agentState = st);
+          _gateMic();
         })
         ..on<RoomDisconnectedEvent>((_) {
           if (mounted && room == r) _end();
@@ -148,6 +153,7 @@ class _LiveTalkState extends State<LiveTalk> {
   }
 
   Future<void> _end({bool update = true}) async {
+    _reopen?.cancel();
     final r = room;
     room = null;
     if (r != null && _app != null) unawaited(_save(_app!));
@@ -191,6 +197,33 @@ class _LiveTalkState extends State<LiveTalk> {
     });
   }
 
+  /// Ava can't hear herself through the speakers: the mic is off while she speaks and comes
+  /// back a moment after (unless "Talk over Ava" is on, e.g. with headphones).
+  void _gateMic() {
+    final s = _app ?? context.read<AppState>();
+    final p = room?.localParticipant;
+    if (p == null || muted) return;
+    _reopen?.cancel();
+    if (agentState == 'speaking' && !s.voiceBargeIn) {
+      p.setMicrophoneEnabled(false);
+    } else {
+      _reopen = Timer(const Duration(milliseconds: 350), () {
+        if (room != null && !muted) room!.localParticipant?.setMicrophoneEnabled(true);
+      });
+    }
+  }
+
+  /// Stop Ava mid-sentence and listen.
+  Future<void> _interrupt() async {
+    final id = agentIdentity;
+    if (room == null || id == null) return;
+    try {
+      await room!.localParticipant?.performRpc(PerformRpcParams(destinationIdentity: id, method: 'll.interrupt', payload: ''));
+    } catch (_) {}
+    _reopen?.cancel();
+    if (!muted) await room?.localParticipant?.setMicrophoneEnabled(true);
+  }
+
   Future<void> _mute() async {
     muted = !muted;
     await room?.localParticipant?.setMicrophoneEnabled(!muted);
@@ -222,7 +255,7 @@ class _LiveTalkState extends State<LiveTalk> {
 
   String get _status => switch ((phase, agentState)) {
     (null, _) => 'Tap to start a live conversation',
-    ('live', 'speaking') => '${widget.name} is speaking — just talk to interrupt',
+    ('live', 'speaking') => (_app?.voiceBargeIn ?? false) ? '${widget.name} is speaking — just talk to interrupt' : '${widget.name} is speaking — tap Interrupt to cut in',
     ('live', 'thinking') => '${widget.name} is thinking…',
     ('live', 'initializing' || '') => '${widget.name} is joining…',
     ('live', _) => muted ? 'Microphone off' : 'Listening — go ahead',
@@ -300,6 +333,7 @@ class _LiveTalkState extends State<LiveTalk> {
                     onChanged: live || busy ? null : (v) => s.setVoiceLanguage(v ?? 'auto'),
                   ),
                   if (live) Btn(muted ? 'Unmute' : 'Mute', small: true, kind: BtnKind.ghost, onPressed: _mute),
+                  if (live && agentState == 'speaking' && !s.voiceBargeIn) Btn('Interrupt', small: true, kind: BtnKind.amber, onPressed: _interrupt),
                 ],
               ),
               const SizedBox(height: 4),
@@ -331,6 +365,15 @@ class _LiveTalkState extends State<LiveTalk> {
                   for (final m in s.installedModels) m.name: m.name,
                   if (s.cloud != null) 'cloud': 'Cloud AI (best quality)',
                 }, live || busy ? null : (v) => s.setVoiceSetting('otherModel', v)),
+                const SizedBox(width: 6),
+                Muted('Talk over ${widget.name}'),
+                Transform.scale(
+                  scale: .75,
+                  child: Tooltip(
+                    message: 'Use with headphones. With speakers, ${widget.name} would hear herself and stop.',
+                    child: Switch(value: s.voiceBargeIn, onChanged: live || busy ? null : (v) => s.setVoiceSetting('bargeIn', v ? '1' : '0')),
+                  ),
+                ),
                 const SizedBox(width: 6),
                 Muted('Background'),
                   _menu(context, s.ambientSound, ambientOptions, live || busy ? null : (v) => s.setVoiceSetting('ambient', v)),

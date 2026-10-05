@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/agent_loop.dart';
+import '../../services/tool_results.dart';
 import '../../services/ollama.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
@@ -34,6 +35,9 @@ class _ChatPageState extends State<ChatPage> {
   String? model;
   bool busy = false;
   int toolCount = 0;
+
+  /// Tools already offered in this chat, kept in order so the model can reuse its reading.
+  final sticky = <String>[];
   String? progress;
   DateTime? started;
 
@@ -41,7 +45,8 @@ class _ChatPageState extends State<ChatPage> {
   List<Map<String, dynamic>> plan = [];
   final agents = <String, Map<String, dynamic>>{};
 
-  static const system = 'You are a helpful, concise assistant running privately on the user’s own computer inside LocalAILine. '
+  static const system = 'You are Ava, the user’s own AI assistant in LocalAILine, running privately on their computer. '
+      'You are not a restaurant or business persona — documents and skills describe what you can do on phone calls, not who you are in this chat. '
       'Answer clearly. Use short paragraphs and simple lists when helpful. '
       'When tools from the user’s connected services are available and the question is about their data, use the tools instead of guessing.';
 
@@ -52,7 +57,11 @@ class _ChatPageState extends State<ChatPage> {
     super.initState();
     _loadChats();
     s.toolsFor(_scopes).then((t) => mounted ? setState(() => toolCount = t.length) : null);
+    _warm();
   }
+
+  /// Reads the instructions/tools (and this chat so far) ahead of the next question.
+  void _warm() => s.prewarm([ChatMessage('system', system), ...messages], scopes: _scopes, sticky: sticky);
 
   Future<bool> _approve(ToolBinding b, Map<String, dynamic> args) async =>
       await showDialog<bool>(
@@ -102,10 +111,12 @@ class _ChatPageState extends State<ChatPage> {
     final rows = await s.db.all('chat_messages', where: 'chat_id = ?', args: [id], orderBy: 'id');
     setState(() {
       chatId = id;
+      sticky.clear();
       messages
         ..clear()
         ..addAll(rows.map((r) => ChatMessage(r['role'] as String, r['content'] as String)));
     });
+    _warm();
     _scrollDown();
   }
 
@@ -113,7 +124,9 @@ class _ChatPageState extends State<ChatPage> {
     setState(() {
       chatId = null;
       messages.clear();
+      sticky.clear();
     });
+    _warm();
     focus.requestFocus();
   }
 
@@ -154,7 +167,16 @@ class _ChatPageState extends State<ChatPage> {
     try {
       final history = [ChatMessage('system', system), ...messages.where((x) => x != reply && x.role != 'tool')];
       {
-        reply.content = await s.agentReply(history, scopes: _scopes, approve: _approve, onText: (t) {
+        // Earlier lookups in this chat travel with the question (compact, last 3).
+        final earlier = <String>[];
+        for (final n in messages.where((x) => x.role == 'tool').toList().reversed) {
+          if (earlier.length >= 3) break;
+          try {
+            final j = jsonDecode(n.content) as Map;
+            if (j['ok'] == true) earlier.add('${j['tool']}: ${ToolResults.compact('${j['full'] ?? j['result']}', 2500).text}');
+          } catch (_) {}
+        }
+        reply.content = await s.agentReply(history, scopes: _scopes, approve: _approve, earlier: earlier, excludeFile: 'chat-$chatId.md', sticky: sticky, onText: (t) {
           if (!mounted) return;
           setState(() {
             reply.content = t;
@@ -180,6 +202,7 @@ class _ChatPageState extends State<ChatPage> {
             'ok': e.ok,
             'denied': e.denied,
             'result': e.result.length > 600 ? '${e.result.substring(0, 600)}…' : e.result,
+            'full': ToolResults.compact(e.result, 6000).text,
           }));
           setState(() {
             messages.insert(messages.indexOf(reply), note);
@@ -196,6 +219,9 @@ class _ChatPageState extends State<ChatPage> {
     } finally {
       await s.db.insert('chat_messages', {'chat_id': chatId, 'role': 'assistant', 'content': reply.content, 'at': DateTime.now().millisecondsSinceEpoch});
       await s.db.update('chats', chatId!, {'updated_at': DateTime.now().millisecondsSinceEpoch});
+      final title = chats.where((c) => c['id'] == chatId).firstOrNull?['title'] as String? ?? text;
+      unawaited(s.rememberChat(chatId!, title, messages.where((x) => x.role != 'tool').toList()));
+      _warm(); // ready for the next question while you read the answer
       await _loadChats();
       if (mounted) {
         setState(() {

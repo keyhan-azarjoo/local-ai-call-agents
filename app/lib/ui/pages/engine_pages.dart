@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/catalog.dart';
+import '../../services/cloud_llm.dart';
 import '../../services/hardware.dart';
 import '../../services/ollama.dart';
 import '../../services/system.dart';
@@ -37,6 +38,7 @@ class EngineSetupPanel extends StatefulWidget {
 class _EngineSetupPanelState extends State<EngineSetupPanel> {
   SpeechStatus? sp;
   bool starting = false;
+  bool _pickCloud = false;
 
   @override
   void initState() {
@@ -133,7 +135,26 @@ class _EngineSetupPanelState extends State<EngineSetupPanel> {
             progress: s.speechDownloads[ttsEntry.id],
           );
 
-    return Column(children: [
+    final source = Align(
+      alignment: Alignment.centerLeft,
+      child: Segmented(
+        value: s.llmSource,
+        options: const {'local': 'On this computer · private', 'cloud': 'Cloud AI · OpenAI, Azure, Google, Claude'},
+        onChanged: (v) => v == 'cloud' && s.cloud == null ? setState(() => _pickCloud = true) : s.setLlmSource(v),
+      ),
+    );
+    if (s.usingCloud || _pickCloud) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        source,
+        const SizedBox(height: 12),
+        CloudPanel(onCancel: () => setState(() => _pickCloud = false), onSaved: () => setState(() => _pickCloud = false)),
+        const SizedBox(height: 12),
+        Panel(padding: EdgeInsets.zero, child: Column(children: [hearing, voice])),
+      ]);
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      source,
+      const SizedBox(height: 12),
       Panel(
         child: Row(children: [
           Expanded(
@@ -173,6 +194,158 @@ class _EngineSetupPanelState extends State<EngineSetupPanel> {
           Wrap(spacing: 6, children: actions),
         ]),
       );
+}
+
+// ====================== Cloud AI ======================
+
+/// Pick a provider, paste the key, Test, Use. That's it.
+class CloudPanel extends StatefulWidget {
+  const CloudPanel({super.key, this.onCancel, this.onSaved});
+  final VoidCallback? onCancel, onSaved;
+  @override
+  State<CloudPanel> createState() => _CloudPanelState();
+}
+
+class _CloudPanelState extends State<CloudPanel> {
+  late CloudProvider provider;
+  final key = TextEditingController();
+  final endpoint = TextEditingController();
+  final deployment = TextEditingController();
+  List<String> models = [];
+  String? model, result;
+  bool testing = false, ok = false, editing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = context.read<AppState>().cloud;
+    provider = c?.provider ?? CloudProvider.openai;
+    if (c != null) {
+      key.text = c.apiKey;
+      endpoint.text = c.endpoint;
+      deployment.text = c.provider == CloudProvider.azure ? c.model : '';
+      model = c.model;
+    }
+    editing = c == null;
+  }
+
+  CloudConfig get _config => CloudConfig(
+        provider: provider,
+        apiKey: key.text.trim(),
+        endpoint: endpoint.text.trim(),
+        model: provider == CloudProvider.azure ? deployment.text.trim() : (model ?? ''),
+      );
+
+  Future<void> _test() async {
+    setState(() {
+      testing = true;
+      result = null;
+      ok = false;
+    });
+    try {
+      final list = await context.read<AppState>().cloudLlm.test(_config);
+      setState(() {
+        models = list;
+        model = list.isEmpty ? null : list.first;
+        ok = list.isNotEmpty;
+        result = list.isEmpty ? 'Connected, but no chat models were found on this account.' : 'Connected. Choose a model and press Use.';
+      });
+    } catch (e) {
+      setState(() => result = '$e');
+    } finally {
+      if (mounted) setState(() => testing = false);
+    }
+  }
+
+  Future<void> _use() async {
+    final s = context.read<AppState>();
+    await s.saveCloud(_config);
+    s.toast('Ava now thinks with ${provider.label}.');
+    setState(() => editing = false);
+    widget.onSaved?.call();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
+    if (!editing && s.cloud != null) {
+      return Panel(
+        child: Row(children: [
+          const Lamp(LampState.on),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${s.cloud!.provider.label} · ${s.cloud!.model}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              Muted('Connected. Calls and chats are sent to ${s.cloud!.provider.label}.'),
+            ]),
+          ),
+          Btn('Change', small: true, onPressed: () => setState(() => editing = true)),
+          const SizedBox(width: 6),
+          Btn('Disconnect', small: true, kind: BtnKind.ghost, onPressed: () async {
+            await s.removeCloud();
+            widget.onCancel?.call();
+          }),
+        ]),
+      );
+    }
+    return Panel(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Connect a cloud AI', style: displayStyle(context, 17)),
+        const SizedBox(height: 4),
+        const Muted('Ava thinks with the provider you choose. Hearing and voice still run on this computer.'),
+        const SizedBox(height: 14),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final p in CloudProvider.values)
+            ChoiceChip(
+              label: Text(p.label),
+              selected: provider == p,
+              onSelected: (_) => setState(() {
+                provider = p;
+                models = [];
+                model = null;
+                ok = false;
+                result = null;
+              }),
+            ),
+        ]),
+        const SizedBox(height: 14),
+        Field(
+          label: 'API key',
+          hint: '${provider.keyHint}. Saved on this computer only.',
+          child: TextField(controller: key, obscureText: true, onSubmitted: (_) => _test()),
+        ),
+        if (provider == CloudProvider.azure) ...[
+          const SizedBox(height: 12),
+          Grid(cols: 2, children: [
+            Field(label: 'Endpoint', child: TextField(controller: endpoint, decoration: const InputDecoration(hintText: 'https://my-resource.openai.azure.com'))),
+            Field(label: 'Deployment name', child: TextField(controller: deployment, decoration: const InputDecoration(hintText: 'gpt-4o-mini'))),
+          ]),
+        ],
+        if (models.length > 1 && provider != CloudProvider.azure) ...[
+          const SizedBox(height: 12),
+          Field(label: 'Model', child: Dropdown(value: model ?? models.first, items: {for (final m in models) m: m}, onChanged: (v) => setState(() => model = v))),
+        ],
+        if (result != null) ...[
+          const SizedBox(height: 10),
+          Text(result!, style: TextStyle(color: ok ? LL.green : LL.red, fontSize: 13)),
+        ],
+        const SizedBox(height: 16),
+        Row(children: [
+          Btn(testing ? 'Testing…' : 'Test', icon: Icons.bolt_outlined, onPressed: testing ? null : _test),
+          const SizedBox(width: 8),
+          Btn('Use', kind: BtnKind.primary, onPressed: ok ? _use : null),
+          const Spacer(),
+          if (widget.onCancel != null) Btn('Cancel', kind: BtnKind.ghost, onPressed: () {
+            if (s.cloud != null) {
+              setState(() => editing = false);
+            } else {
+              widget.onCancel!();
+            }
+          }),
+        ]),
+      ]),
+    );
+  }
 }
 
 // ====================== Model picker ======================

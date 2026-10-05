@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'cloud_llm.dart';
 import 'mcp/mcp_client.dart';
 import 'ollama.dart' show ChatMessage;
+import 'tool_results.dart';
 
 /// An MCP tool as offered to the model.
 class ToolBinding {
@@ -112,7 +113,15 @@ class ToolLoop {
   final http.Client _c;
 
   static const maxRounds = 6;
-  static const _maxResult = 12000;
+
+  /// Added to the system prompt whenever tools are offered.
+  static const toolRules = 'Rules for tool results: '
+      '1) Never guess names or details that a result does not contain. If a result only has IDs (for example groupIds), '
+      'look them up with another tool or show the ID. '
+      '2) Always present the data you received. If a note says some items did not fit, still list the ones shown, '
+      'then say how many more exist. '
+      '3) If the user asks for a list, list every item (one line each), then add the totals. '
+      '4) For counts, use the "Totals" line from the result exactly; never count by yourself.';
 
   Future<String> run({
     required ModelTarget target,
@@ -126,6 +135,18 @@ class ToolLoop {
 
     // Only the most relevant tools are offered; find_tools reaches the rest.
     final limit = target is LocalTarget ? 10 : 40;
+    final resultLimit = switch (target) {
+      LocalTarget t => t.maxCtx >= 16384 ? 14000 : 7000,
+      CloudTarget _ => 40000,
+    };
+    if (tools.isNotEmpty) {
+      final i = messages.indexWhere((m) => m.role == 'system');
+      messages = [
+        if (i < 0) ChatMessage('system', toolRules),
+        for (var j = 0; j < messages.length; j++)
+          j == i ? ChatMessage('system', '${messages[j].content}\n\n$toolRules') : messages[j],
+      ];
+    }
     final lastUser = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
     final recent = messages.where((m) => m.role == 'user').toList().reversed.take(3).map((m) => m.content).join(' ');
     final active = <ToolBinding>[
@@ -163,6 +184,7 @@ class ToolLoop {
           )
         : null;
     final offered = <ToolBinding>[...active, ?finder];
+    final idCache = <String, Map<String, String>>{};
 
     Future<(String, bool)> exec(String name, Map<String, dynamic> args) async {
       if (name == 'find_tools') {
@@ -200,8 +222,36 @@ class ToolLoop {
           ..ok = false;
       }
       onEvent?.call(ev);
-      final text = ev.result.length > _maxResult ? '${ev.result.substring(0, _maxResult)}\n…(truncated)' : ev.result;
-      return (text, !ev.ok);
+      // Ids in the result (groupIds, teamId…): look their names up with a safe
+      // list tool and write them next to the ids, so the model never guesses.
+      final lookups = <String, Map<String, String>>{};
+      if (ev.ok) {
+        for (final entity in ToolResults.referencedEntities(ev.result).take(4)) {
+          final known = idCache[entity];
+          if (known != null) {
+            lookups[entity] = known;
+            continue;
+          }
+          final candidates = tools
+              .where((t) =>
+                  t != b &&
+                  t.tool.readOnly &&
+                  t.tool.name.toLowerCase().startsWith('list') &&
+                  ToolSelector.words(t.tool.name.replaceAll('_', ' '), keepCommon: true).contains(entity) &&
+                  ((t.tool.inputSchema['required'] as List?) ?? const []).isEmpty)
+              .toList();
+          final pick = ToolSelector.rank('list $entity', candidates, 1).firstOrNull;
+          if (pick == null) continue;
+          try {
+            final r = await runTool(pick, {});
+            onEvent?.call(ToolEvent(pick, {}, result: r.text, ok: !r.isError));
+            final names = ToolResults.idNames(r.text);
+            if (names.isNotEmpty) lookups[entity] = idCache[entity] = names;
+          } catch (_) {}
+        }
+      }
+      final fitted = ToolResults.compact(ev.result, resultLimit, lookups: lookups);
+      return (fitted.text, !ev.ok);
     }
 
     return switch (target) {

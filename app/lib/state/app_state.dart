@@ -581,6 +581,9 @@ class AppState extends ChangeNotifier {
   /// The AI for live talk in languages other than English: '' = automatic (a multilingual
   /// local model when installed, else the main AI), a local model id, or 'cloud'.
   String voiceOtherModel = '';
+
+  /// Talk over Ava to interrupt her (headphones). Off: the mic pauses while she speaks.
+  bool voiceBargeIn = false;
   static const multilingualModel = 'aya-expanse:8b';
 
   String? get otherLanguageModel {
@@ -600,6 +603,8 @@ class AppState extends ChangeNotifier {
         ambientSound = value;
       case 'otherModel':
         voiceOtherModel = value;
+      case 'bargeIn':
+        voiceBargeIn = value == '1';
       default:
         if (key.startsWith('voice.')) voiceChoice[key.substring(6)] = value;
     }
@@ -840,6 +845,7 @@ class AppState extends ChangeNotifier {
     thinkingSound = await db.setting('voice.thinking') ?? 'keyboard';
     ambientSound = await db.setting('voice.ambient') ?? 'none';
     voiceOtherModel = await db.setting('voice.otherModel') ?? '';
+    voiceBargeIn = await db.setting('voice.bargeIn') == '1';
     for (final r in await db.all('settings', where: "key LIKE 'voice.voice.%'", orderBy: 'key')) {
       voiceChoice['${r['key']}'.substring(12)] = '${r['value']}';
     }

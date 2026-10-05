@@ -86,6 +86,12 @@ async def main(files: list[str]) -> None:
         while not waiter.done() and time.monotonic() - t0 < 25:
             await silence(0.1)
         latency = time.monotonic() - t0 if waiter.done() else None
+        if os.environ.get("INTERRUPT_AFTER") and waiter.done():
+            # Like the app's Interrupt button: stop the agent mid-answer.
+            await silence(float(os.environ["INTERRUPT_AFTER"]))
+            agent = next(p.identity for p in room.remote_participants.values() if p.identity.startswith("agent"))
+            t_i = time.monotonic()
+            print("INTERRUPT ->", await room.local_participant.perform_rpc(destination_identity=agent, method="ll.interrupt", payload=""), f"{(time.monotonic()-t_i)*1000:.0f} ms")
         results.append((os.path.basename(f), latency))
         await silence(float(os.environ.get("WAIT", "7")))  # let the agent finish speaking
     await room.disconnect()

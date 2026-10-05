@@ -34,7 +34,7 @@ class TalkPage extends StatefulWidget {
 }
 
 class _TalkPageState extends State<TalkPage> {
-  TalkMode mode = TalkMode.caller;
+  TalkMode mode = TalkMode.owner; // you, with everything; or a test as a caller
   bool live = true; // hands-free live conversation vs. tap to talk
   final turns = <_Turn>[];
   final history = <ChatMessage>[];
@@ -62,8 +62,16 @@ class _TalkPageState extends State<TalkPage> {
     super.dispose();
   }
 
+  /// Tools and documents only the owner may use (not callers), to explain the caller test.
+  List<String> private = [];
+
   Future<void> _start() async {
     final s = context.read<AppState>();
+    private = [
+      for (final m in await s.db.all('mcp_servers', where: "scope != 'all'", orderBy: 'id')) '${m['name']}',
+      for (final k in await s.db.all('knowledge', where: "scope != 'all'", orderBy: 'id'))
+        if (k['name'] != 'Past conversations' && !'${k['name']}'.startsWith('MCP: ')) '${k['name']}',
+    ];
     final agents = await s.db.all('agents', where: "handles = 'incoming'", orderBy: 'id');
     agent = agents.isEmpty ? null : agents.first;
     final name = (agent?['name'] as String?) ?? 'Ava';
@@ -271,14 +279,17 @@ class _TalkPageState extends State<TalkPage> {
             const SizedBox(height: 14),
             Segmented(
               value: mode,
-              options: const {TalkMode.caller: 'Pretend I’m a caller', TalkMode.owner: 'Give instructions'},
+              options: const {TalkMode.owner: 'Me (full access)', TalkMode.caller: 'Test as a caller'},
               onChanged: (m) {
                 setState(() => mode = m);
                 _start();
               },
             ),
             const SizedBox(height: 8),
-            Muted(mode == TalkMode.caller ? '$name answers exactly as on a real call — same greeting and instructions.' : 'Ask $name to make calls for you, or anything else.'),
+            Muted(mode == TalkMode.caller
+                ? '$name answers exactly as a real caller would hear — only what callers may use.'
+                    '${private.isEmpty ? '' : ' Not available to callers: ${private.join(', ')} (share them in Tools or Knowledge).'}'
+                : 'Everything you have: your connected tools, skills and documents. Ask anything, or ask $name to make a call.'),
             if (s.voice != null) ...[
               const SizedBox(height: 10),
               Segmented(value: live, options: const {true: 'Live conversation', false: 'Tap to talk'}, onChanged: (v) => setState(() => live = v)),

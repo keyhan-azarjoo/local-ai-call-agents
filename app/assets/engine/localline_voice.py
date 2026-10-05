@@ -622,6 +622,13 @@ async def entrypoint(ctx: JobContext) -> None:
                     + " This is a phone call: speak naturally in short sentences, no emojis, no lists or markdown."),
         room=ctx.room,
     )
+    # The app's "Interrupt" button (its mic is off while Ava speaks, so she can't hear herself).
+    async def _interrupt(_data) -> str:  # noqa: ANN001
+        await session.interrupt(force=True)
+        return "ok"
+
+    ctx.room.local_participant.register_rpc_method("ll.interrupt", _interrupt)
+
     ambient = SOUNDS.get(cfg.get("ambient") or "none")
     background = BackgroundAudioPlayer(ambient_sound=AudioConfig(ambient, volume=0.25) if ambient else None)
     await background.start(room=ctx.room, agent_session=session)

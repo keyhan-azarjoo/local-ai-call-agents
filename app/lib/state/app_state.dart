@@ -225,6 +225,7 @@ class AppState extends ChangeNotifier {
     required Set<String> scopes,
     required Approver approve,
     void Function(ToolEvent)? onEvent,
+    void Function(String textSoFar)? onText,
   }) async {
     final tools = await toolsFor(scopes);
     final text = await toolLoop.run(
@@ -233,6 +234,7 @@ class AppState extends ChangeNotifier {
       tools: tools,
       approve: approve,
       runTool: (b, args) => mcp.call(b.serverId, b.tool.name, args),
+      onText: onText,
       onEvent: (e) {
         log('${e.denied ? 'Declined' : 'AI used'} ${e.binding.serverName} › ${e.binding.tool.name}');
         onEvent?.call(e);

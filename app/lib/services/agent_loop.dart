@@ -405,6 +405,7 @@ class ToolLoop {
     List<String>? sticky,
     bool warmOnly = false,
     void Function(ToolBinding)? onToolStart,
+    bool builtins = true,
   }) async {
     final byName = {for (final t in tools) t.fnName: t};
 
@@ -480,7 +481,7 @@ class ToolLoop {
         ..addAll(mcpOffered.take(12).map((t) => t.fnName));
     }
     final offered = <ToolBinding>[
-      calculator,
+      if (builtins) calculator,
       ?finder,
       ...mcpOffered.take(12),
       if (tools.isNotEmpty && depth == 0 && looksMultiStep(lastUser)) ...[planTool, delegateTool],

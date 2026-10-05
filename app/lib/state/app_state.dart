@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 import '../data/db.dart';
 import '../services/auth.dart';
@@ -182,14 +183,23 @@ class AppState extends ChangeNotifier {
     if (usingCloud && cloud != null && model == null) return cloudLlm.chat(cloud!, messages);
     final m = model ?? llmModel!;
     final entry = catalog.llm.where((e) => e.id == m).firstOrNull;
-    final t = modelTarget;
+    final t = targetFor(model);
     final ctx = t is LocalTarget ? (t.maxCtx < 16384 ? t.maxCtx : 16384) : 16384;
     return ollama.chat(m, messages, disableThinking: entry?.think == 'off', numCtx: ctx);
   }
 
-  ModelTarget get modelTarget {
+  ModelTarget get modelTarget => targetFor(null);
+
+  /// The main AI, or another one: a local model id, or 'cloud'.
+  ModelTarget targetFor(String? model) {
+    if (model == 'cloud' && cloud != null) return CloudTarget(cloud!);
+    if (model != null && model != 'cloud') return _local(model);
     if (usingCloud && cloud != null) return CloudTarget(cloud!);
-    final entry = catalog.llm.where((e) => e.id == llmModel).firstOrNull;
+    return _local(llmModel!);
+  }
+
+  LocalTarget _local(String model) {
+    final entry = catalog.llm.where((e) => e.id == model).firstOrNull;
     // Memory left after the model itself decides how much context we can afford.
     final spare = (hardware?.modelBudgetGb ?? 6) - (entry?.sizeGb ?? 4);
     final maxCtx = spare > 6
@@ -197,7 +207,7 @@ class AppState extends ChangeNotifier {
         : spare > 3
         ? 16384
         : 8192;
-    return LocalTarget(llmModel!, disableThinking: entry?.think == 'off', maxCtx: maxCtx);
+    return LocalTarget(model, disableThinking: entry?.think == 'off', maxCtx: maxCtx);
   }
 
   Future<void> warmToolIndex() async {
@@ -235,15 +245,16 @@ class AppState extends ChangeNotifier {
 
   /// Has the model read the instructions and tools before the next question,
   /// so only the new words need reading when it is asked (local models only).
-  Future<void> prewarm(List<ChatMessage> history, {required Set<String> scopes, List<String>? sticky}) async {
-    if (usingCloud || !llmReady) return;
-    final t = modelTarget;
+  Future<void> prewarm(List<ChatMessage> history, {required Set<String> scopes, List<String>? sticky, ModelTarget? target, bool useTools = true}) async {
+    if (!llmReady) return;
+    final t = target ?? modelTarget;
     if (t is! LocalTarget) return;
-    final tools = await toolsFor(scopes);
-    final msgs = await prepare([...history.where((m) => m.role != 'tool'), ChatMessage('user', '…')], scopes: scopes);
+    final tools = useTools ? await toolsFor(scopes) : <ToolBinding>[];
+    final msgs = await prepare([...history.where((m) => m.role != 'tool'), ChatMessage('user', '…')], scopes: scopes, model: target == null ? null : t.model);
     await toolLoop.run(
       target: t,
       warmOnly: true,
+      builtins: useTools,
       sticky: sticky == null ? null : List.of(sticky),
       messages: msgs.sublist(0, msgs.length - 1),
       tools: tools,
@@ -375,14 +386,14 @@ class AppState extends ChangeNotifier {
 
   /// Documents are mostly in English: a question in Persian, Arabic, Chinese… is translated
   /// (briefly, by the same model) so the search finds the right passages.
-  Future<String> searchableQuery(String q) async {
+  Future<String> searchableQuery(String q, {String? model}) async {
     if (_nonLatin.allMatches(q).length < q.replaceAll(RegExp(r'\s'), '').length * 0.4 || !llmReady) return q;
     try {
       final out = StringBuffer();
       await for (final t in chat([
         ChatMessage('system', 'Translate the user text to English. Keep names, codes and numbers. Output only the translation, one line.'),
         ChatMessage('user', q),
-      ]).timeout(const Duration(seconds: 6))) {
+      ], model: model).timeout(const Duration(seconds: 6))) {
         out.write(t);
         if (out.toString().contains('\n') || out.length > 300) break;
       }
@@ -393,7 +404,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<ChatMessage>> prepare(List<ChatMessage> messages, {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile}) async {
+  Future<List<ChatMessage>> prepare(List<ChatMessage> messages, {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile, String? model}) async {
     final extra = <String>[];
     final skills = await db.all('skills', where: "enabled = 1 AND instructions IS NOT NULL AND instructions != ''", orderBy: 'id');
     if (skills.isNotEmpty) {
@@ -411,7 +422,7 @@ class AppState extends ChangeNotifier {
     if (sources.isNotEmpty && users.isNotEmpty) {
       var q = users.last.content;
       if (q.length < 40 && users.length > 1) q = '${users[users.length - 2].content} $q';
-      q = await searchableQuery(q);
+      q = await searchableQuery(q, model: model);
       final r = await knowledge.search(q, sources: sources, k: 5);
       // Only passages that really match (scores below ~0.28 were unrelated in tests).
       // Exact word matches (names like "Leonard Uka") count even when the meaning score is modest.
@@ -498,13 +509,16 @@ class AppState extends ChangeNotifier {
     List<String>? sticky,
     void Function(ToolBinding)? onToolStart,
     bool Function()? cancelled,
+    ModelTarget? target,
+    bool useTools = true,
   }) async {
     void check() {
       if (cancelled?.call() ?? false) throw const Cancelled();
     }
 
-    final tools = await toolsFor(scopes);
-    messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile);
+    // Some models (e.g. the multilingual one) can't use tools well: they answer from documents and data snapshots.
+    final tools = useTools ? await toolsFor(scopes) : <ToolBinding>[];
+    messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile, model: target is LocalTarget ? target.model : null);
     // Find tools by meaning too (typos, other words), using the local embedding model.
     var preferred = <ToolBinding>[];
     final question = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
@@ -515,7 +529,8 @@ class AppState extends ChangeNotifier {
       preferred = [for (final name in order) tools.firstWhere((t) => t.fnName == name)];
     }
     final text = await toolLoop.run(
-      target: modelTarget,
+      target: target ?? modelTarget,
+      builtins: useTools,
       preferred: preferred,
       sticky: sticky,
       onToolStart: onToolStart,
@@ -562,6 +577,19 @@ class AppState extends ChangeNotifier {
   String voiceLanguage = 'auto';
 
   String thinkingSound = 'keyboard', ambientSound = 'none';
+
+  /// The AI for live talk in languages other than English: '' = automatic (a multilingual
+  /// local model when installed, else the main AI), a local model id, or 'cloud'.
+  String voiceOtherModel = '';
+  static const multilingualModel = 'aya-expanse:8b';
+
+  String? get otherLanguageModel {
+    if (voiceOtherModel == 'cloud') return cloud != null ? 'cloud' : null;
+    if (voiceOtherModel.isNotEmpty) return installedModels.any((m) => m.name == voiceOtherModel) ? voiceOtherModel : null;
+    return installedModels.any((m) => m.name == multilingualModel) && !usingCloud ? multilingualModel : null;
+  }
+
+  ModelTarget? voiceTarget(String lang) => lang == 'en' || otherLanguageModel == null ? null : targetFor(otherLanguageModel);
   final voiceChoice = <String, String>{}; // language → Piper voice id
 
   Future<void> setVoiceSetting(String key, String value) async {
@@ -570,6 +598,8 @@ class AppState extends ChangeNotifier {
         thinkingSound = value;
       case 'ambient':
         ambientSound = value;
+      case 'otherModel':
+        voiceOtherModel = value;
       default:
         if (key.startsWith('voice.')) voiceChoice[key.substring(6)] = value;
     }
@@ -581,6 +611,36 @@ class AppState extends ChangeNotifier {
     voiceLanguage = v;
     await db.setSetting('voice.language', v);
     notifyListeners();
+  }
+
+  /// A voice message to text. Uses the live voice engine's hearing when it runs (fast, on the GPU,
+  /// with the larger model for Persian, Arabic…), else the hearing model on this computer.
+  Future<String> transcribeVoiceNote(String wavPath) async {
+    Future<Map<String, dynamic>?> server(int port, String language) async {
+      try {
+        final req = http.MultipartRequest('POST', Uri.parse('http://127.0.0.1:$port/inference'))
+          ..files.add(await http.MultipartFile.fromPath('file', wavPath))
+          ..fields.addAll({'response_format': 'verbose_json', 'language': language, 'temperature': '0'});
+        final r = await http.Response.fromStream(await req.send().timeout(const Duration(seconds: 30)));
+        return r.statusCode == 200 ? jsonDecode(r.body) as Map<String, dynamic> : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final fast = await server(VoiceEngine.whisperPort, 'auto');
+    if (fast != null) {
+      const easy = {'english', 'spanish', 'french', 'german', 'italian', 'portuguese', 'dutch'};
+      final lang = '${fast['language'] ?? ''}'.toLowerCase();
+      if (lang.isNotEmpty && !easy.contains(lang)) {
+        final better = await server(VoiceEngine.accuratePort, 'auto');
+        if (better != null && '${better['text'] ?? ''}'.trim().isNotEmpty) return '${better['text']}'.trim();
+      }
+      return '${fast['text'] ?? ''}'.trim();
+    }
+    final model = speech.sttModelPath(sttModel);
+    if (model == null) throw StateError('Download a hearing model first (Settings → Voice & hearing), or start Live voice.');
+    return speech.transcribe(wavPath, modelPath: model, language: sttModel.contains('.en') ? 'en' : 'auto');
   }
 
   /// Starts the live voice engine, first refreshing its script from this version of the app.
@@ -779,6 +839,7 @@ class AppState extends ChangeNotifier {
     voiceLanguage = await db.setting('voice.language') ?? 'auto';
     thinkingSound = await db.setting('voice.thinking') ?? 'keyboard';
     ambientSound = await db.setting('voice.ambient') ?? 'none';
+    voiceOtherModel = await db.setting('voice.otherModel') ?? '';
     for (final r in await db.all('settings', where: "key LIKE 'voice.voice.%'", orderBy: 'key')) {
       voiceChoice['${r['key']}'.substring(12)] = '${r['value']}';
     }
@@ -825,7 +886,9 @@ class AppState extends ChangeNotifier {
     final system = mode == 'owner' ? Persona.ownerSystem('${agent?['name'] ?? 'Ava'}', user?.name.split(' ').first ?? 'the owner') : '${Persona.callerSystem(agent)} Reply in the caller’s language.';
     final speak = _languageNames[lang];
     return '$system This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
-        'If there are many items, say the three or four most useful ones and ask if they want to hear more.'
+        'If there are many items, say the three or four most useful ones and ask if they want to hear more. '
+        'The person’s words come from speech recognition and may contain mis-heard words: work out what they most likely meant and answer that; never repeat their words back. '
+        'Only state facts you were given; if you don’t know, say you will check and take a message.'
         '${speak == null ? ' Always reply in the language the person speaks.' : ' The person is speaking $speak: reply only in $speak${lang == 'en' ? '' : ', and say names of dishes, products and places in $speak too (translate or write them in $speak script), because the voice can only read $speak'}.'}';
   }
 
@@ -911,7 +974,12 @@ class AppState extends ChangeNotifier {
       final agent = (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
       // A call is starting: load the model and its instructions while the greeting plays.
       final m = req.uri.queryParameters['mode'] == 'owner' ? 'owner' : 'caller';
+      final l = req.uri.queryParameters['lang'] ?? voiceLanguage;
+      // The main AI for English (and for detecting); the multilingual one too when a language is chosen.
       unawaited(prewarm([ChatMessage('system', await _voiceSystem(m))], scopes: _voiceScopes(m)).catchError((_) {}));
+      if (l != 'auto' && l != 'en' && voiceTarget(l) != null) {
+        unawaited(prewarm([ChatMessage('system', await _voiceSystem(m, l))], scopes: _voiceScopes(m), target: voiceTarget(l), useTools: false).catchError((_) {}));
+      }
       return json(200, {'greeting': Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound});
     }
     if (path == '/v1/models') {
@@ -1008,6 +1076,7 @@ class AppState extends ChangeNotifier {
     });
     var sent = '';
     var filled = false, capped = false;
+    final t0 = DateTime.now();
     // Something to hear while a slow answer (or a tool) is on its way, like a person saying "let me check".
     void fill() {
       if (filled || sent.isNotEmpty || gone) return;
@@ -1019,6 +1088,8 @@ class AppState extends ChangeNotifier {
     try {
       final full = await agentReply(
         messages,
+        target: voiceTarget(lang),
+        useTools: voiceTarget(lang) is! LocalTarget,
         cancelled: () => gone,
         scopes: scopes,
         approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later
@@ -1050,13 +1121,24 @@ class AppState extends ChangeNotifier {
       }
     } catch (e) {
       chunk({'content': ' Sorry, I had a problem answering that.'});
+      sent += ' [error: $e]';
     }
     ping.cancel();
     slow.cancel();
+    _logVoiceTurn(mode, lang, convo.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content, sent, t0, gone && !capped);
     try {
       chunk({}, finish: 'stop');
       res.write('data: [DONE]\n\n');
       await res.close();
+    } catch (_) {}
+  }
+
+  /// Every live voice turn, for checking how the assistant did (kept on this computer).
+  void _logVoiceTurn(String mode, String lang, String heard, String said, DateTime t0, bool dropped) {
+    try {
+      File(p.join(p.dirname(db.path), 'voice-turns.jsonl')).writeAsStringSync(
+          '${jsonEncode({'at': t0.toIso8601String(), 'mode': mode, 'lang': lang, 'heard': heard, 'said': said, 'ms': DateTime.now().difference(t0).inMilliseconds, if (dropped) 'dropped': true})}\n',
+          mode: FileMode.append);
     } catch (_) {}
   }
 

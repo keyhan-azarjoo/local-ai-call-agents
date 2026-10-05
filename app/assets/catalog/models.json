@@ -31,6 +31,13 @@
       "note": "Answers straight away — great for calls on 8–16 GB machines."
     },
     {
+      "id": "aya-expanse:8b",
+      "name": "Aya Expanse 8B (many languages)",
+      "sizeGb": 5.1,
+      "params": 8,
+      "note": "Made for 23 languages — the most natural Persian, Arabic, Turkish and Hindi of the local models."
+    },
+    {
       "id": "qwen3:4b",
       "name": "Qwen3 4B (thinking)",
       "sizeGb": 2.5,

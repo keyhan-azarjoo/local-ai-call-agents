@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
 
@@ -136,6 +137,9 @@ class _LiveTalkState extends State<LiveTalk> {
       });
       await r.connect(v.livekitUrl, token);
       await r.localParticipant?.setMicrophoneEnabled(true);
+      _started = DateTime.now();
+      _app = s;
+      lines.clear();
       if (mounted) setState(() => phase = 'live');
     } catch (e) {
       await _end();
@@ -146,6 +150,7 @@ class _LiveTalkState extends State<LiveTalk> {
   Future<void> _end({bool update = true}) async {
     final r = room;
     room = null;
+    if (r != null && _app != null) unawaited(_save(_app!));
     await sub?.cancel();
     sub = null;
     await receiver?.dispose();
@@ -163,6 +168,27 @@ class _LiveTalkState extends State<LiveTalk> {
         muted = false;
       });
     }
+  }
+
+  DateTime? _started;
+  AppState? _app; // kept so the conversation can be saved even while the page closes
+
+  /// Each live conversation is kept in Calls (as a test call from this computer).
+  Future<void> _save(AppState s) async {
+    final convo = [for (final l in lines.values) if (l.text.trim().isNotEmpty) {'who': l.who, 'text': l.text}];
+    if (convo.where((l) => l['who'] == 'you').isEmpty) return;
+    final started = _started ?? DateTime.now();
+    await s.db.insert('calls', {
+      'direction': 'test',
+      'name': widget.mode == 'caller' ? 'Live test call' : 'Live instructions',
+      'number': '',
+      'line': 'This computer · ${s.voiceLanguage}',
+      'started_at': started.millisecondsSinceEpoch,
+      'duration_s': DateTime.now().difference(started).inSeconds,
+      'outcome': 'Test',
+      'summary': convo.firstWhere((l) => l['who'] == 'you')['text'],
+      'transcript': jsonEncode(convo),
+    });
   }
 
   Future<void> _mute() async {
@@ -299,7 +325,14 @@ class _LiveTalkState extends State<LiveTalk> {
                   Muted('While thinking'),
                   _menu(context, s.thinkingSound, soundOptions, live || busy ? null : (v) => s.setVoiceSetting('thinking', v)),
                   const SizedBox(width: 6),
-                  Muted('Background'),
+                  Muted('AI for other languages'),
+                _menu(context, s.voiceOtherModel, {
+                  '': 'Automatic${s.otherLanguageModel != null && s.voiceOtherModel.isEmpty ? ' (${s.otherLanguageModel})' : ''}',
+                  for (final m in s.installedModels) m.name: m.name,
+                  if (s.cloud != null) 'cloud': 'Cloud AI (best quality)',
+                }, live || busy ? null : (v) => s.setVoiceSetting('otherModel', v)),
+                const SizedBox(width: 6),
+                Muted('Background'),
                   _menu(context, s.ambientSound, ambientOptions, live || busy ? null : (v) => s.setVoiceSetting('ambient', v)),
                 ],
               ),

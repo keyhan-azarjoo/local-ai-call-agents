@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
+import 'package:record/record.dart';
 
 import '../../services/agent_loop.dart';
 import '../../services/tool_results.dart';
@@ -22,6 +25,8 @@ class ChatPage extends StatefulWidget {
 
 class _ChatPageState extends State<ChatPage> {
   final input = TextEditingController();
+  final recorder = AudioRecorder();
+  bool recording = false, hearing = false;
   final focus = FocusNode();
   final scroll = ScrollController();
   List<Map<String, Object?>> chats = [];
@@ -96,6 +101,7 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   void dispose() {
+    recorder.dispose();
     focus.dispose();
     super.dispose();
   }
@@ -134,6 +140,36 @@ class _ChatPageState extends State<ChatPage> {
     await s.db.delete('chats', id);
     if (chatId == id) _new();
     await _loadChats();
+  }
+
+  /// Voice message: tap to record, tap again to send. It is written out and sent like a typed message.
+  Future<void> _voice() async {
+    if (recording) {
+      final path = await recorder.stop();
+      setState(() {
+        recording = false;
+        hearing = true;
+      });
+      try {
+        if (path == null) return;
+        final text = await s.transcribeVoiceNote(path);
+        if (text.isEmpty) return s.toast('I didn’t catch that. Try again a little closer to the microphone.');
+        input.text = '🎤 $text';
+        await _send();
+      } catch (e) {
+        s.toast('$e');
+      } finally {
+        if (mounted) setState(() => hearing = false);
+      }
+      return;
+    }
+    if (busy || hearing) return;
+    if (!await recorder.hasPermission()) {
+      return s.toast('Microphone access was refused. Allow it in System Settings → Privacy → Microphone.');
+    }
+    final path = p.join(Directory.systemTemp.path, 'll_note_${DateTime.now().millisecondsSinceEpoch}.wav');
+    await recorder.start(const RecordConfig(encoder: AudioEncoder.wav, sampleRate: 16000, numChannels: 1), path: path);
+    setState(() => recording = true);
   }
 
   Future<void> _send() async {
@@ -394,8 +430,24 @@ class _ChatPageState extends State<ChatPage> {
                   minLines: 1,
                   maxLines: 6,
                   style: const TextStyle(fontSize: 14.5),
-                  decoration: const InputDecoration(hintText: 'Message the AI…  (Enter to send, Shift+Enter for a new line)'),
+                  decoration: InputDecoration(
+                      hintText: recording
+                          ? 'Listening… tap the red button to send'
+                          : hearing
+                          ? 'Writing out your voice message…'
+                          : 'Message the AI, or tap the mic for a voice message…'),
                 ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: recording ? 'Stop and send' : 'Send a voice message',
+              child: IconButton.filled(
+                onPressed: busy || hearing ? null : _voice,
+                style: IconButton.styleFrom(backgroundColor: recording ? LL.red : LL.amber, foregroundColor: LL.navy, minimumSize: const Size(48, 48)),
+                icon: hearing
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: LL.navy))
+                    : Icon(recording ? Icons.stop_rounded : Icons.mic_none_rounded),
               ),
             ),
             const SizedBox(width: 8),

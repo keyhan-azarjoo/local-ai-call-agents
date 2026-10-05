@@ -179,6 +179,29 @@ class McpManager extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Read-only results reused for a few minutes: repeat questions are instant.
+  final _cache = <String, (DateTime, ({String text, bool isError}))>{};
+  static const cacheFor = Duration(minutes: 5);
+
+  static String _key(int id, String tool, Map<String, dynamic> args) {
+    final keys = args.keys.toList()..sort();
+    return '$id|$tool|${jsonEncode({for (final k in keys) k: args[k]})}';
+  }
+
+  /// Like [call], but a read-only result from the last few minutes is returned instantly.
+  Future<({String text, bool isError})> callCached(int id, String tool, Map<String, dynamic> args, {required bool readOnly}) async {
+    if (!readOnly) {
+      _cache.removeWhere((k, _) => k.startsWith('$id|')); // data may have changed
+      return call(id, tool, args);
+    }
+    final k = _key(id, tool, args);
+    final hit = _cache[k];
+    if (hit != null && DateTime.now().difference(hit.$1) < cacheFor) return hit.$2;
+    final r = await call(id, tool, args);
+    if (!r.isError) _cache[k] = (DateTime.now(), r);
+    return r;
+  }
+
   /// Runs a tool, reconnecting (and refreshing the login) if needed.
   Future<({String text, bool isError})> call(int id, String tool, Map<String, dynamic> args) async {
     var session = _sessions[id];

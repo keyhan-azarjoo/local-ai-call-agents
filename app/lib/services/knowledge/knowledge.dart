@@ -12,7 +12,10 @@ import 'chunker.dart';
 import 'extract.dart';
 
 class KnowledgeHit {
-  KnowledgeHit(this.chunkId, this.sourceId, this.file, this.heading, this.page, this.text, this.score);
+  KnowledgeHit(this.chunkId, this.sourceId, this.file, this.heading, this.page, this.text, this.score, {this.keyword = false});
+
+  /// Also matched by exact words (not only by meaning).
+  final bool keyword;
   final int chunkId, sourceId;
   final String file;
   final String? heading;
@@ -259,7 +262,12 @@ class KnowledgeService extends ChangeNotifier {
       error = 'larger than 60 MB';
     } else {
       try {
-        chunks = Chunker().chunk(await TextExtractor.extract(f.path));
+        // Data snapshots from tools: small chunks (about one record each) so a search returns exact rows.
+        final isData = f.path.contains('${Platform.pathSeparator}mcp${Platform.pathSeparator}');
+        final sections = await TextExtractor.extract(f.path);
+        chunks = isData
+            ? Chunker(target: 300, max: 700, overlap: 0).chunk([for (final x in sections) Section(x.text, page: x.page, table: true)])
+            : Chunker().chunk(sections);
       } catch (e) {
         error = '$e';
       }
@@ -390,6 +398,78 @@ class KnowledgeService extends ChangeNotifier {
     _vecs = v;
   }
 
+  // ---------------- tools by meaning ----------------
+
+  final _toolVecs = <String, Float32List>{};
+  Float32List? _lastQueryVec;
+  String? _lastQuery;
+
+  /// Query vector, cached so documents and tools share one embedding call.
+  Future<Float32List?> queryVector(String q) async {
+    if (q == _lastQuery && _lastQueryVec != null) return _lastQueryVec;
+    try {
+      final v = (await _embed(['task: search result | query: $q'])).first;
+      _lastQuery = q;
+      _lastQueryVec = v;
+      return v;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Embeds tool descriptions once (cached by text), so a question can find
+  /// the right tool even with typos or different words ("staff" → list_users).
+  bool _toolVecsLoaded = false;
+
+  Future<void> indexTools(Map<String, String> toolTexts) async {
+    if (!_toolVecsLoaded) {
+      // Saved from earlier runs: no re-embedding after a restart.
+      for (final r in await db.raw.rawQuery('SELECT text, vec FROM tool_vecs')) {
+        final b = r['vec'] as Uint8List;
+        _toolVecs[r['text'] as String] = Float32List.fromList(b.buffer.asFloat32List(b.offsetInBytes, b.lengthInBytes ~/ 4));
+      }
+      _toolVecsLoaded = true;
+    }
+    final missing = toolTexts.entries.where((e) => !_toolVecs.containsKey(e.value)).toList();
+    if (missing.isEmpty) return;
+    try {
+      final v = await _embed([for (final e in missing) 'title: ${e.key} | text: ${e.value}']);
+      await db.raw.transaction((tx) async {
+        for (var i = 0; i < missing.length; i++) {
+          _toolVecs[missing[i].value] = v[i];
+          await tx.rawInsert('INSERT OR REPLACE INTO tool_vecs(text, vec) VALUES (?, ?)', [missing[i].value, v[i].buffer.asUint8List()]);
+        }
+      });
+    } catch (_) {}
+  }
+
+  /// Returns tool keys ordered by meaning, best first.
+  /// Tools that clearly match: at least [minScore] and close to the best match.
+  Future<List<String>> rankTools(String query, Map<String, String> toolTexts, {int k = 6, double minScore = 0.30, double window = 0.08}) async {
+    final all = await rankToolsScored(query, toolTexts, k: k);
+    if (all.isEmpty) return [];
+    final best = all.first.$2;
+    return [for (final e in all) if (e.$2 >= minScore && e.$2 >= best - window) e.$1];
+  }
+
+  Future<List<(String, double)>> rankToolsScored(String query, Map<String, String> toolTexts, {int k = 6}) async {
+    await indexTools(toolTexts);
+    final q = await queryVector(query);
+    if (q == null) return [];
+    final scored = <(String, double)>[];
+    for (final e in toolTexts.entries) {
+      final v = _toolVecs[e.value];
+      if (v == null || v.length != q.length) continue;
+      var dot = 0.0;
+      for (var i = 0; i < v.length; i++) {
+        dot += v[i] * q[i];
+      }
+      scored.add((e.key, dot));
+    }
+    scored.sort((a, b) => b.$2.compareTo(a.$2));
+    return scored.take(k).toList();
+  }
+
   // ---------------- prices ----------------
 
   /// Every line with a price in the given sources, de-duplicated, as written
@@ -427,8 +507,8 @@ class KnowledgeService extends ChangeNotifier {
     final vecScore = <int, double>{};
     if (_ids.isNotEmpty) {
       try {
-        final qv = (await _embed(['task: search result | query: $q'])).first;
-        if (qv.length == _dim) {
+        final qv = await queryVector(q);
+        if (qv != null && qv.length == _dim) {
           final scores = <(int, double)>[];
           for (var i = 0; i < _ids.length; i++) {
             if (allowed != null && !allowed.contains(_sources[i])) continue;
@@ -449,7 +529,17 @@ class KnowledgeService extends ChangeNotifier {
     }
 
     // Keyword side.
-    final words = RegExp(r'[\p{L}\p{N}]{2,}', unicode: true).allMatches(q.toLowerCase()).map((m) => '"${m.group(0)}"').toList();
+    const stop = {
+      'the', 'and', 'for', 'are', 'you', 'who', 'what', 'which', 'how', 'is', 'was', 'were', 'do', 'does', 'did', 'can', 'could',
+      'me', 'my', 'we', 'our', 'your', 'a', 'an', 'of', 'to', 'in', 'on', 'at', 'it', 'its', 'be', 'there', 'this', 'that', 'with',
+      'give', 'tell', 'show', 'please', 'have', 'has', 'any', 'all', 'about', 'from', 'many', 'much', 'list', 'role', 'name',
+    };
+    final words = RegExp(r'[\p{L}\p{N}]{2,}', unicode: true)
+        .allMatches(q.toLowerCase())
+        .map((m) => m.group(0)!)
+        .where((w) => !stop.contains(w))
+        .map((w) => '"$w"')
+        .toList();
     final ftsRank = <int, int>{};
     if (words.isNotEmpty) {
       final where = allowed == null ? '' : ' AND c.source_id IN (${allowed.isEmpty ? '-1' : allowed.join(',')})';
@@ -481,7 +571,7 @@ class KnowledgeService extends ChangeNotifier {
       for (final id in ids)
         if (byId[id] != null)
           KnowledgeHit(id, byId[id]!['source_id'] as int, byId[id]!['path'] as String, byId[id]!['heading'] as String?,
-              byId[id]!['page'] as int?, byId[id]!['text'] as String, vecScore[id] ?? 0),
+              byId[id]!['page'] as int?, byId[id]!['text'] as String, vecScore[id] ?? 0, keyword: ftsRank.containsKey(id)),
     ];
     return (hits: hits, ms: sw.elapsedMilliseconds);
   }

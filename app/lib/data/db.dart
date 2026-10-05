@@ -210,6 +210,9 @@ class Db {
     CREATE INDEX kn_chunks_file ON kn_chunks(file_id);
     CREATE VIRTUAL TABLE kn_fts USING fts5(text, heading, tokenize = 'unicode61 remove_diacritics 2')
     ''',
+    '''
+    CREATE TABLE tool_vecs(text TEXT PRIMARY KEY, vec BLOB NOT NULL)
+    ''',
   ];
 
   // ---------- settings ----------

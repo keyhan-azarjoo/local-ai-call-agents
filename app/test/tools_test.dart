@@ -54,4 +54,14 @@ void main() {
     expect(ToolLoop.ctxFor('x' * 30000, 32768), 16384);
     expect(ToolLoop.ctxFor('x' * 300000, 16384), 16384);
   });
+
+  test('typos and glued words still find the tool', () {
+    expect(ToolSelector.near('eusers', 'users'), isTrue);
+    expect(ToolSelector.near('elist', 'list'), isTrue);
+    expect(ToolSelector.near('usres', 'users'), isFalse); // swapped letters: 2 edits
+    expect(ToolSelector.near('scale', 'scales'), isTrue);
+    expect(ToolSelector.near('cat', 'cats'), isFalse); // too short to guess
+    final tools = [tool('list_users', 'List users. Read-only.'), tool('list_orders', 'List orders. Read-only.')];
+    expect(ToolSelector.rank('give me th elist of th eusers', tools, 1).single.tool.name, 'list_users');
+  });
 }

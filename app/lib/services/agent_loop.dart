@@ -302,6 +302,32 @@ class ToolSelector {
           if (w.length >= 2 && (keepCommon || !_stop.contains(w))) _stem(w)
       };
 
+  /// Same word allowing one typo, or one word inside the other ("elist" ~ "list").
+  static bool near(String a, String b) {
+    if (a.length < 4 || b.length < 4) return false;
+    if (a.contains(b) || b.contains(a)) return (a.length - b.length).abs() <= 2;
+    if ((a.length - b.length).abs() > 1) return false;
+    // Levenshtein distance ≤ 1.
+    var i = 0, j = 0, edits = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] == b[j]) {
+        i++;
+        j++;
+        continue;
+      }
+      if (++edits > 1) return false;
+      if (a.length > b.length) {
+        i++;
+      } else if (b.length > a.length) {
+        j++;
+      } else {
+        i++;
+        j++;
+      }
+    }
+    return edits + (a.length - i) + (b.length - j) <= 1;
+  }
+
   static double score(Set<String> q, Set<String> verbs, ToolBinding b) {
     final name = words(b.tool.name.replaceAll('_', ' '), keepCommon: true);
     final title = words(b.tool.title ?? '');
@@ -309,7 +335,11 @@ class ToolSelector {
     final server = words(b.serverName);
     var sc = 0.0;
     for (final w in q) {
-      if (name.contains(w)) sc += 4;
+      if (name.contains(w)) {
+        sc += 4;
+      } else if (name.any((t) => near(w, t))) {
+        sc += 3; // typo or glued word ("eusers" → "users")
+      }
       if (title.contains(w)) sc += 2;
       if (desc.contains(w)) sc += 1;
       if (server.contains(w)) sc += .5;
@@ -326,7 +356,7 @@ class ToolSelector {
     final q = words(query);
     final all = words(query, keepCommon: true);
     final verbs = {
-      if (all.contains('list') || all.contains('show') || all.contains('all')) ...['list', 'query'],
+      if (all.any((w) => w == 'list' || near(w, 'list')) || all.contains('show') || all.contains('all')) ...['list', 'query'],
       if (all.contains('how') && all.contains('many') || all.contains('count') || all.contains('number')) ...['count', 'query'],
       if (all.contains('get') || all.contains('find') || all.contains('detail')) ...['get', 'find', 'search'],
     };
@@ -348,21 +378,18 @@ class ToolLoop {
 
   static const maxRounds = 12;
 
+  /// Plans and helper agents only for clearly multi-step requests (keeps the prompt short).
+  static bool looksMultiStep(String q) =>
+      q.length > 70 && RegExp(r'\b(and then|each|every|report|summar|compare|plan|step|for all|both)\b', caseSensitive: false).hasMatch(q);
+
   /// Added to the system prompt whenever tools are offered.
-  static const toolRules = 'Rules for tool results: '
-      '1) Never guess names or details that a result does not contain. If a result only has IDs (for example groupIds), '
-      'look them up with another tool or show the ID. '
-      '2) Always present the data you received. If a note says some items did not fit, still list the ones shown, '
-      'then say how many more exist. '
-      '3) If the user asks for a list, list every item on one short line each (for example "1. Name — Group"), '
-      'no blank lines or sub-bullets, then add the totals. '
-      '4) For counts, use the "Totals" line from the result exactly; never count by yourself. '
-      '5) Inputs: use ids from earlier results (never names where an id is asked); write dates as YYYY-MM-DD. '
-      '6) If a tool returns an error, read it, fix the inputs and try once more; if it still fails, explain the problem simply. '
-      '7) For any prices, totals or other arithmetic, call calculate (e.g. "2*16 + 3.95"); never add up in your head. '
-      '8) Write money as digits with the currency sign (e.g. £21.50), never in words; the voice reads it naturally. '
-      '9) For requests with several steps, call update_plan first and keep it updated; for independent parts, use delegate '
-      'so helper agents work in parallel.';
+  static const toolRules = 'Tool rules: for a specific fact, the reference notes (data snapshots a few minutes old) are enough — answer from them. '
+      'For a full list or a count, use a COMPLETE list in the notes if there is one; otherwise call the list or count tool. '
+      'Never say you have no access before trying the tools. '
+      'Never guess names, ids or numbers; reuse ids from results. '
+      'Show the data you got; if a note says items are missing, say so. Use the Totals line for counts and calculate for sums. '
+      'Lists: one short line per item ("1. Name — Group"), no sub-bullets or ids unless asked. '
+      'Write money as £21.50 and dates as YYYY-MM-DD. If a tool fails, fix the input and retry once.';
 
   Future<String> run({
     required ModelTarget target,
@@ -374,11 +401,14 @@ class ToolLoop {
     void Function(String textSoFar)? onText,
     int depth = 0,
     Set<String> knownIds = const {},
+    List<ToolBinding> preferred = const [],
+    List<String>? sticky,
+    bool warmOnly = false,
   }) async {
     final byName = {for (final t in tools) t.fnName: t};
 
     // Only the most relevant tools are offered; find_tools reaches the rest.
-    final limit = target is LocalTarget ? 10 : 40;
+    final limit = target is LocalTarget ? 6 : 40;
     final resultLimit = switch (target) {
       LocalTarget t => t.maxCtx >= 16384 ? 14000 : 7000,
       CloudTarget _ => 40000,
@@ -397,9 +427,12 @@ class ToolLoop {
     String q(String c) => c.contains('\n\nQuestion: ') ? c.substring(c.lastIndexOf('\n\nQuestion: ') + 12) : c;
     final lastUser = q(messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content);
     final recent = messages.where((m) => m.role == 'user').toList().reversed.take(3).map((m) => q(m.content)).join(' ');
-    final active = <ToolBinding>[
-      ...ToolSelector.rank(lastUser, tools, limit),
-    ];
+    // Tools matched by meaning (embeddings) first, then by words.
+    final active = <ToolBinding>[...preferred.where(tools.contains).take(limit ~/ 2)];
+    for (final t in ToolSelector.rank(lastUser, tools, limit)) {
+      if (active.length >= limit) break;
+      if (!active.contains(t)) active.add(t);
+    }
     if (active.length < 4) {
       for (final t in ToolSelector.rank(recent, tools, limit)) {
         if (!active.contains(t)) active.add(t);
@@ -410,7 +443,7 @@ class ToolLoop {
         ..clear()
         ..addAll(tools);
     }
-    final finder = tools.length > active.length
+    final finder = tools.length > 6
         ? ToolBinding(
             serverId: -1,
             serverName: 'LocalAILine',
@@ -418,24 +451,38 @@ class ToolLoop {
             tool: McpTool(
               name: 'find_tools',
               readOnly: true,
-              description: 'Search the user’s connected tools by keywords (${tools.length} available from '
-                  '${tools.map((t) => t.serverName).toSet().join(', ')}). Use it when none of the offered tools fit. '
-                  'Matching tools become available to call.',
+              description: 'Find more of the user’s tools (${tools.length} in ${tools.map((t) => t.serverName).toSet().join(', ')}) by keywords.',
               inputSchema: {
                 'type': 'object',
                 'properties': {
-                  'query': {'type': 'string', 'description': 'What you need, e.g. "list users" or "job weight"'}
+                  'query': {'type': 'string'}
                 },
                 'required': ['query'],
               },
             ),
           )
         : null;
+    // Order matters for speed: the model keeps what it has read, so stable
+    // things go first (built-ins, then tools already used in this chat), new
+    // tools are appended, and the occasional plan/helper tools come last.
+    final mcpOffered = <ToolBinding>[
+      if (sticky != null)
+        for (final name in sticky)
+          if (byName[name] != null) byName[name]!,
+    ];
+    for (final t in active) {
+      if (!mcpOffered.contains(t)) mcpOffered.add(t);
+    }
+    if (sticky != null) {
+      sticky
+        ..clear()
+        ..addAll(mcpOffered.take(12).map((t) => t.fnName));
+    }
     final offered = <ToolBinding>[
-      ...active,
-      ?finder,
       calculator,
-      if (tools.isNotEmpty && depth == 0) ...[planTool, delegateTool],
+      ?finder,
+      ...mcpOffered.take(12),
+      if (tools.isNotEmpty && depth == 0 && looksMultiStep(lastUser)) ...[planTool, delegateTool],
     ];
     var plan = <Map<String, dynamic>>[];
     var planNudges = 0;
@@ -522,7 +569,7 @@ class ToolLoop {
       if (name == 'find_tools') {
         final found = ToolSelector.rank('${args['query'] ?? ''}', tools, 8);
         for (final f in found) {
-          if (!offered.contains(f)) offered.insert(offered.indexOf(finder!), f);
+          if (!offered.contains(f)) offered.insert(offered.contains(planTool) ? offered.indexOf(planTool) : offered.length, f);
         }
         return (
           found.isEmpty
@@ -533,14 +580,14 @@ class ToolLoop {
       }
       final b = byName[name];
       if (b == null) return ('Unknown tool $name. Use find_tools to search.', true);
-      if (!offered.contains(b)) offered.insert(offered.indexOf(finder ?? calculator), b);
+      if (!offered.contains(b)) offered.insert(offered.contains(planTool) ? offered.indexOf(planTool) : offered.length, b);
       // Check the model's inputs first; don't send the server something it will reject.
       bool hasLookup(String entity) => ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).isNotEmpty;
       final prepared = ToolArgs.prepare(b.tool.inputSchema, args,
           toolName: b.fnName,
           looksWrongId: (k, v) => ids.looksWrong(v, canLookUp: hasLookup(ToolArgs.entityOf(k))), lookupToolFor: (entity) {
         final t = ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).firstOrNull;
-        if (t != null && !offered.contains(t)) offered.insert(offered.indexOf(finder ?? calculator), t);
+        if (t != null && !offered.contains(t)) offered.insert(offered.contains(planTool) ? offered.indexOf(planTool) : offered.length, t);
         return t?.fnName;
       });
       if (prepared.problem != null) {
@@ -612,6 +659,26 @@ class ToolLoop {
       return (fitted.text, false);
     }
 
+    if (warmOnly) {
+      if (target is LocalTarget) {
+        final fns = offered.map(_fn).toList();
+        final msgs = [for (final m in messages) m.toJson()];
+        final baseCtx = target.maxCtx < 16384 ? target.maxCtx : 16384;
+        final need = ctxFor([msgs, fns], target.maxCtx);
+        try {
+          await _post('${target.base}/api/chat', {}, {
+            'model': target.model,
+            'messages': msgs,
+            if (fns.isNotEmpty) 'tools': fns,
+            'stream': false,
+            'keep_alive': -1,
+            'think': ?(target.disableThinking ? false : null),
+            'options': {'num_ctx': need > baseCtx ? need : baseCtx, 'num_predict': 0},
+          });
+        } catch (_) {}
+      }
+      return '';
+    }
     return switch (target) {
       LocalTarget t => _ollama(t, messages, offered, exec, nudge, onText),
       CloudTarget t => switch (t.config.provider) {
@@ -652,7 +719,7 @@ class ToolLoop {
   }
 
   static String _describe(ToolBinding b) =>
-      '${b.tool.description.isEmpty ? b.tool.name : _short(b.tool.description, 600)} (from ${b.serverName}${b.tool.readOnly ? '' : '; changes data, the user must approve'})';
+      '${b.tool.description.isEmpty ? b.tool.name : _short(b.tool.description, 160)} (from ${b.serverName}${b.tool.readOnly ? '' : '; changes data, the user must approve'})';
 
   /// Same schema, with long property descriptions shortened and noise removed.
   static Object? compactSchema(Object? s) {
@@ -661,7 +728,7 @@ class ToolLoop {
     return {
       for (final e in s.entries)
         if (e.key != r'$schema' && e.key != 'title' && e.key != 'examples')
-          e.key: e.key == 'description' && e.value is String ? _short(e.value as String, 200) : compactSchema(e.value),
+          e.key: e.key == 'description' && e.value is String ? _short(e.value as String, 80) : compactSchema(e.value),
     };
   }
 

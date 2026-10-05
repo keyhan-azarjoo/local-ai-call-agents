@@ -11,6 +11,7 @@ import '../../services/system.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
+import 'devices_section.dart';
 import 'main_pages.dart' show Rows;
 
 /// A field in [formDialog]: free text, secret, or a fixed set of options.
@@ -642,14 +643,8 @@ class DevicesPage extends StatelessWidget {
   const DevicesPage({super.key});
   @override
   Widget build(BuildContext context) => const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        PageHead('Paired devices', description: 'Use your phone to get ring alerts, listen in and take over calls.'),
-        Panel(
-          child: EmptyState(
-            icon: Icons.smartphone_outlined,
-            title: 'No devices paired',
-            body: 'Install LocalAILine on your Android or iOS phone and pair it with this computer. Pairing arrives with the companion app.',
-          ),
-        ),
+        PageHead('Paired devices', description: 'Phones and other computers connected to this one. Calls ring there first.'),
+        PhonesSection(),
       ]);
 }
 

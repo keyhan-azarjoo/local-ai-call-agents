@@ -168,6 +168,17 @@ class Db {
     ALTER TABLE mcp_servers ADD COLUMN tools TEXT;
     ALTER TABLE mcp_servers ADD COLUMN error TEXT
     ''',
+    '''
+    CREATE TABLE devices(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      last_seen INTEGER,
+      ring INTEGER NOT NULL DEFAULT 1
+    )
+    ''',
   ];
 
   // ---------- settings ----------

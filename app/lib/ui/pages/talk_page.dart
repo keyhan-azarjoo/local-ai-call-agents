@@ -8,6 +8,7 @@ import 'package:record/record.dart';
 
 import '../../services/agent_loop.dart';
 import '../../services/ollama.dart';
+import '../../services/persona.dart';
 import '../../services/speech.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
@@ -69,18 +70,12 @@ class _TalkPageState extends State<TalkPage> {
     history.clear();
     saved = false;
     if (mode == TalkMode.caller) {
-      history.add(ChatMessage('system',
-          '${agent?['instructions'] ?? ''}\nYour name is $name. You are on a phone call with a caller. Reply in ${agent?['language'] ?? 'English'}. Keep replies short and spoken — no lists, no markdown.'));
-      final greeting = (agent?['greeting'] as String?) ?? 'Hello, how can I help?';
-      history.add(ChatMessage('assistant', greeting));
+      history.addAll(Persona.callerStart(agent));
+      final greeting = Persona.greeting(agent);
       turns.add(_Turn('ai', greeting, meta: 'greeting'));
       if (voiceOn) _say(greeting);
     } else {
-      history.add(ChatMessage('system',
-          'You are $name, the personal AI phone assistant of $owner inside the LocalAILine app. $owner is talking to you directly. '
-          'Be brief and helpful. You can make phone calls for $owner. When $owner asks you to call someone, reply with one short confirmation '
-          'sentence, then on the last line write exactly: CALL_TASK {"to": "<who>", "number": "<phone number or empty>", "goal": "<what to achieve>"}. '
-          'Never write CALL_TASK unless asked to make a call.'));
+      history.add(ChatMessage('system', Persona.ownerSystem(name, owner)));
       turns.add(_Turn('ai', 'Hi $owner. What would you like me to do? For example: “Call Riverside Dental and move my check-up to next week.”'));
     }
     if (mounted) setState(() {});

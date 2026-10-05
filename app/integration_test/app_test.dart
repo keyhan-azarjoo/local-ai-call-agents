@@ -49,8 +49,8 @@ void main() {
     await settle(t);
 
     // ---- Setup wizard ----
-    await waitFor(t, find.text('Start setup'));
-    await tapText(t, 'Start setup');
+    await waitFor(t, find.text('Set up this computer'));
+    await tapText(t, 'Set up this computer');
     final fields = find.byType(TextField);
     await t.enterText(fields.at(0), 'Keyhan Azarjoo');
     await t.enterText(fields.at(1), 'keyhan');

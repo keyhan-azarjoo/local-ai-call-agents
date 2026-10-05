@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/auth.dart';
 import '../state/app_state.dart';
 import '../theme/tokens.dart';
+import 'companion.dart';
 import 'pages/engine_pages.dart' show EngineSetupPanel;
 import 'widgets.dart';
 
@@ -65,6 +66,7 @@ class _SetupWizardState extends State<SetupWizard> {
   static const steps = ['Welcome', 'Create your account', 'Set up the AI', 'Connect your phone line', 'Try it'];
   int step = 0;
   User? owner;
+  bool companion = AppState.isPhone;
 
   final name = TextEditingController();
   final username = TextEditingController();
@@ -96,6 +98,7 @@ class _SetupWizardState extends State<SetupWizard> {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
+    if (companion) return CompanionSetup(onBack: () => setState(() => companion = false));
     return _FullScreen(
       side: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const Brand(),
@@ -156,7 +159,12 @@ class _SetupWizardState extends State<SetupWizard> {
           _Point(Icons.record_voice_over_outlined, 'Speaks', 'Natural voices, no cloud'),
         ]),
         const SizedBox(height: 24),
-        Btn('Start setup', kind: BtnKind.primary, large: true, onPressed: _next),
+        Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Btn('Set up this computer', kind: BtnKind.primary, large: true, onPressed: _next),
+          Btn('Connect to my LocalAILine computer', icon: Icons.smartphone_outlined, large: true, onPressed: () => setState(() => companion = true)),
+        ]),
+        const SizedBox(height: 10),
+        const Muted('Already running LocalAILine on another computer (like a Mac mini)? Connect this device to it to answer and manage calls here.'),
       ]);
 
   Widget _account() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

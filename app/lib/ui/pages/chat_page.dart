@@ -26,6 +26,11 @@ class _ChatPageState extends State<ChatPage> {
   List<Map<String, Object?>> chats = [];
   int? chatId;
   final messages = <ChatMessage>[];
+
+  /// Stable identity per message so inserting tool notes doesn't shift others.
+  final _keys = Expando<Key>();
+  int _nextKey = 0;
+  Key _keyOf(ChatMessage m) => _keys[m] ??= ValueKey('m${_nextKey++}');
   String? model;
   bool busy = false;
   int toolCount = 0;
@@ -43,15 +48,6 @@ class _ChatPageState extends State<ChatPage> {
     super.initState();
     _loadChats();
     s.toolsFor(_scopes).then((t) => mounted ? setState(() => toolCount = t.length) : null);
-  }
-
-  /// Repaints the elapsed seconds while the AI works.
-  void _tick() {
-    Future.delayed(const Duration(seconds: 1), () {
-      if (!mounted || !busy) return;
-      setState(() {});
-      _tick();
-    });
   }
 
   Future<bool> _approve(ToolBinding b, Map<String, dynamic> args) async =>
@@ -139,7 +135,6 @@ class _ChatPageState extends State<ChatPage> {
     unawaited(_loadChats()); // show the new chat in the list straight away
     started = DateTime.now();
     progress = 'Thinking…';
-    _tick();
     final user = ChatMessage('user', text);
     final reply = ChatMessage('assistant', '');
     setState(() {
@@ -298,11 +293,16 @@ class _ChatPageState extends State<ChatPage> {
                   controller: scroll,
                   padding: const EdgeInsets.all(20),
                   itemCount: messages.length,
+                  findChildIndexCallback: (key) {
+                    final i = messages.indexWhere((m) => _keyOf(m) == key);
+                    return i < 0 ? null : i;
+                  },
                   itemBuilder: (_, i) {
                     final m = messages[i];
-                    if (m.role == 'tool') return ToolNote(m.content);
+                    if (m.role == 'tool') return ToolNote(m.content, key: _keyOf(m));
                     final mine = m.role == 'user';
                     return Align(
+                      key: _keyOf(m),
                       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
                       child: Container(
                         constraints: const BoxConstraints(maxWidth: 680),
@@ -326,7 +326,7 @@ class _ChatPageState extends State<ChatPage> {
             child: Row(children: [
               const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6)),
               const SizedBox(width: 8),
-              Expanded(child: Muted('$progress · ${DateTime.now().difference(started ?? DateTime.now()).inSeconds} s')),
+              Expanded(child: _Elapsed(label: progress!, since: started ?? DateTime.now())),
             ]),
           ),
         Container(
@@ -378,46 +378,87 @@ class _ChatPageState extends State<ChatPage> {
 }
 
 /// One tool call shown in the conversation (tap to see input and result).
-class ToolNote extends StatelessWidget {
+/// Keeps its open/closed state itself (no PageStorage, which clashed with the
+/// list's scroll position).
+class ToolNote extends StatefulWidget {
   const ToolNote(this.content, {super.key});
   final String content;
+  @override
+  State<ToolNote> createState() => _ToolNoteState();
+}
+
+class _ToolNoteState extends State<ToolNote> {
+  bool open = false;
 
   @override
   Widget build(BuildContext context) {
     Map<String, dynamic> j;
     try {
-      j = jsonDecode(content) as Map<String, dynamic>;
+      j = jsonDecode(widget.content) as Map<String, dynamic>;
     } catch (_) {
       return const SizedBox();
     }
     final ok = j['ok'] == true, denied = j['denied'] == true;
     final checked = '${j['result']}'.startsWith('The tool was not called because of its inputs');
+    final c = context.c;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: Material(
-          color: context.c.blueSoft,
-          borderRadius: BorderRadius.circular(10),
-          clipBehavior: Clip.antiAlias,
-          child: ExpansionTile(
-            dense: true,
-            tilePadding: const EdgeInsets.symmetric(horizontal: 12),
-            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            leading: Icon(denied ? Icons.block : checked ? Icons.info_outline : ok ? Icons.check_circle_outline : Icons.error_outline,
-                size: 18, color: denied || checked ? context.c.muted : ok ? LL.green : LL.red),
-            title: Text('${denied ? 'Not allowed' : checked ? 'Fixing inputs for' : ok ? 'Used' : 'Error from'} ${j['server']} › ${j['tool']}',
-                style: const TextStyle(fontFamily: LL.mono, fontSize: 12.5)),
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: SelectableText('Input: ${jsonEncode(j['args'])}\n\nResult: ${j['result']}',
-                    style: const TextStyle(fontFamily: LL.mono, fontSize: 12)),
-              ),
-            ],
+      child: Container(
+        decoration: BoxDecoration(color: c.blueSoft, borderRadius: BorderRadius.circular(10)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => open = !open),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              child: Row(children: [
+                Icon(denied ? Icons.block : checked ? Icons.info_outline : ok ? Icons.check_circle_outline : Icons.error_outline,
+                    size: 18, color: denied || checked ? c.muted : ok ? LL.green : LL.red),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('${denied ? 'Not allowed' : checked ? 'Fixing inputs for' : ok ? 'Used' : 'Error from'} ${j['server']} › ${j['tool']}',
+                      style: const TextStyle(fontFamily: LL.mono, fontSize: 12.5)),
+                ),
+                Icon(open ? Icons.expand_less : Icons.expand_more, size: 18, color: c.muted),
+              ]),
+            ),
           ),
-        ),
+          if (open)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Text('Input: ${jsonEncode(j['args'])}\n\nResult: ${j['result']}',
+                  style: const TextStyle(fontFamily: LL.mono, fontSize: 12)),
+            ),
+        ]),
       ),
     );
   }
+}
+
+/// "Used … · 17 s": only this line repaints each second, not the conversation.
+class _Elapsed extends StatefulWidget {
+  const _Elapsed({required this.label, required this.since});
+  final String label;
+  final DateTime since;
+  @override
+  State<_Elapsed> createState() => _ElapsedState();
+}
+
+class _ElapsedState extends State<_Elapsed> {
+  late final Timer _t = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+
+  @override
+  void initState() {
+    super.initState();
+    _t;
+  }
+
+  @override
+  void dispose() {
+    _t.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Muted('${widget.label} · ${DateTime.now().difference(widget.since).inSeconds} s');
 }

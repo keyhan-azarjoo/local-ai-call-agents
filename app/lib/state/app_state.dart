@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:flutter/services.dart';
 
 import '../data/db.dart';
 import '../services/auth.dart';
@@ -20,6 +23,7 @@ import '../services/mcp/mcp_manager.dart';
 import '../services/persona.dart';
 import '../services/speech.dart';
 import '../services/system.dart';
+import '../services/voice_engine.dart';
 
 enum Gate { loading, setup, signIn, app, companion }
 
@@ -496,6 +500,7 @@ class AppState extends ChangeNotifier {
     List<String> earlier = const [],
     String? excludeFile,
     List<String>? sticky,
+    void Function(ToolBinding)? onToolStart,
   }) async {
     final tools = await toolsFor(scopes);
     messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile);
@@ -515,6 +520,7 @@ class AppState extends ChangeNotifier {
       target: modelTarget,
       preferred: preferred,
       sticky: sticky,
+      onToolStart: onToolStart,
       messages: messages,
       tools: tools,
       approve: approve,
@@ -544,6 +550,31 @@ class AppState extends ChangeNotifier {
   /// 'host' = this computer runs LocalAILine; 'companion' = connects to one.
   String? role;
   HostServer? host;
+
+  /// The live voice engine (LiveKit + Whisper + voice agent), host computers only.
+  VoiceEngine? voice;
+  String voiceLanguage = 'auto';
+
+  Future<void> setVoiceLanguage(String v) async {
+    voiceLanguage = v;
+    await db.setSetting('voice.language', v);
+    notifyListeners();
+  }
+
+  /// Starts the live voice engine, first refreshing its script from this version of the app.
+  Future<void> startVoice() async {
+    final v = voice!;
+    if (Directory(v.engineDir).existsSync()) {
+      final src = await rootBundle.loadString('assets/engine/localline_voice.py');
+      final f = File(v.script);
+      if (!f.existsSync() || f.readAsStringSync() != src) await f.writeAsString(src);
+    }
+    await v.start();
+  }
+
+  Future<void> installVoiceEngine() async {
+    await voice!.install(engineScript: await rootBundle.loadString('assets/engine/localline_voice.py'));
+  }
   HostClient? remote;
   String? remoteName;
 
@@ -685,7 +716,7 @@ class AppState extends ChangeNotifier {
     if (host?.running == true) return;
     role = 'host';
     await db.setSetting('app.role', 'host');
-    host = HostServer(db, hostName: deviceName, handlers: {
+    host = HostServer(db, hostName: deviceName, onEngineRequest: _engineRequest, handlers: {
       'status': (_, _) async => {
             'hostName': deviceName,
             'answering': answering,
@@ -715,8 +746,22 @@ class AppState extends ChangeNotifier {
     });
     await host!.start(port: port);
     host!.changes.listen((_) => notifyListeners());
+    voiceLanguage = await db.setting('voice.language') ?? 'auto';
+    voice = VoiceEngine(dataDir: p.dirname(db.path), appUrl: 'http://127.0.0.1:$port', appKey: host!.engineKey)..addListener(notifyListeners);
+    AppLifecycleListener(onExitRequested: () async {
+      await voice?.stop();
+      return AppExitResponse.exit;
+    });
     // Debug builds only: a fixed pairing code and an automatic test ring, for device testing.
     if (kDebugMode) {
+      // Debug builds only: install and/or start the live voice engine on launch, for testing.
+      final dv = Platform.environment['LOCALAILINE_DEV_VOICE'];
+      if (dv != null) {
+        unawaited(() async {
+          if (dv == 'install') await installVoiceEngine();
+          await startVoice();
+        }());
+      }
       final code = Platform.environment['LOCALAILINE_DEV_PAIRCODE'];
       if (code != null) {
         host!.newPairingCode();
@@ -731,6 +776,145 @@ class AppState extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  /// The voice engine's brain: an OpenAI-compatible chat endpoint backed by
+  /// Ava (documents, skills, tools, order totals, the chosen model). Model
+  /// "caller" = someone calling in; "owner" = you giving instructions.
+  Set<String> _voiceScopes(String mode) => mode == 'owner' ? {'me', 'contacts', 'all'} : {'all'};
+
+  Future<String> _voiceSystem(String mode) async {
+    final agent = (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
+    final system = mode == 'owner'
+        ? Persona.ownerSystem('${agent?['name'] ?? 'Ava'}', user?.name.split(' ').first ?? 'the owner')
+        : '${Persona.callerSystem(agent)} Reply in the caller’s language.';
+    return '$system This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis.';
+  }
+
+  /// Turns streamed reply text into something to say: no markdown, list items become sentences.
+  /// A trailing fragment that might still turn into markdown is held back.
+  static String spokenText(String t) {
+    t = t.split('CALL_TASK').first;
+    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\s+)$');
+    for (var held = t.replaceFirst(pending, ''); held != t; held = t.replaceFirst(pending, '')) {
+      t = held;
+    }
+    return t
+        .replaceAll(RegExp(r'\*\*|__|`'), '')
+        .replaceAll(RegExp(r'^[ \t]*([-*•]|\d+[.)]|#+)[ \t]+', multiLine: true), '')
+        .replaceAllMapped(RegExp(r'([^.!?:,;\s])[ \t]*\n\s*'), (m) => '${m[1]}. ')
+        .replaceAll(RegExp(r'[ \t]*\n\s*'), ' ');
+  }
+
+  Future<void> _engineRequest(HttpRequest req, String path) async {
+    final res = req.response;
+    Future<void> json(int code, Object body) async {
+      res
+        ..statusCode = code
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode(body));
+      await res.close();
+    }
+
+    if (path == '/api/voice-config') {
+      final agent = (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
+      // A call is starting: load the model and its instructions while the greeting plays.
+      final m = req.uri.queryParameters['mode'] == 'owner' ? 'owner' : 'caller';
+      unawaited(prewarm([ChatMessage('system', await _voiceSystem(m))], scopes: _voiceScopes(m)).catchError((_) {}));
+      return json(200, {'greeting': Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': await db.setting('voice.language') ?? 'auto'});
+    }
+    if (path == '/v1/models') return json(200, {'object': 'list', 'data': [{'id': 'caller', 'object': 'model'}, {'id': 'owner', 'object': 'model'}]});
+    if (path != '/v1/chat/completions') return json(404, {'error': 'not found'});
+
+    final body = jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>;
+    final mode = '${body['model'] ?? 'caller'}';
+    String textOf(Object? c) => c is String ? c : c is List ? c.map((p) => p is Map ? '${p['text'] ?? ''}' : '').join() : '';
+    final convo = [
+      for (final m in (body['messages'] as List? ?? []).cast<Map>())
+        if (m['role'] == 'user' || m['role'] == 'assistant') ChatMessage(m['role'] as String, textOf(m['content']))
+    ];
+
+    final scopes = _voiceScopes(mode);
+    final messages = [ChatMessage('system', await _voiceSystem(mode)), ...convo];
+    // A drafted call ("CALL_TASK {…}") is saved for review, never read aloud.
+    Future<void> saveTask(String t) async {
+      final m = RegExp(r'CALL_TASK\s*(\{.*\})').firstMatch(t);
+      if (m == null || mode != 'owner') return;
+      try {
+        final task = jsonDecode(m.group(1)!) as Map<String, dynamic>;
+        await db.insert('call_tasks', {
+          'to_name': task['to']?.toString(),
+          'number': (task['number']?.toString() ?? '').trim(),
+          'goal': task['goal']?.toString() ?? '',
+          'status': 'draft',
+          'created_at': DateTime.now().millisecondsSinceEpoch,
+        });
+        await log('Drafted a call to ${task['to']} by voice');
+      } catch (_) {}
+    }
+
+    final id = 'chatcmpl-${DateTime.now().microsecondsSinceEpoch}';
+    final stream = body['stream'] == true;
+
+    if (!stream) {
+      final full = await agentReply(messages, scopes: scopes, approve: (_, _) async => false);
+      await saveTask(full);
+      final text = spokenText(full).trim();
+      return json(200, {
+        'id': id,
+        'object': 'chat.completion',
+        'model': mode,
+        'choices': [
+          {'index': 0, 'message': {'role': 'assistant', 'content': text}, 'finish_reason': 'stop'}
+        ],
+      });
+    }
+    res.headers
+      ..contentType = ContentType('text', 'event-stream', charset: 'utf-8')
+      ..set('Cache-Control', 'no-cache');
+    res.bufferOutput = false;
+    void chunk(Map<String, Object?> delta, {String? finish}) => res.write('data: ${jsonEncode({
+          'id': id,
+          'object': 'chat.completion.chunk',
+          'created': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'model': mode,
+          'choices': [
+            {'index': 0, 'delta': delta, 'finish_reason': finish}
+          ],
+        })}\n\n');
+    chunk({'role': 'assistant', 'content': ''});
+    var sent = '';
+    var filled = false;
+    try {
+      final full = await agentReply(
+        messages,
+        scopes: scopes,
+        approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later
+        onToolStart: (_) {
+          // Something to hear right away while the tool runs (like a person saying "let me check").
+          if (!filled && sent.isEmpty) {
+            filled = true;
+            chunk({'content': 'One moment, let me check that. '});
+          }
+        },
+        onText: (t) {
+          if (t.isEmpty) {
+            sent = ''; // text before a tool call is dropped; the real answer follows
+            return;
+          }
+          t = spokenText(t);
+          // Only ever add to what was said; never repeat it.
+          if (t.length > sent.length) chunk({'content': t.substring(sent.length)});
+          if (t.length > sent.length) sent = t;
+        },
+      );
+      await saveTask(full);
+    } catch (e) {
+      chunk({'content': ' Sorry, I had a problem answering that.'});
+    }
+    chunk({}, finish: 'stop');
+    res.write('data: [DONE]\n\n');
+    await res.close();
   }
 
   /// One spoken turn from a paired device: its audio in, Ava's voice out.

@@ -54,7 +54,13 @@ typedef JsonHandler = Future<Object?> Function(int deviceId, Map<String, dynamic
 /// The computer's side of pairing. Runs only on the main (host) computer,
 /// on the local network. No outside server is involved.
 class HostServer {
-  HostServer(this.db, {required this.hostName, required this.handlers});
+  HostServer(this.db, {required this.hostName, required this.handlers, this.onEngineRequest});
+
+  /// Requests from this computer's own voice engine (OpenAI-compatible
+  /// /v1/chat/completions and /api/voice-config). Only accepted from
+  /// localhost with [engineKey].
+  final Future<void> Function(HttpRequest req, String path)? onEngineRequest;
+  final String engineKey = base64Url.encode(List<int>.generate(24, (_) => Random.secure().nextInt(256))).replaceAll('=', '');
   final Db db;
   final String hostName;
 
@@ -139,6 +145,9 @@ class HostServer {
       if (path == '/api/pair' && req.method == 'POST') return _pair(req);
 
       final token = req.uri.queryParameters['token'] ?? req.headers.value('authorization')?.replaceFirst('Bearer ', '');
+      if (token == engineKey && onEngineRequest != null && (req.connectionInfo?.remoteAddress.isLoopback ?? false)) {
+        return onEngineRequest!(req, path);
+      }
       final device = token == null ? null : await _deviceFor(token);
       if (device == null) return _json(req, 401, {'error': 'This device is not paired. Pair it again.'});
 

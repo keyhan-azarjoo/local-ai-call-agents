@@ -404,6 +404,7 @@ class ToolLoop {
     List<ToolBinding> preferred = const [],
     List<String>? sticky,
     bool warmOnly = false,
+    void Function(ToolBinding)? onToolStart,
   }) async {
     final byName = {for (final t in tools) t.fnName: t};
 
@@ -597,6 +598,7 @@ class ToolLoop {
       }
       if (pendingRetry == b.fnName) pendingRetry = null;
       args = prepared.args;
+      onToolStart?.call(b);
       final ev = ToolEvent(b, args);
       if (!b.tool.readOnly && !await approve(b, args)) {
         ev

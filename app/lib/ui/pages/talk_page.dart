@@ -13,6 +13,7 @@ import '../../services/speech.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
+import 'live_talk.dart';
 
 enum TalkMode { caller, owner }
 
@@ -34,6 +35,7 @@ class TalkPage extends StatefulWidget {
 
 class _TalkPageState extends State<TalkPage> {
   TalkMode mode = TalkMode.caller;
+  bool live = true; // hands-free live conversation vs. tap to talk
   final turns = <_Turn>[];
   final history = <ChatMessage>[];
   final input = TextEditingController();
@@ -112,24 +114,29 @@ class _TalkPageState extends State<TalkPage> {
       // Callers only get tools shared with "All callers"; the owner gets everything.
       final scopes = mode == TalkMode.caller ? {'all'} : {'me', 'contacts', 'all'};
       final used = <String>[];
-      buf.write(await s.agentReply(history, scopes: scopes, approve: _approve, onText: (t) {
-        first ??= DateTime.now().difference(t0);
-        reply.text = _visible(t);
-        if (mounted) setState(() {});
-        _scrollDown();
-      }, onEvent: (e) {
-        if (e.binding.serverId > 0) used.add('${e.denied ? 'declined ' : ''}${e.binding.serverName} › ${e.binding.tool.name}');
-      }));
+      buf.write(
+        await s.agentReply(
+          history,
+          scopes: scopes,
+          approve: _approve,
+          onText: (t) {
+            first ??= DateTime.now().difference(t0);
+            reply.text = _visible(t);
+            if (mounted) setState(() {});
+            _scrollDown();
+          },
+          onEvent: (e) {
+            if (e.binding.serverId > 0) used.add('${e.denied ? 'declined ' : ''}${e.binding.serverName} › ${e.binding.tool.name}');
+          },
+        ),
+      );
       first ??= DateTime.now().difference(t0);
       if (used.isNotEmpty) reply.meta = 'used ${used.join(', ')}';
       final full = buf.toString();
       history.add(ChatMessage('assistant', full));
       reply.text = _visible(full);
       reply.task = _task(full);
-      reply.meta = [
-        '${((first ?? Duration.zero).inMilliseconds / 1000).toStringAsFixed(2)} s to first word · ${s.llmLabel}',
-        ?reply.meta,
-      ].join(' · ');
+      reply.meta = ['${((first ?? Duration.zero).inMilliseconds / 1000).toStringAsFixed(2)} s to first word · ${s.llmLabel}', ?reply.meta].join(' · ');
       if (voiceOn) _say(reply.text);
     } catch (e) {
       reply.text = 'I couldn’t reply: $e';
@@ -170,8 +177,8 @@ class _TalkPageState extends State<TalkPage> {
   }
 
   void _scrollDown() => WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
-      });
+    if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
+  });
 
   Future<void> _toggleMic() async {
     final s = context.read<AppState>();
@@ -256,134 +263,194 @@ class _TalkPageState extends State<TalkPage> {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 780),
-        child: Column(children: [
-          Text('Talk to $name', style: displayStyle(context, 30)),
-          const SizedBox(height: 6),
-          Muted('Uses your microphone and speakers. Nothing leaves this computer.', size: 14),
-          const SizedBox(height: 14),
-          Segmented(
-            value: mode,
-            options: const {TalkMode.caller: 'Pretend I’m a caller', TalkMode.owner: 'Give instructions'},
-            onChanged: (m) {
-              setState(() => mode = m);
-              _start();
-            },
-          ),
-          const SizedBox(height: 8),
-          Muted(mode == TalkMode.caller
-              ? '$name answers exactly as on a real call — same greeting and instructions.'
-              : 'Ask $name to make calls for you, or anything else.'),
-          const SizedBox(height: 18),
-          if (!s.llmReady)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: Panel(
-                borderColor: LL.amber,
-                child: Row(children: [
-                  const Icon(Icons.info_outline, color: LL.amber),
-                  const SizedBox(width: 12),
-                  const Expanded(child: Text('The AI isn’t set up yet. Choose a local model or connect a cloud AI.')),
-                  Btn('Set up AI', kind: BtnKind.primary, small: true, onPressed: () => s.go(PageId.settings)),
-                ]),
-              ),
+        child: Column(
+          children: [
+            Text('Talk to $name', style: displayStyle(context, 30)),
+            const SizedBox(height: 6),
+            Muted('Uses your microphone and speakers. Nothing leaves this computer.', size: 14),
+            const SizedBox(height: 14),
+            Segmented(
+              value: mode,
+              options: const {TalkMode.caller: 'Pretend I’m a caller', TalkMode.owner: 'Give instructions'},
+              onChanged: (m) {
+                setState(() => mode = m);
+                _start();
+              },
             ),
-          Panel(
-            padding: const EdgeInsets.all(26),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              Center(child: Semantics(
-                button: true,
-                label: listening ? 'Stop talking' : 'Start talking',
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: thinking ? null : _toggleMic,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 104,
-                    height: 104,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: listening ? LL.red : LL.amber,
-                      boxShadow: listening ? [BoxShadow(color: LL.amber.withValues(alpha: .25), spreadRadius: 12)] : null,
-                    ),
-                    child: Icon(listening ? Icons.stop_rounded : Icons.mic_none_rounded, size: 40, color: LL.navy),
+            const SizedBox(height: 8),
+            Muted(mode == TalkMode.caller ? '$name answers exactly as on a real call — same greeting and instructions.' : 'Ask $name to make calls for you, or anything else.'),
+            if (s.voice != null) ...[
+              const SizedBox(height: 10),
+              Segmented(value: live, options: const {true: 'Live conversation', false: 'Tap to talk'}, onChanged: (v) => setState(() => live = v)),
+            ],
+            const SizedBox(height: 18),
+            if (!s.llmReady)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Panel(
+                  borderColor: LL.amber,
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: LL.amber),
+                      const SizedBox(width: 12),
+                      const Expanded(child: Text('The AI isn’t set up yet. Choose a local model or connect a cloud AI.')),
+                      Btn('Set up AI', kind: BtnKind.primary, small: true, onPressed: () => s.go(PageId.settings)),
+                    ],
                   ),
                 ),
-              )),
-              const SizedBox(height: 14),
-              Text(status ?? (listening ? 'Listening… tap to send' : 'Tap to talk'), textAlign: TextAlign.center, style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Muted('Speak replies'),
-                Transform.scale(scale: .75, child: Switch(value: voiceOn, onChanged: (v) {
-                  setState(() => voiceOn = v);
-                  s.speakReplies = v;
-                  if (!v) s.speech.stop();
-                })),
-              ]),
-            ]),
-          ),
-          const SizedBox(height: 16),
-          Section(
-            title: 'Conversation',
-            trailing: Wrap(spacing: 6, children: [
-              if (mode == TalkMode.caller && turns.length > 1)
-                Btn(saved ? 'Saved' : 'Save to Calls', small: true, onPressed: saved ? null : _save),
-              Btn('Start over', small: true, kind: BtnKind.ghost, onPressed: _start),
-            ]),
-            children: [
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 380),
-                child: ListView(
-                  controller: scroll,
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.all(20),
+              ),
+            if (live && s.voice != null)
+              LiveTalk(mode: mode.name, name: name)
+            else ...[
+              Panel(
+                padding: const EdgeInsets.all(26),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final t in turns)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          SizedBox(width: 62, child: Padding(padding: const EdgeInsets.only(top: 9), child: Eyebrow(t.who == 'ai' ? name : 'You'))),
-                          Expanded(
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                                decoration: BoxDecoration(color: t.who == 'ai' ? c.amberSoft : c.canvas, borderRadius: BorderRadius.circular(LL.r)),
-                                child: t.text.isEmpty ? const SizedBox(height: 16, width: 16, child: Align(alignment: Alignment.centerLeft, child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)))) : SelectableText(t.text),
-                              ),
-                              if (t.meta != null) Padding(padding: const EdgeInsets.only(top: 3), child: Muted(t.meta!, mono: true, size: 11)),
-                              if (t.task != null)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: Panel(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Row(children: [
-                                      const Icon(Icons.phone_forwarded_outlined, size: 18),
-                                      const SizedBox(width: 10),
-                                      Expanded(child: Text('Call ${t.task!['to'] ?? ''}: ${t.task!['goal'] ?? ''}', style: const TextStyle(fontSize: 13))),
-                                      Btn('Review call', kind: BtnKind.amber, small: true, onPressed: () => _createTask(t.task!)),
-                                    ]),
-                                  ),
-                                ),
-                            ]),
+                    Center(
+                      child: Semantics(
+                        button: true,
+                        label: listening ? 'Stop talking' : 'Start talking',
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: thinking ? null : _toggleMic,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 104,
+                            height: 104,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: listening ? LL.red : LL.amber,
+                              boxShadow: listening ? [BoxShadow(color: LL.amber.withValues(alpha: .25), spreadRadius: 12)] : null,
+                            ),
+                            child: Icon(listening ? Icons.stop_rounded : Icons.mic_none_rounded, size: 40, color: LL.navy),
                           ),
-                        ]),
+                        ),
                       ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      status ?? (listening ? 'Listening… tap to send' : 'Tap to talk'),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Muted('Speak replies'),
+                        Transform.scale(
+                          scale: .75,
+                          child: Switch(
+                            value: voiceOn,
+                            onChanged: (v) {
+                              setState(() => voiceOn = v);
+                              s.speakReplies = v;
+                              if (!v) s.speech.stop();
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(border: Border(top: BorderSide(color: c.line))),
-                child: Row(children: [
-                  Expanded(child: TextField(controller: input, onSubmitted: _send, decoration: const InputDecoration(hintText: 'Or type a message…'))),
-                  const SizedBox(width: 8),
-                  Btn('Send', kind: BtnKind.primary, onPressed: thinking ? null : () => _send(input.text)),
-                ]),
+              const SizedBox(height: 16),
+              Section(
+                title: 'Conversation',
+                trailing: Wrap(
+                  spacing: 6,
+                  children: [
+                    if (mode == TalkMode.caller && turns.length > 1) Btn(saved ? 'Saved' : 'Save to Calls', small: true, onPressed: saved ? null : _save),
+                    Btn('Start over', small: true, kind: BtnKind.ghost, onPressed: _start),
+                  ],
+                ),
+                children: [
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 380),
+                    child: ListView(
+                      controller: scroll,
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.all(20),
+                      children: [
+                        for (final t in turns)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                SizedBox(
+                                  width: 62,
+                                  child: Padding(padding: const EdgeInsets.only(top: 9), child: Eyebrow(t.who == 'ai' ? name : 'You')),
+                                ),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                        decoration: BoxDecoration(color: t.who == 'ai' ? c.amberSoft : c.canvas, borderRadius: BorderRadius.circular(LL.r)),
+                                        child: t.text.isEmpty
+                                            ? const SizedBox(
+                                                height: 16,
+                                                width: 16,
+                                                child: Align(
+                                                  alignment: Alignment.centerLeft,
+                                                  child: SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                                                ),
+                                              )
+                                            : SelectableText(t.text),
+                                      ),
+                                      if (t.meta != null) Padding(padding: const EdgeInsets.only(top: 3), child: Muted(t.meta!, mono: true, size: 11)),
+                                      if (t.task != null)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 8),
+                                          child: Panel(
+                                            padding: const EdgeInsets.all(12),
+                                            child: Row(
+                                              children: [
+                                                const Icon(Icons.phone_forwarded_outlined, size: 18),
+                                                const SizedBox(width: 10),
+                                                Expanded(child: Text('Call ${t.task!['to'] ?? ''}: ${t.task!['goal'] ?? ''}', style: const TextStyle(fontSize: 13))),
+                                                Btn('Review call', kind: BtnKind.amber, small: true, onPressed: () => _createTask(t.task!)),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      border: Border(top: BorderSide(color: c.line)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: input,
+                            onSubmitted: _send,
+                            decoration: const InputDecoration(hintText: 'Or type a message…'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Btn('Send', kind: BtnKind.primary, onPressed: thinking ? null : () => _send(input.text)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }

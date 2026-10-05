@@ -5,11 +5,10 @@ import 'package:provider/provider.dart';
 
 import '../../services/auth.dart';
 import '../../services/mcp/mcp_manager.dart';
-import '../../services/speech.dart';
-import '../../services/system.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
+import 'live_talk.dart';
 import 'devices_section.dart';
 import 'knowledge_page.dart' show addSkillFromDocument;
 import 'main_pages.dart' show Rows;
@@ -582,40 +581,19 @@ class SkillsPage extends StatelessWidget {
 class VoiceServerPage extends StatelessWidget {
   const VoiceServerPage({super.key});
   @override
-  Widget build(BuildContext context) => FutureBuilder(
-        future: Speech.which('livekit-server'),
-        builder: (context, snap) {
-          final bin = snap.data;
-          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const PageHead('Voice server', description: 'The built-in LiveKit server that connects phone calls, this computer and your phone to the assistant.'),
-            Grid(cols: 3, children: [
+  Widget build(BuildContext context) => const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            PageHead('Voice server', description: 'The built-in LiveKit server that connects phone calls, this computer and your phone to the assistant.'),
+            Grid(cols: 2, children: [
+              Panel(child: VoiceEnginePanel()),
               Panel(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [const Expanded(child: Text('LiveKit server', style: TextStyle(fontWeight: FontWeight.w600))), Lamp(bin == null ? LampState.off : LampState.on)]),
-                  const SizedBox(height: 4),
-                  Muted(bin == null ? 'Not installed' : 'Found at $bin'),
-                  const SizedBox(height: 12),
-                  if (bin == null) Btn('Get LiveKit server', small: true, onPressed: () => openExternal('https://github.com/livekit/livekit/releases')),
-                ]),
-              ),
-              const Panel(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(children: [Expanded(child: Text('Phone gateway', style: TextStyle(fontWeight: FontWeight.w600))), Lamp(LampState.off)]),
                   SizedBox(height: 4),
                   Muted('Registers your lines and receives landline calls. Coming in the next milestone.'),
                 ]),
               ),
-              const Panel(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [Expanded(child: Text('Agent worker', style: TextStyle(fontWeight: FontWeight.w600))), Lamp(LampState.off)]),
-                  SizedBox(height: 4),
-                  Muted('Runs Ava on live calls with turn-taking and barge-in. Coming in the next milestone.'),
-                ]),
-              ),
             ]),
           ]);
-        },
-      );
 }
 
 // ============================ Paired devices ============================

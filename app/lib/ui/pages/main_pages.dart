@@ -10,6 +10,7 @@ import '../../services/system.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
+import 'devices_section.dart';
 import 'engine_pages.dart';
 
 /// Loads rows from the database and rebuilds whenever AppState notifies.
@@ -602,6 +603,8 @@ class LinesPage extends StatelessWidget {
                 ]),
               ),
           ])),
+      const SizedBox(height: 16),
+      const PhonesSection(),
       const SizedBox(height: 16),
       const Panel(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

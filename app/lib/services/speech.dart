@@ -89,6 +89,34 @@ class Speech {
     return (r.stdout as String).replaceAll(RegExp(r'\[[^\]]*\]'), '').trim();
   }
 
+  /// Renders [text] to a WAV file (for sending to a paired phone).
+  Future<String?> synthesize(String text, {String? voicePath}) async {
+    final clean = text.replaceAll(RegExp(r'[*_#`]'), '').trim();
+    if (clean.isEmpty) return null;
+    final out = p.join(Directory.systemTemp.path, 'll_out_${DateTime.now().microsecondsSinceEpoch}.wav');
+    final piper = await piperBinary();
+    if (piper != null && voicePath != null) {
+      final proc = await Process.start(piper, ['-m', voicePath, '-f', out]);
+      proc.stdin.writeln(clean);
+      await proc.stdin.close();
+      if (await proc.exitCode == 0 && File(out).existsSync()) return out;
+    }
+    ProcessResult? r;
+    if (Platform.isMacOS) {
+      r = await Process.run('say', ['-o', out, '--data-format=LEI16@22050', clean]);
+    } else if (Platform.isWindows) {
+      final safe = clean.replaceAll("'", "''");
+      r = await Process.run('powershell', [
+        '-NoProfile',
+        '-Command',
+        "Add-Type -AssemblyName System.Speech; \$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \$s.SetOutputToWaveFile('$out'); \$s.Speak('$safe'); \$s.Dispose()"
+      ]);
+    } else {
+      r = await Process.run('espeak-ng', ['-w', out, clean]);
+    }
+    return r.exitCode == 0 && File(out).existsSync() ? out : null;
+  }
+
   Process? _player;
 
   /// Speaks [text] out loud with the chosen voice, or the OS voice as fallback.

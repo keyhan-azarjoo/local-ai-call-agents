@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'state/app_state.dart';
 import 'theme/tokens.dart';
 import 'ui/auth_pages.dart';
+import 'ui/companion.dart';
 import 'ui/shell.dart';
 
 void main() {
@@ -22,6 +23,8 @@ class LocalAILineApp extends StatelessWidget {
       title: 'LocalAILine',
       debugShowCheckedModeBanner: false,
       scaffoldMessengerKey: s.messenger,
+      navigatorKey: s.navigator,
+      builder: (context, child) => RingOverlay(child: child ?? const SizedBox()),
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
       themeMode: s.themeMode,
@@ -30,6 +33,7 @@ class LocalAILineApp extends StatelessWidget {
         Gate.setup => const SetupWizard(),
         Gate.signIn => const SignInPage(),
         Gate.app => const Shell(),
+        Gate.companion => const CompanionShell(),
       },
     );
   }

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 
 import '../data/db.dart';
 import '../services/auth.dart';
@@ -610,6 +611,36 @@ class AppState extends ChangeNotifier {
     voiceLanguage = v;
     await db.setSetting('voice.language', v);
     notifyListeners();
+  }
+
+  /// A voice message to text. Uses the live voice engine's hearing when it runs (fast, on the GPU,
+  /// with the larger model for Persian, Arabic…), else the hearing model on this computer.
+  Future<String> transcribeVoiceNote(String wavPath) async {
+    Future<Map<String, dynamic>?> server(int port, String language) async {
+      try {
+        final req = http.MultipartRequest('POST', Uri.parse('http://127.0.0.1:$port/inference'))
+          ..files.add(await http.MultipartFile.fromPath('file', wavPath))
+          ..fields.addAll({'response_format': 'verbose_json', 'language': language, 'temperature': '0'});
+        final r = await http.Response.fromStream(await req.send().timeout(const Duration(seconds: 30)));
+        return r.statusCode == 200 ? jsonDecode(r.body) as Map<String, dynamic> : null;
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final fast = await server(VoiceEngine.whisperPort, 'auto');
+    if (fast != null) {
+      const easy = {'english', 'spanish', 'french', 'german', 'italian', 'portuguese', 'dutch'};
+      final lang = '${fast['language'] ?? ''}'.toLowerCase();
+      if (lang.isNotEmpty && !easy.contains(lang)) {
+        final better = await server(VoiceEngine.accuratePort, 'auto');
+        if (better != null && '${better['text'] ?? ''}'.trim().isNotEmpty) return '${better['text']}'.trim();
+      }
+      return '${fast['text'] ?? ''}'.trim();
+    }
+    final model = speech.sttModelPath(sttModel);
+    if (model == null) throw StateError('Download a hearing model first (Settings → Voice & hearing), or start Live voice.');
+    return speech.transcribe(wavPath, modelPath: model, language: sttModel.contains('.en') ? 'en' : 'auto');
   }
 
   /// Starts the live voice engine, first refreshing its script from this version of the app.

@@ -569,7 +569,7 @@ class _AssistantPageState extends State<AssistantPage> {
 
 const providers = <String, (String, List<(String, String, bool)>)>{
   // key: (label, fields[(key, label, secret)])
-  'twilio': ('Twilio', [('sid', 'Account SID', false), ('token', 'Auth token', true), ('number', 'Phone number', false)]),
+  'twilio': ('Twilio', [('sid', 'Account SID (starts with AC)', false), ('token', 'Auth token (or API key secret)', true), ('keySid', 'API key SID (optional, starts with SK)', false), ('number', 'Phone number (e.g. +441234567890)', false)]),
   'telnyx': ('Telnyx', [('apiKey', 'API key', true), ('sipUser', 'SIP username', false), ('sipPass', 'SIP password', true), ('number', 'Phone number', false)]),
   'sip': ('Other SIP provider', [('server', 'SIP server', false), ('sipUser', 'Username', false), ('sipPass', 'Password', true), ('number', 'Phone number', false)]),
   'fxo': ('Landline (FXO box)', [('host', 'Gateway address (e.g. 192.168.1.40)', false), ('number', 'Landline number', false)]),
@@ -636,6 +636,7 @@ class _LineDialogState extends State<_LineDialog> {
   final ctrls = <String, TextEditingController>{};
   String? check;
   bool checking = false, verified = false;
+  List<String> numbers = [];
 
   TextEditingController _c(String k) => ctrls.putIfAbsent(k, TextEditingController.new);
 
@@ -647,16 +648,33 @@ class _LineDialogState extends State<_LineDialog> {
     });
     try {
       if (provider == 'twilio') {
-        final sid = _c('sid').text.trim(), token = _c('token').text.trim();
-        final r = await http.get(Uri.parse('https://api.twilio.com/2010-04-01/Accounts/$sid/IncomingPhoneNumbers.json'),
-            headers: {'Authorization': 'Basic ${base64Encode(utf8.encode('$sid:$token'))}'});
+        final problem = _twilioProblem();
+        if (problem != null) {
+          check = problem;
+          return;
+        }
+        final sid = _c('sid').text.trim(), token = _c('token').text.trim(), keySid = _c('keySid').text.trim();
+        // Auth token: Account SID + token. API key: key SID + key secret (account in the URL).
+        final user = keySid.isNotEmpty ? keySid : sid;
+        final r = await http.get(Uri.parse('https://api.twilio.com/2010-04-01/Accounts/$sid/IncomingPhoneNumbers.json?PageSize=100'),
+            headers: {'Authorization': 'Basic ${base64Encode(utf8.encode('$user:$token'))}'});
         if (r.statusCode == 200) {
-          final nums = ((jsonDecode(r.body) as Map)['incoming_phone_numbers'] as List).map((n) => n['phone_number'] as String).toList();
+          numbers = ((jsonDecode(r.body) as Map)['incoming_phone_numbers'] as List).map((n) => n['phone_number'] as String).toList();
           verified = true;
-          if (nums.isNotEmpty && _c('number').text.isEmpty) _c('number').text = nums.first;
-          check = 'Account verified. Numbers: ${nums.isEmpty ? 'none yet' : nums.join(', ')}';
+          if (numbers.isNotEmpty && _c('number').text.isEmpty) _c('number').text = numbers.first;
+          check = numbers.isEmpty
+              ? 'Account verified, but it has no phone numbers yet. Buy one in the Twilio console (Phone Numbers → Buy a number), then check again.'
+              : 'Account verified. Pick your number below.';
         } else {
-          check = 'Twilio said ${r.statusCode}: check the Account SID and Auth token.';
+          String? detail;
+          try {
+            detail = (jsonDecode(r.body) as Map)['message'] as String?;
+          } catch (_) {}
+          check = switch (r.statusCode) {
+            401 => 'Twilio didn’t accept these details${detail == null ? '' : ' ($detail)'}. Copy the Account SID and Auth token again from the Twilio console home page (click “Show” on the token).',
+            404 => 'Twilio has no account with that Account SID. It starts with AC and is on the Twilio console home page.',
+            _ => 'Twilio said ${r.statusCode}${detail == null ? '' : ': $detail'}.',
+          };
         }
       } else if (provider == 'telnyx') {
         final r = await http.get(Uri.parse('https://api.telnyx.com/v2/phone_numbers?page[size]=20'),
@@ -677,15 +695,45 @@ class _LineDialogState extends State<_LineDialog> {
     }
   }
 
+  /// What's wrong with the Twilio details, if anything (said in the dialog, not behind it).
+  String? _twilioProblem() {
+    final sid = _c('sid').text.trim(), token = _c('token').text.trim(), keySid = _c('keySid').text.trim();
+    if (sid.startsWith('SK')) return 'That’s an API key SID. Put it in “API key SID”, and put your Account SID (starts with AC) in the first box.';
+    if (!RegExp(r'^AC[0-9a-fA-F]{32}$').hasMatch(sid)) return 'The Account SID starts with AC and has 34 characters. Copy it from the Twilio console home page.';
+    if (token.isEmpty) return 'Add the Auth token (or the API key secret).';
+    if (keySid.isNotEmpty && !keySid.startsWith('SK')) return 'The API key SID starts with SK. Leave it empty if you use the Auth token.';
+    return null;
+  }
+
+  /// "+44 1234 567 890", "(415) 555-0100" → "+441234567890". Numbers need the country code.
+  static String normalizeNumber(String n) {
+    final t = n.trim();
+    final digits = t.replaceAll(RegExp(r'[^0-9]'), '');
+    if (t.startsWith('+')) return '+$digits';
+    if (t.startsWith('00')) return '+${digits.substring(2)}';
+    return digits;
+  }
+
   Future<void> _save() async {
     final s = context.read<AppState>();
     final (label, fields) = providers[provider]!;
     final cfg = {for (final f in fields) f.$1: _c(f.$1).text.trim()};
-    if (cfg['number']!.isEmpty) return s.toast('Add the phone number.');
+    String? problem;
+    final number = normalizeNumber(cfg['number']!);
+    if (provider == 'twilio') problem = _twilioProblem();
+    if (problem == null && number.isEmpty) problem = 'Add the phone number.';
+    if (problem == null && provider != 'fxo' && !number.startsWith('+')) {
+      problem = 'Write the number with its country code, e.g. +44 7700 900123 (not starting with 0).';
+    }
+    if (problem == null && verified && numbers.isNotEmpty && !numbers.contains(number)) {
+      problem = 'That number isn’t in this Twilio account. Pick one of: ${numbers.join(', ')}';
+    }
+    if (problem != null) return setState(() => check = problem);
+    cfg['number'] = number;
     await s.db.insert('lines', {
       'provider': provider,
       'label': label,
-      'number': cfg['number'],
+      'number': number,
       'config': jsonEncode(cfg),
       'status': verified ? 'verified' : 'saved',
     });
@@ -702,7 +750,7 @@ class _LineDialogState extends State<_LineDialog> {
         constraints: const BoxConstraints(maxWidth: 560),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Add phone line', style: displayStyle(context, 22)),
             const SizedBox(height: 16),
             Wrap(spacing: 8, runSpacing: 8, children: [
@@ -714,6 +762,7 @@ class _LineDialogState extends State<_LineDialog> {
                     provider = e.key;
                     check = null;
                     verified = false;
+                    numbers = [];
                   }),
                 ),
             ]),
@@ -726,6 +775,13 @@ class _LineDialogState extends State<_LineDialog> {
               const Muted('Set the FXO box to send calls to this computer on port 5060, with SIP registration off and at least 2 rings for caller ID.'),
             const Muted('Saved in the local database on this computer only.'),
             if (check != null) ...[const SizedBox(height: 10), Text(check!, style: TextStyle(color: verified ? LL.green : LL.red, fontSize: 13))],
+            if (numbers.length > 1) ...[
+              const SizedBox(height: 8),
+              Wrap(spacing: 6, runSpacing: 6, children: [
+                for (final n in numbers)
+                  ChoiceChip(label: Text(n), selected: _c('number').text == n, onSelected: (_) => setState(() => _c('number').text = n)),
+              ]),
+            ],
             const SizedBox(height: 18),
             Row(children: [
               if (provider == 'twilio' || provider == 'telnyx') Btn(checking ? 'Checking…' : 'Check account', onPressed: checking ? null : _check),
@@ -734,7 +790,7 @@ class _LineDialogState extends State<_LineDialog> {
               const SizedBox(width: 8),
               Btn('Save line', kind: BtnKind.primary, onPressed: _save),
             ]),
-          ]),
+          ])),
         ),
       ),
     );

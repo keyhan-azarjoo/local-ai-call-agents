@@ -25,6 +25,80 @@ class ToolBinding {
   }
 }
 
+/// Built-in tool: exact arithmetic, because small models add up badly.
+final calculator = ToolBinding(
+  serverId: -2,
+  serverName: 'LocalAILine',
+  fnName: 'calculate',
+  tool: McpTool(
+    name: 'calculate',
+    readOnly: true,
+    description: 'Exact arithmetic for prices and totals. Example: "2*16.00 + 3.95". Use it for every sum.',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'expression': {'type': 'string', 'description': 'Numbers with + - * / and brackets'}
+      },
+      'required': ['expression'],
+    },
+  ),
+);
+
+/// Small, safe arithmetic evaluator (no variables, no functions).
+class Calc {
+  static double? eval(String input) {
+    final s = input.replaceAll(RegExp(r'[£\$€,\s]'), '').replaceAll('x', '*').replaceAll('×', '*');
+    if (s.isEmpty || RegExp(r'[^0-9.+\-*/()]').hasMatch(s)) return null;
+    var i = 0;
+    double? expr() {
+      double? term() {
+        double? factor() {
+          if (i < s.length && (s[i] == '+' || s[i] == '-')) {
+            final neg = s[i] == '-';
+            i++;
+            final f = factor();
+            return f == null ? null : (neg ? -f : f);
+          }
+          if (i < s.length && s[i] == '(') {
+            i++;
+            final v = expr();
+            if (i >= s.length || s[i] != ')') return null;
+            i++;
+            return v;
+          }
+          final m = RegExp(r'^\d+(\.\d+)?|^\.\d+').firstMatch(s.substring(i));
+          if (m == null) return null;
+          i += m.group(0)!.length;
+          return double.parse(m.group(0)!);
+        }
+
+        var v = factor();
+        while (v != null && i < s.length && (s[i] == '*' || s[i] == '/')) {
+          final op = s[i++];
+          final r = factor();
+          if (r == null || (op == '/' && r == 0)) return null;
+          v = op == '*' ? v * r : v / r;
+        }
+        return v;
+      }
+
+      var v = term();
+      while (v != null && i < s.length && (s[i] == '+' || s[i] == '-')) {
+        final op = s[i++];
+        final r = term();
+        if (r == null) return null;
+        v = op == '+' ? v + r : v - r;
+      }
+      return v;
+    }
+
+    final v = expr();
+    return i == s.length ? v : null;
+  }
+
+  static String format(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+}
+
 /// What happened when the AI used a tool, for showing in the conversation.
 class ToolEvent {
   ToolEvent(this.binding, this.args, {this.result = '', this.ok = true, this.denied = false});
@@ -125,7 +199,9 @@ class ToolLoop {
       'no blank lines or sub-bullets, then add the totals. '
       '4) For counts, use the "Totals" line from the result exactly; never count by yourself. '
       '5) Inputs: use ids from earlier results (never names where an id is asked); write dates as YYYY-MM-DD. '
-      '6) If a tool returns an error, read it, fix the inputs and try once more; if it still fails, explain the problem simply.';
+      '6) If a tool returns an error, read it, fix the inputs and try once more; if it still fails, explain the problem simply. '
+      '7) For any prices, totals or other arithmetic, call calculate (e.g. "2*16 + 3.95"); never add up in your head. '
+      '8) Write money as digits with the currency sign (e.g. £21.50), never in words; the voice reads it naturally.';
 
   Future<String> run({
     required ModelTarget target,
@@ -144,7 +220,7 @@ class ToolLoop {
       LocalTarget t => t.maxCtx >= 16384 ? 14000 : 7000,
       CloudTarget _ => 40000,
     };
-    if (tools.isNotEmpty) {
+    {
       final now = DateTime.now();
       const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       final rules = 'Today is ${days[now.weekday - 1]} ${now.toIso8601String().substring(0, 10)}. $toolRules';
@@ -155,8 +231,9 @@ class ToolLoop {
           j == i ? ChatMessage('system', '${messages[j].content}\n\n$rules') : messages[j],
       ];
     }
-    final lastUser = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
-    final recent = messages.where((m) => m.role == 'user').toList().reversed.take(3).map((m) => m.content).join(' ');
+    String q(String c) => c.contains('\n\nQuestion: ') ? c.substring(c.lastIndexOf('\n\nQuestion: ') + 12) : c;
+    final lastUser = q(messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content);
+    final recent = messages.where((m) => m.role == 'user').toList().reversed.take(3).map((m) => q(m.content)).join(' ');
     final active = <ToolBinding>[
       ...ToolSelector.rank(lastUser, tools, limit),
     ];
@@ -191,7 +268,7 @@ class ToolLoop {
             ),
           )
         : null;
-    final offered = <ToolBinding>[...active, ?finder];
+    final offered = <ToolBinding>[...active, ?finder, calculator];
     final idCache = <String, Map<String, String>>{};
     final ids = IdMemory();
     String? pendingRetry; // a tool refused for bad inputs, not yet retried
@@ -206,10 +283,16 @@ class ToolLoop {
     }
 
     Future<(String, bool)> exec(String name, Map<String, dynamic> args) async {
+      if (name == calculator.fnName) {
+        final expr = '${args['expression'] ?? ''}';
+        final v = Calc.eval(expr);
+        onEvent?.call(ToolEvent(calculator, args, result: v == null ? 'Could not calculate' : Calc.format(v), ok: v != null));
+        return (v == null ? 'Could not calculate "$expr". Use numbers and + - * / ( ) only.' : '$expr = ${Calc.format(v)}', v == null);
+      }
       if (name == 'find_tools') {
         final found = ToolSelector.rank('${args['query'] ?? ''}', tools, 8);
         for (final f in found) {
-          if (!offered.contains(f)) offered.insert(offered.length - 1, f);
+          if (!offered.contains(f)) offered.insert(offered.length - 2, f);
         }
         return (
           found.isEmpty
@@ -220,14 +303,14 @@ class ToolLoop {
       }
       final b = byName[name];
       if (b == null) return ('Unknown tool $name. Use find_tools to search.', true);
-      if (!offered.contains(b)) offered.insert(offered.length - (finder == null ? 0 : 1), b);
+      if (!offered.contains(b)) offered.insert(offered.length - (finder == null ? 1 : 2), b);
       // Check the model's inputs first; don't send the server something it will reject.
       bool hasLookup(String entity) => ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).isNotEmpty;
       final prepared = ToolArgs.prepare(b.tool.inputSchema, args,
           toolName: b.fnName,
           looksWrongId: (k, v) => ids.looksWrong(v, canLookUp: hasLookup(ToolArgs.entityOf(k))), lookupToolFor: (entity) {
         final t = ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).firstOrNull;
-        if (t != null && !offered.contains(t)) offered.insert(offered.length - (finder == null ? 0 : 1), t);
+        if (t != null && !offered.contains(t)) offered.insert(offered.length - (finder == null ? 1 : 2), t);
         return t?.fnName;
       });
       if (prepared.problem != null) {

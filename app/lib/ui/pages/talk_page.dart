@@ -111,23 +111,17 @@ class _TalkPageState extends State<TalkPage> {
     try {
       // Callers only get tools shared with "All callers"; the owner gets everything.
       final scopes = mode == TalkMode.caller ? {'all'} : {'me', 'contacts', 'all'};
-      final tools = await s.toolsFor(scopes);
-      if (tools.isNotEmpty) {
-        final used = <String>[];
-        buf.write(await s.agentReply(history, scopes: scopes, approve: _approve, onEvent: (e) {
-          used.add('${e.denied ? 'declined ' : ''}${e.binding.serverName} › ${e.binding.tool.name}');
-        }));
-        first = DateTime.now().difference(t0);
-        if (used.isNotEmpty) reply.meta = 'used ${used.join(', ')}';
-      } else {
-        await for (final piece in s.chat(history)) {
-          first ??= DateTime.now().difference(t0);
-          buf.write(piece);
-          reply.text = _visible(buf.toString());
-          setState(() {});
-          _scrollDown();
-        }
-      }
+      final used = <String>[];
+      buf.write(await s.agentReply(history, scopes: scopes, approve: _approve, onText: (t) {
+        first ??= DateTime.now().difference(t0);
+        reply.text = _visible(t);
+        if (mounted) setState(() {});
+        _scrollDown();
+      }, onEvent: (e) {
+        if (e.binding.serverId > 0) used.add('${e.denied ? 'declined ' : ''}${e.binding.serverName} › ${e.binding.tool.name}');
+      }));
+      first ??= DateTime.now().difference(t0);
+      if (used.isNotEmpty) reply.meta = 'used ${used.join(', ')}';
       final full = buf.toString();
       history.add(ChatMessage('assistant', full));
       reply.text = _visible(full);

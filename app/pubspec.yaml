@@ -42,6 +42,9 @@ dependencies:
   cryptography: ^2.9.0
   record: ^7.1.1
   audioplayers: ^6.8.1
+  file_selector: ^1.1.0
+  pdfrx: ^2.4.8
+  archive: ^4.3.0
 
 dev_dependencies:
   flutter_test:

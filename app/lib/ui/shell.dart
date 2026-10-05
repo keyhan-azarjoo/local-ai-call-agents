@@ -7,6 +7,7 @@ import 'auth_pages.dart' show Brand;
 import 'pages/admin_pages.dart';
 import 'pages/chat_page.dart';
 import 'pages/engine_pages.dart';
+import 'pages/knowledge_page.dart';
 import 'pages/main_pages.dart';
 import 'pages/talk_page.dart';
 import 'widgets.dart';

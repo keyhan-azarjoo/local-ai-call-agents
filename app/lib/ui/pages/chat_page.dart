@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -28,6 +29,8 @@ class _ChatPageState extends State<ChatPage> {
   String? model;
   bool busy = false;
   int toolCount = 0;
+  String? progress;
+  DateTime? started;
 
   static const system = 'You are a helpful, concise assistant running privately on the user’s own computer inside LocalAILine. '
       'Answer clearly. Use short paragraphs and simple lists when helpful. '
@@ -40,6 +43,15 @@ class _ChatPageState extends State<ChatPage> {
     super.initState();
     _loadChats();
     s.toolsFor(_scopes).then((t) => mounted ? setState(() => toolCount = t.length) : null);
+  }
+
+  /// Repaints the elapsed seconds while the AI works.
+  void _tick() {
+    Future.delayed(const Duration(seconds: 1), () {
+      if (!mounted || !busy) return;
+      setState(() {});
+      _tick();
+    });
   }
 
   Future<bool> _approve(ToolBinding b, Map<String, dynamic> args) async =>
@@ -124,6 +136,10 @@ class _ChatPageState extends State<ChatPage> {
       'model': m ?? s.llmLabel,
       'updated_at': now,
     });
+    unawaited(_loadChats()); // show the new chat in the list straight away
+    started = DateTime.now();
+    progress = 'Thinking…';
+    _tick();
     final user = ChatMessage('user', text);
     final reply = ChatMessage('assistant', '');
     setState(() {
@@ -147,7 +163,11 @@ class _ChatPageState extends State<ChatPage> {
             'denied': e.denied,
             'result': e.result.length > 600 ? '${e.result.substring(0, 600)}…' : e.result,
           }));
-          setState(() => messages.insert(messages.indexOf(reply), note));
+          setState(() {
+            messages.insert(messages.indexOf(reply), note);
+            final used = messages.where((x) => x.role == 'tool').map((x) => (jsonDecode(x.content) as Map)['tool']).toSet();
+            progress = 'Used ${used.join(', ')} · writing the answer…';
+          });
           await s.db.insert('chat_messages', {'chat_id': chatId, 'role': 'tool', 'content': note.content, 'at': DateTime.now().millisecondsSinceEpoch});
           _scrollDown();
         });
@@ -165,7 +185,12 @@ class _ChatPageState extends State<ChatPage> {
       await s.db.insert('chat_messages', {'chat_id': chatId, 'role': 'assistant', 'content': reply.content, 'at': DateTime.now().millisecondsSinceEpoch});
       await s.db.update('chats', chatId!, {'updated_at': DateTime.now().millisecondsSinceEpoch});
       await _loadChats();
-      if (mounted) setState(() => busy = false);
+      if (mounted) {
+        setState(() {
+          busy = false;
+          progress = null;
+        });
+      }
       focus.requestFocus();
     }
   }
@@ -275,7 +300,7 @@ class _ChatPageState extends State<ChatPage> {
                   itemCount: messages.length,
                   itemBuilder: (_, i) {
                     final m = messages[i];
-                    if (m.role == 'tool') return _toolNote(context, m.content);
+                    if (m.role == 'tool') return ToolNote(m.content);
                     final mine = m.role == 'user';
                     return Align(
                       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -295,6 +320,15 @@ class _ChatPageState extends State<ChatPage> {
                   },
                 ),
         ),
+        if (busy && progress != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Row(children: [
+              const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 1.6)),
+              const SizedBox(width: 8),
+              Expanded(child: Muted('$progress · ${DateTime.now().difference(started ?? DateTime.now()).inSeconds} s')),
+            ]),
+          ),
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(border: Border(top: BorderSide(color: c.line))),
@@ -341,7 +375,15 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
-  Widget _toolNote(BuildContext context, String content) {
+}
+
+/// One tool call shown in the conversation (tap to see input and result).
+class ToolNote extends StatelessWidget {
+  const ToolNote(this.content, {super.key});
+  final String content;
+
+  @override
+  Widget build(BuildContext context) {
     Map<String, dynamic> j;
     try {
       j = jsonDecode(content) as Map<String, dynamic>;
@@ -354,8 +396,10 @@ class _ChatPageState extends State<ChatPage> {
       padding: const EdgeInsets.only(bottom: 10),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: Container(
-          decoration: BoxDecoration(color: context.c.blueSoft, borderRadius: BorderRadius.circular(10)),
+        child: Material(
+          color: context.c.blueSoft,
+          borderRadius: BorderRadius.circular(10),
+          clipBehavior: Clip.antiAlias,
           child: ExpansionTile(
             dense: true,
             tilePadding: const EdgeInsets.symmetric(horizontal: 12),

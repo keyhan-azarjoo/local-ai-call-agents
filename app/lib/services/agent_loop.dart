@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+
 import 'package:http/http.dart' as http;
 
 import 'cloud_llm.dart';
@@ -22,6 +23,174 @@ class ToolBinding {
     String clean(String s) => s.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
     final n = '${clean(server).toLowerCase()}__${clean(tool)}';
     return n.length <= 64 ? n : n.substring(0, 64);
+  }
+}
+
+/// Built-in tool: exact arithmetic, because small models add up badly.
+final calculator = ToolBinding(
+  serverId: -2,
+  serverName: 'LocalAILine',
+  fnName: 'calculate',
+  tool: McpTool(
+    name: 'calculate',
+    readOnly: true,
+    description: 'Exact arithmetic for prices and totals. Example: "2*16.00 + 3.95". Use it for every sum.',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'expression': {'type': 'string', 'description': 'Numbers with + - * / and brackets'}
+      },
+      'required': ['expression'],
+    },
+  ),
+);
+
+/// Small, safe arithmetic evaluator (no variables, no functions).
+class Calc {
+  static double? eval(String input) {
+    final s = input.replaceAll(RegExp(r'[£\$€,\s]'), '').replaceAll('x', '*').replaceAll('×', '*');
+    if (s.isEmpty || RegExp(r'[^0-9.+\-*/()]').hasMatch(s)) return null;
+    var i = 0;
+    double? expr() {
+      double? term() {
+        double? factor() {
+          if (i < s.length && (s[i] == '+' || s[i] == '-')) {
+            final neg = s[i] == '-';
+            i++;
+            final f = factor();
+            return f == null ? null : (neg ? -f : f);
+          }
+          if (i < s.length && s[i] == '(') {
+            i++;
+            final v = expr();
+            if (i >= s.length || s[i] != ')') return null;
+            i++;
+            return v;
+          }
+          final m = RegExp(r'^\d+(\.\d+)?|^\.\d+').firstMatch(s.substring(i));
+          if (m == null) return null;
+          i += m.group(0)!.length;
+          return double.parse(m.group(0)!);
+        }
+
+        var v = factor();
+        while (v != null && i < s.length && (s[i] == '*' || s[i] == '/')) {
+          final op = s[i++];
+          final r = factor();
+          if (r == null || (op == '/' && r == 0)) return null;
+          v = op == '*' ? v * r : v / r;
+        }
+        return v;
+      }
+
+      var v = term();
+      while (v != null && i < s.length && (s[i] == '+' || s[i] == '-')) {
+        final op = s[i++];
+        final r = term();
+        if (r == null) return null;
+        v = op == '+' ? v + r : v - r;
+      }
+      return v;
+    }
+
+    final v = expr();
+    return i == s.length ? v : null;
+  }
+
+  static String format(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
+}
+
+/// Exact order totals. The app numbers every price line from the documents;
+/// the model only says which lines and how many (easy for it); the app reads
+/// the prices and adds them up (which small models get wrong).
+class OrderQuote {
+  static final _orderish = RegExp(
+      r"\b(order|get|have|want|like|take|i.ll|i.d|add|buy|deliver|delivery|collect|collection|one|two|three|four|five|six|a couple|\d+)\b",
+      caseSensitive: false);
+  static final _price = RegExp(r'[£\$€]\s?(\d+(?:\.[\s   ]?\d{1,2})?)');
+  static final _postcode = RegExp(r'\b([A-Z]{1,2}\d{1,2}[A-Z]?)(?:\s*\d[A-Z]{2})?\b');
+
+  static bool worthChecking(String question) => _orderish.hasMatch(question);
+
+  /// First price on a line ("Fish & chips … £16.00 …" → 16.0).
+  static double? priceOf(String line) => double.tryParse((_price.firstMatch(line)?.group(1) ?? '').replaceAll(RegExp(r'\s'), ''));
+
+  static Future<String?> quote(http.Client c, LocalTarget t, List<ChatMessage> conversation, List<String> priceLines) async {
+    if (priceLines.isEmpty) return null;
+    final numbered = [for (var i = 0; i < priceLines.length; i++) '${i + 1}. ${priceLines[i]}'].join('\n');
+    final talk = conversation
+        .where((m) => m.role == 'user' || m.role == 'assistant')
+        .toList()
+        .reversed
+        .take(6)
+        .toList()
+        .reversed
+        .map((m) => '${m.role == 'user' ? 'Customer' : 'Assistant'}: ${m.content.contains('\n\nQuestion: ') ? m.content.substring(m.content.lastIndexOf('\n\nQuestion: ') + 12) : m.content}')
+        .join('\n');
+    final r = await c
+        .post(Uri.parse('${t.base}/api/chat'),
+            body: jsonEncode({
+              'model': t.model,
+              'stream': false,
+              'keep_alive': -1,
+              'think': ?(t.disableThinking ? false : null),
+              'options': {'num_ctx': t.maxCtx < 16384 ? t.maxCtx : 16384, 'temperature': 0},
+              'format': {
+                'type': 'object',
+                'properties': {
+                  'is_order': {'type': 'boolean'},
+                  'lines': {
+                    'type': 'array',
+                    'items': {
+                      'type': 'object',
+                      'properties': {
+                        'line': {'type': 'integer'},
+                        'quantity': {'type': 'number'},
+                      },
+                      'required': ['line', 'quantity'],
+                    },
+                  },
+                },
+                'required': ['is_order', 'lines'],
+              },
+              'messages': [
+                {
+                  'role': 'system',
+                  'content': 'Match what the customer is ordering to the numbered price list. For each thing they order, give the line '
+                      'number and quantity. Include a delivery or other fee line only if it applies to them (for example their postcode is '
+                      'in that delivery zone). If they are not ordering, set is_order to false and lines to [].'
+                },
+                {'role': 'user', 'content': 'Price list:\n$numbered\n\nConversation:\n$talk'},
+              ],
+            }))
+        .timeout(const Duration(seconds: 30));
+    if (r.statusCode != 200) return null;
+    final j = jsonDecode((jsonDecode(r.body) as Map)['message']['content'] as String) as Map<String, dynamic>;
+    if (j['is_order'] != true) return null;
+    final picked = (j['lines'] as List? ?? []).cast<Map>().toList();
+    // Delivery: add the zone line that names the caller's postcode area, if the model missed it.
+    final said = conversation.where((m) => m.role == 'user').map((m) => m.content).join(' ');
+    if (RegExp(r'deliver', caseSensitive: false).hasMatch(said)) {
+      for (final pc in _postcode.allMatches(said.toUpperCase()).map((m) => m.group(1)!)) {
+        final i = priceLines.indexWhere((l) => RegExp('\\b$pc\\b').hasMatch(l.toUpperCase()) && RegExp(r'zone|deliver', caseSensitive: false).hasMatch(l));
+        if (i >= 0 && !picked.any((p) => p['line'] == i + 1)) picked.add({'line': i + 1, 'quantity': 1});
+      }
+    }
+    var total = 0.0;
+    final parts = <String>[];
+    for (final l in picked) {
+      final n = (l['line'] as num?)?.toInt() ?? 0;
+      final q = (l['quantity'] as num?)?.toDouble() ?? 0;
+      if (n < 1 || n > priceLines.length || q <= 0) continue;
+      final line = priceLines[n - 1];
+      final p = priceOf(line);
+      if (p == null) continue;
+      final name = line.substring(0, _price.firstMatch(line)!.start).trim();
+      total += q * p;
+      parts.add('${Calc.format(q)} × $name (£${p.toStringAsFixed(2)}) = £${(q * p).toStringAsFixed(2)}');
+    }
+    if (parts.isEmpty) return null;
+    return 'Exact order total worked out by the app (use these numbers, do not recalculate): ${parts.join('; ')}. TOTAL £${total.toStringAsFixed(2)}.';
   }
 }
 
@@ -112,6 +281,7 @@ class CloudTarget extends ModelTarget {
 class ToolLoop {
   ToolLoop({http.Client? client}) : _c = client ?? http.Client();
   final http.Client _c;
+  http.Client get client => _c;
 
   static const maxRounds = 6;
 
@@ -125,7 +295,9 @@ class ToolLoop {
       'no blank lines or sub-bullets, then add the totals. '
       '4) For counts, use the "Totals" line from the result exactly; never count by yourself. '
       '5) Inputs: use ids from earlier results (never names where an id is asked); write dates as YYYY-MM-DD. '
-      '6) If a tool returns an error, read it, fix the inputs and try once more; if it still fails, explain the problem simply.';
+      '6) If a tool returns an error, read it, fix the inputs and try once more; if it still fails, explain the problem simply. '
+      '7) For any prices, totals or other arithmetic, call calculate (e.g. "2*16 + 3.95"); never add up in your head. '
+      '8) Write money as digits with the currency sign (e.g. £21.50), never in words; the voice reads it naturally.';
 
   Future<String> run({
     required ModelTarget target,
@@ -144,7 +316,7 @@ class ToolLoop {
       LocalTarget t => t.maxCtx >= 16384 ? 14000 : 7000,
       CloudTarget _ => 40000,
     };
-    if (tools.isNotEmpty) {
+    {
       final now = DateTime.now();
       const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
       final rules = 'Today is ${days[now.weekday - 1]} ${now.toIso8601String().substring(0, 10)}. $toolRules';
@@ -155,8 +327,9 @@ class ToolLoop {
           j == i ? ChatMessage('system', '${messages[j].content}\n\n$rules') : messages[j],
       ];
     }
-    final lastUser = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
-    final recent = messages.where((m) => m.role == 'user').toList().reversed.take(3).map((m) => m.content).join(' ');
+    String q(String c) => c.contains('\n\nQuestion: ') ? c.substring(c.lastIndexOf('\n\nQuestion: ') + 12) : c;
+    final lastUser = q(messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content);
+    final recent = messages.where((m) => m.role == 'user').toList().reversed.take(3).map((m) => q(m.content)).join(' ');
     final active = <ToolBinding>[
       ...ToolSelector.rank(lastUser, tools, limit),
     ];
@@ -191,7 +364,7 @@ class ToolLoop {
             ),
           )
         : null;
-    final offered = <ToolBinding>[...active, ?finder];
+    final offered = <ToolBinding>[...active, ?finder, calculator];
     final idCache = <String, Map<String, String>>{};
     final ids = IdMemory();
     String? pendingRetry; // a tool refused for bad inputs, not yet retried
@@ -206,10 +379,16 @@ class ToolLoop {
     }
 
     Future<(String, bool)> exec(String name, Map<String, dynamic> args) async {
+      if (name == calculator.fnName) {
+        final expr = '${args['expression'] ?? ''}';
+        final v = Calc.eval(expr);
+        onEvent?.call(ToolEvent(calculator, args, result: v == null ? 'Could not calculate' : Calc.format(v), ok: v != null));
+        return (v == null ? 'Could not calculate "$expr". Use numbers and + - * / ( ) only.' : '$expr = ${Calc.format(v)}', v == null);
+      }
       if (name == 'find_tools') {
         final found = ToolSelector.rank('${args['query'] ?? ''}', tools, 8);
         for (final f in found) {
-          if (!offered.contains(f)) offered.insert(offered.length - 1, f);
+          if (!offered.contains(f)) offered.insert(offered.length - 2, f);
         }
         return (
           found.isEmpty
@@ -220,14 +399,14 @@ class ToolLoop {
       }
       final b = byName[name];
       if (b == null) return ('Unknown tool $name. Use find_tools to search.', true);
-      if (!offered.contains(b)) offered.insert(offered.length - (finder == null ? 0 : 1), b);
+      if (!offered.contains(b)) offered.insert(offered.length - (finder == null ? 1 : 2), b);
       // Check the model's inputs first; don't send the server something it will reject.
       bool hasLookup(String entity) => ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).isNotEmpty;
       final prepared = ToolArgs.prepare(b.tool.inputSchema, args,
           toolName: b.fnName,
           looksWrongId: (k, v) => ids.looksWrong(v, canLookUp: hasLookup(ToolArgs.entityOf(k))), lookupToolFor: (entity) {
         final t = ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).firstOrNull;
-        if (t != null && !offered.contains(t)) offered.insert(offered.length - (finder == null ? 0 : 1), t);
+        if (t != null && !offered.contains(t)) offered.insert(offered.length - (finder == null ? 1 : 2), t);
         return t?.fnName;
       });
       if (prepared.problem != null) {

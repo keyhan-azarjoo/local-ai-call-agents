@@ -147,8 +147,7 @@ class _ChatPageState extends State<ChatPage> {
     _scrollDown();
     try {
       final history = [ChatMessage('system', system), ...messages.where((x) => x != reply && x.role != 'tool')];
-      final tools = await s.toolsFor(_scopes);
-      if (tools.isNotEmpty) {
+      {
         reply.content = await s.agentReply(history, scopes: _scopes, approve: _approve, onText: (t) {
           if (!mounted) return;
           setState(() {
@@ -174,12 +173,6 @@ class _ChatPageState extends State<ChatPage> {
           _scrollDown();
         });
         if (reply.content.isEmpty) reply.content = '(No answer.)';
-      } else {
-        await for (final piece in s.chat(history, model: m)) {
-          reply.content += piece;
-          if (mounted) setState(() {});
-          _scrollDown();
-        }
       }
     } catch (e) {
       reply.content = reply.content.isEmpty ? 'Couldn’t reply: $e' : reply.content;

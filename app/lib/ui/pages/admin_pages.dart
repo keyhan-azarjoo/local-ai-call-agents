@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +11,7 @@ import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
 import 'devices_section.dart';
+import 'knowledge_page.dart' show addSkillFromDocument;
 import 'main_pages.dart' show Rows;
 
 /// A field in [formDialog]: free text, secret, or a fixed set of options.
@@ -261,48 +261,7 @@ class ContactsPage extends StatelessWidget {
   }
 }
 
-// ============================ Knowledge ============================
-
 const scopes = {'all': 'All callers', 'contacts': 'Contacts only', 'me': 'Only me'};
-
-class KnowledgePage extends StatelessWidget {
-  const KnowledgePage({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final s = context.watch<AppState>();
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      PageHead('Knowledge', description: 'Documents Ava can look up during calls. Indexed and searched on this computer.', actions: [
-        Btn('Add document or folder', icon: Icons.add, kind: BtnKind.primary, onPressed: () => formDialog(context, 'Add knowledge', const [
-              FormSpec('name', 'Name', hint: 'e.g. Price list'),
-              FormSpec('path', 'File or folder path'),
-              FormSpec('scope', 'Who can hear it', options: scopes),
-            ], 'Add', (v) async {
-              final path = v['path']!;
-              if (!File(path).existsSync() && !Directory(path).existsSync()) return 'That file or folder doesn’t exist.';
-              await s.db.insert('knowledge', {...v, 'name': v['name']!.isEmpty ? path.split(RegExp(r'[\\/]')).last : v['name'], 'status': 'waiting'});
-              await s.log('Added knowledge source $path');
-              s.refresh();
-              return null;
-            })),
-      ]),
-      Rows('knowledge', builder: (context, rows) => Section(title: 'Sources', children: [
-            if (rows.isEmpty) const EmptyState(icon: Icons.menu_book_outlined, title: 'No knowledge yet', body: 'Add FAQs, price lists or opening hours so Ava can answer questions.'),
-            for (final k in rows)
-              Tile(
-                last: k == rows.last,
-                leading: const LogoBox(child: Icon(Icons.description_outlined)),
-                title: Text(k['name'] as String),
-                subtitle: Muted(k['path'] as String, mono: true),
-                trailing: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  Pill(scopes[k['scope']] ?? ''),
-                  const Pill('Indexing arrives with the engine', tone: Tone.amber),
-                  _delete(s, 'knowledge', k['id'] as int, 'knowledge ${k['name']}'),
-                ]),
-              ),
-          ])),
-    ]);
-  }
-}
 
 // ============================ Tools (MCP) ============================
 
@@ -573,7 +532,9 @@ class SkillsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const PageHead('Skills', description: 'Ready-made behaviours you switch on. Each skill is instructions plus optional tools.'),
+      PageHead('Skills',
+          description: 'Ready-made behaviours you switch on. Add one from a document (for example a restaurant guide) and Ava follows it.',
+          actions: [Btn('Add skill from a document', icon: Icons.upload_file, kind: BtnKind.primary, onPressed: () => addSkillFromDocument(context))]),
       Rows('skills', orderBy: 'id', builder: (context, rows) => Grid(cols: 3, children: [
             for (final k in rows)
               Panel(
@@ -589,6 +550,26 @@ class SkillsPage extends StatelessWidget {
                   const SizedBox(height: 10),
                   Text(k['name'] as String, style: const TextStyle(fontWeight: FontWeight.w600)),
                   Muted(k['description'] as String),
+                  if ((k['instructions'] as String?)?.isNotEmpty == true) ...[
+                    const SizedBox(height: 8),
+                    Pill(k['source_id'] == null ? 'Instructions' : 'From a document · searchable', tone: Tone.blue),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Btn('View', small: true, onPressed: () => showDialog(
+                          context: context,
+                          builder: (c) => AlertDialog(
+                                title: Text(k['name'] as String),
+                                content: SizedBox(width: 560, child: SingleChildScrollView(child: SelectableText(k['instructions'] as String))),
+                                actions: [Btn('Close', onPressed: () => Navigator.pop(c))],
+                              ))),
+                      const SizedBox(width: 6),
+                      Btn('', icon: Icons.delete_outline, small: true, kind: BtnKind.ghost, onPressed: () async {
+                        if (k['source_id'] != null) await s.knowledge.removeSource(k['source_id'] as int);
+                        await s.db.delete('skills', k['id'] as int);
+                        s.refresh();
+                      }),
+                    ]),
+                  ],
                 ]),
               ),
           ])),

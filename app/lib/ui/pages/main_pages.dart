@@ -12,6 +12,7 @@ import '../../theme/tokens.dart';
 import '../widgets.dart';
 import 'devices_section.dart';
 import 'engine_pages.dart';
+import 'knowledge_page.dart';
 
 /// Loads rows from the database and rebuilds whenever AppState notifies.
 class Rows extends StatelessWidget {
@@ -542,7 +543,12 @@ class _AssistantPageState extends State<AssistantPage> {
             ]),
           ),
           const SizedBox(height: 16),
-          Rows('skills', orderBy: 'id', builder: (context, skills) => Section(title: 'What Ava can do', children: [
+          const KnowledgeList(compact: true),
+          const SizedBox(height: 16),
+          Rows('skills', orderBy: 'id', builder: (context, skills) => Section(
+              title: 'What Ava can do',
+              trailing: Btn('Add skill', icon: Icons.upload_file, small: true, onPressed: () => addSkillFromDocument(context)),
+              children: [
                 for (final k in skills)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),

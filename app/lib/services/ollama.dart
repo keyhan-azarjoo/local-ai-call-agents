@@ -9,6 +9,9 @@ class OllamaModel {
   final String name, params, quant;
   final int sizeBytes;
   double get sizeGb => sizeBytes / 1e9;
+
+  /// Search-only models (used for documents) can't chat.
+  bool get isEmbedding => RegExp(r'embed|bge|minilm|e5-|gte-', caseSensitive: false).hasMatch(name);
 }
 
 class LoadedModel {
@@ -139,13 +142,13 @@ class Ollama {
   }
 
   /// Streams the assistant's reply token by token.
-  Stream<String> chat(String model, List<ChatMessage> messages, {bool disableThinking = false}) async* {
+  Stream<String> chat(String model, List<ChatMessage> messages, {bool disableThinking = false, int numCtx = 16384}) async* {
     final body = <String, Object?>{
       'model': model,
       'messages': messages.map((m) => m.toJson()).toList(),
       'stream': true,
       'keep_alive': -1,
-      'options': {'num_ctx': 4096, 'temperature': 0.6},
+      'options': {'num_ctx': numCtx, 'temperature': 0.6},
     };
     // Only hybrid models honour think:false; thinking-only models would then
     // write their reasoning into the reply, so we leave them alone and

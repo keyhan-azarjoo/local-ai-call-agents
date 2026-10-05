@@ -179,6 +179,37 @@ class Db {
       ring INTEGER NOT NULL DEFAULT 1
     )
     ''',
+    '''
+    ALTER TABLE knowledge ADD COLUMN kind TEXT NOT NULL DEFAULT 'file';
+    ALTER TABLE knowledge ADD COLUMN files INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE knowledge ADD COLUMN chunks INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE knowledge ADD COLUMN indexed_at INTEGER;
+    ALTER TABLE knowledge ADD COLUMN error TEXT;
+    ALTER TABLE skills ADD COLUMN instructions TEXT;
+    ALTER TABLE skills ADD COLUMN source_id INTEGER;
+    CREATE TABLE kn_files(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_id INTEGER NOT NULL,
+      path TEXT NOT NULL,
+      size INTEGER NOT NULL,
+      mtime INTEGER NOT NULL,
+      chunks INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      UNIQUE(source_id, path)
+    );
+    CREATE TABLE kn_chunks(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      file_id INTEGER NOT NULL,
+      source_id INTEGER NOT NULL,
+      ord INTEGER NOT NULL,
+      heading TEXT,
+      page INTEGER,
+      text TEXT NOT NULL,
+      vec BLOB
+    );
+    CREATE INDEX kn_chunks_file ON kn_chunks(file_id);
+    CREATE VIRTUAL TABLE kn_fts USING fts5(text, heading, tokenize = 'unicode61 remove_diacritics 2')
+    ''',
   ];
 
   // ---------- settings ----------

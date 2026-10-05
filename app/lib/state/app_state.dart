@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -13,6 +14,7 @@ import '../services/hardware.dart';
 import '../services/ollama.dart';
 import '../services/companion/host_client.dart';
 import '../services/companion/host_server.dart';
+import '../services/knowledge/knowledge.dart';
 import '../services/mcp/mcp_manager.dart';
 import '../services/persona.dart';
 import '../services/speech.dart';
@@ -103,6 +105,7 @@ class AppState extends ChangeNotifier {
   late Catalog catalog;
   late Speech speech;
   late McpManager mcp;
+  late KnowledgeService knowledge;
   final toolLoop = ToolLoop();
 
   /// Opens sign-in pages. Tests replace this before [init].
@@ -138,7 +141,7 @@ class AppState extends ChangeNotifier {
     ollamaVersion = await ollama.version();
     if (ollamaVersion != null) {
       try {
-        installedModels = await ollama.installed();
+        installedModels = (await ollama.installed()).where((m) => !m.isEmbedding).toList();
         loadedModels = await ollama.loaded();
       } catch (_) {}
       // Pick the best downloaded model when none is chosen, or the chosen one is gone.
@@ -195,7 +198,9 @@ class AppState extends ChangeNotifier {
     if (usingCloud && cloud != null && model == null) return cloudLlm.chat(cloud!, messages);
     final m = model ?? llmModel!;
     final entry = catalog.llm.where((e) => e.id == m).firstOrNull;
-    return ollama.chat(m, messages, disableThinking: entry?.think == 'off');
+    final t = modelTarget;
+    final ctx = t is LocalTarget ? (t.maxCtx < 16384 ? t.maxCtx : 16384) : 16384;
+    return ollama.chat(m, messages, disableThinking: entry?.think == 'off', numCtx: ctx);
   }
 
   ModelTarget get modelTarget {
@@ -219,6 +224,69 @@ class AppState extends ChangeNotifier {
     return out;
   }
 
+  /// Adds what the AI should know for this turn: turned-on skills, and the most
+  /// relevant passages from your documents (searched locally, in milliseconds).
+  Future<List<ChatMessage>> prepare(List<ChatMessage> messages, {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits}) async {
+    final extra = <String>[];
+    final skills = await db.all('skills', where: "enabled = 1 AND instructions IS NOT NULL AND instructions != ''", orderBy: 'id');
+    if (skills.isNotEmpty) {
+      extra.add('Skills you have (follow them when relevant):\n${skills.map((k) => '## ${k['name']}\n${k['instructions']}').join('\n\n')}');
+    }
+    final disabledSkillSources = {
+      for (final k in await db.all('skills', where: 'enabled = 0 AND source_id IS NOT NULL')) k['source_id'] as int
+    };
+    final sources = {
+      for (final k in await db.all('knowledge'))
+        if (scopes.contains(k['scope']) && !disabledSkillSources.contains(k['id'])) k['id'] as int
+    };
+    final users = messages.where((m) => m.role == 'user').toList();
+    String? notes;
+    if (sources.isNotEmpty && users.isNotEmpty) {
+      var q = users.last.content;
+      if (q.length < 40 && users.length > 1) q = '${users[users.length - 2].content} $q';
+      final r = await knowledge.search(q, sources: sources, k: 4);
+      if (r.hits.isNotEmpty) {
+        onHits?.call(r.hits);
+        String cut(String t) => t.length > 700 ? '${t.substring(0, 700)}…' : t;
+        notes = [for (var i = 0; i < r.hits.length; i++) '[${i + 1}] ${r.hits[i].where}: ${cut(r.hits[i].text)}'].join('\n');
+      }
+    }
+    var out = messages;
+    // Stable instructions go in the system prompt (the model keeps it in memory between turns)…
+    if (extra.isNotEmpty) {
+      final i = out.indexWhere((m) => m.role == 'system');
+      final block = extra.join('\n\n');
+      out = [
+        if (i < 0) ChatMessage('system', block),
+        for (var j = 0; j < out.length; j++) j == i ? ChatMessage('system', '${out[j].content}\n\n$block') : out[j],
+      ];
+    }
+    // Orders: exact totals from the document's price lines (local models add up badly).
+    if (!usingCloud && users.isNotEmpty && OrderQuote.worthChecking(users.last.content)) {
+      try {
+        final t = modelTarget;
+        if (t is LocalTarget) {
+          final quote = await OrderQuote.quote(toolLoop.client, t, messages, await knowledge.priceLines(sources));
+          if (quote != null) notes = notes == null ? quote : '$notes\n$quote';
+        }
+      } catch (_) {}
+    }
+    // …while the passages for this question ride along with the question itself.
+    if (notes != null) {
+      final last = out.lastIndexWhere((m) => m.role == 'user');
+      out = [
+        for (var j = 0; j < out.length; j++)
+          j == last
+              ? ChatMessage('user', 'Notes from the documents (use them if they answer this; otherwise ignore):\n$notes\n\n$questionMark${out[j].content}')
+              : out[j],
+      ];
+    }
+    return out;
+  }
+
+  /// Marks where the real question starts after attached notes.
+  static const questionMark = 'Question: ';
+
   /// One AI reply that may use tools. Falls back to plain chat when there are none.
   Future<String> agentReply(
     List<ChatMessage> messages, {
@@ -228,6 +296,7 @@ class AppState extends ChangeNotifier {
     void Function(String textSoFar)? onText,
   }) async {
     final tools = await toolsFor(scopes);
+    messages = await prepare(messages, scopes: scopes);
     final text = await toolLoop.run(
       target: modelTarget,
       messages: messages,
@@ -280,6 +349,8 @@ class AppState extends ChangeNotifier {
     catalog = await Catalog.load();
     speech = await Speech.create();
     mcp = McpManager(db, openBrowser: (u) => openBrowser(u))..addListener(notifyListeners);
+    knowledge = KnowledgeService(db)..addListener(notifyListeners);
+    if (!isPhone) unawaited(knowledge.start());
     advanced = await db.setting('ui.advanced') == '1';
     themeMode = await db.setting('ui.theme') == 'dark' ? ThemeMode.dark : ThemeMode.light;
     answering = await db.setting('calls.answering') != '0';

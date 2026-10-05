@@ -146,18 +146,68 @@ class WhisperStreamingSTT(stt.STT):
         self.agent_until = 0.0
         self.agent_said = ""
         self.user_level = 0.0
+        # Loudness of what Ava plays, every 20 ms (time bin -> log energy), to recognise her echo.
+        self.agent_env: dict[int, float] = {}
+        self.play_end = 0.0
+
+    def record_agent_audio(self, pcm: np.ndarray, sr: int) -> None:
+        """Ava's own output, as it goes out."""
+        n = max(1, int(sr * 0.02))
+        # Speech is made faster than it plays: put it on a playback timeline (after what's queued).
+        t0 = max(time.monotonic(), self.play_end)
+        self.play_end = t0 + len(pcm) / sr
+        b0 = int(t0 / 0.02)
+        for i in range(0, len(pcm) - n + 1, n):
+            seg = pcm[i : i + n].astype(np.float32)
+            self.agent_env[b0 + i // n] = float(np.log10(np.sqrt(np.mean(seg * seg)) + 1.0))
+        if len(self.agent_env) > 6000:
+            for k in sorted(self.agent_env)[:2000]:
+                del self.agent_env[k]
+
+    def echo_likeness(self, pcm: np.ndarray, t_end: float) -> float:
+        """How closely this sound follows Ava's own output (0..1), allowing for the delay
+        between playing it and hearing it back (up to ~1.5 s)."""
+        n = 320  # 20 ms at 16 kHz
+        bins = len(pcm) // n
+        if bins < 10 or not self.agent_env:
+            return 0.0
+        mic = np.array([np.log10(np.sqrt(np.mean(pcm[i * n : (i + 1) * n].astype(np.float32) ** 2)) + 1.0) for i in range(bins)])
+        if mic.std() < 1e-3:
+            return 0.0
+        end_bin = int(t_end / 0.02)
+        first = end_bin - bins + 1
+        best = 0.0
+        for lag in range(-30, 61):  # the segment end is only roughly known
+            keys = [first + i - lag for i in range(bins)]
+            # Only where Ava was actually playing for most of this sound.
+            if sum(k in self.agent_env for k in keys) < bins * 0.7:
+                continue
+            ref = np.array([self.agent_env.get(k, 0.0) for k in keys])
+            if ref.std() < 1e-3:
+                continue
+            c = float(np.corrcoef(mic, ref)[0, 1])
+            best = max(best, c)
+        return best
 
     def heard_agent(self, text: str) -> None:
         self.agent_said = (self.agent_said + " " + text)[-800:]
 
-    def is_echo(self, pcm: np.ndarray, text: str) -> bool:
-        """True when this sound is Ava's own voice coming back (quiet, or the words she is saying)."""
+    def is_echo(self, pcm: np.ndarray, text: str, t_end: float | None = None) -> bool:
+        """True when this sound is Ava's own voice coming back: it follows what she is playing,
+        or (while she speaks) is much quieter than the caller usually is. Words aren't compared:
+        echoes are mis-heard, and callers share common words with her."""
+        like = self.echo_likeness(pcm, t_end or time.monotonic())
+        log.debug("own-voice check: like=%.2f text=%s", like, text[:40])
+        # Follows what Ava just played (only possible if she played something then): her echo.
+        if like >= 0.8:  # her echo scores ~0.9; two different voices ~0.6-0.7
+            return True
         if not (self.agent_speaking or time.monotonic() < self.agent_until):
             return False
-        rms = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) if len(pcm) else 0.0
-        if rms < (self.user_level * 0.4 if self.user_level else 250.0):
+        if like >= 0.65:  # while she speaks, a looser match still means it's her
             return True
-        return bool(text) and _overlap(text, self.agent_said) >= 0.5
+        rms = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) if len(pcm) else 0.0
+        # Much quieter than the caller usually is, while she speaks: what's left of her echo.
+        return bool(self.user_level) and rms < self.user_level * 0.35
 
     def learn_level(self, pcm: np.ndarray) -> None:
         if self.agent_speaking or time.monotonic() < self.agent_until or not len(pcm):
@@ -324,7 +374,8 @@ class _WhisperStream(stt.RecognizeStream):
                         except Exception as e:  # noqa: BLE001
                             log.warning("final transcription failed: %s", e)
                     if text and self._s.is_echo(pcm, text):
-                        log.info("ignored own voice: %s", text[:80])
+                        log.info("ignored own voice (%.1f s, like %.2f, env %d..%d, now %d): %s", len(pcm) / 16000, self._s.echo_likeness(pcm, time.monotonic()),
+                                 min(self._s.agent_env or [0]), max(self._s.agent_env or [0]), int(time.monotonic() / 0.02), text[:80])
                         text = ""
                     elif text:
                         self._s.learn_level(pcm)
@@ -467,6 +518,8 @@ class _PiperChunked(tts.ChunkedStream):
 
         fut = loop.run_in_executor(None, work)  # noqa: F841 (awaited below)
         while (b := await queue.get()) is not None:
+            if self._p._stt:
+                self._p._stt.record_agent_audio(np.frombuffer(b, dtype=np.int16), sr)
             output_emitter.push(b)
         await fut
         output_emitter.flush()
@@ -589,6 +642,8 @@ class _KokoroChunked(tts.ChunkedStream):
                 pcm = (np.clip(samples, -1, 1) * 32767).astype(np.int16)
                 if len(piece) < 40:
                     _SPOKEN[(voice, piece)] = pcm
+            if self._p._stt:
+                self._p._stt.record_agent_audio(pcm, 24000)
             output_emitter.push(pcm.tobytes())
         output_emitter.flush()
 
@@ -724,6 +779,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
     def track_own_voice(ev) -> None:  # noqa: ANN001
         stt_.agent_speaking = ev.new_state == "speaking"
+        if ev.new_state != "speaking":
+            stt_.play_end = min(stt_.play_end, time.monotonic())  # interrupted: nothing more queued
         if ev.old_state == "speaking":
             stt_.agent_until = time.monotonic() + 0.8  # the last words are still in the room
     session.on("agent_state_changed", track_own_voice)

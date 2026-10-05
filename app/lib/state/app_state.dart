@@ -1176,6 +1176,7 @@ class AppState extends ChangeNotifier {
     // while the answer is worked out; a plain "one moment" only if it's slow anyway.
     final ack = ackFor(question, lang);
     if (ack != null) fill(ack);
+    final ackAt = ack == null ? null : DateTime.now().difference(t0).inMilliseconds;
     final slow = Timer(const Duration(milliseconds: 2500), fill);
     try {
       final multilingual = voiceTarget(lang);
@@ -1219,7 +1220,7 @@ class AppState extends ChangeNotifier {
     }
     ping.cancel();
     slow.cancel();
-    _logVoiceTurn(mode, lang, convo.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content, sent, t0, gone && !capped);
+    _logVoiceTurn(mode, lang, question, '${ack == null ? '' : '[${(ackAt ?? 0)} ms] $ack'}$sent', t0, gone && !capped);
     try {
       chunk({}, finish: 'stop');
       res.write('data: [DONE]\n\n');

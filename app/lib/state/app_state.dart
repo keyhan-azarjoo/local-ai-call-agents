@@ -895,10 +895,47 @@ class AppState extends ChangeNotifier {
     return '$system This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
         'If there are many items, say the three or four most useful ones and ask if they want to hear more. '
         'The person’s words come from speech recognition and may contain mis-heard words: work out what they most likely meant and answer that; never repeat their words back. '
+        'Names are often mis-heard (“K-Han” or “Kay hun” for “Keyhan”): if a name sounds like one you know, use that person — don’t say they don’t exist. '
         'Only state facts you were given; if you don’t know, say you will check and take a message. '
         'You have already said a short “let me check” when needed: go straight to the answer, don’t start with fillers.'
         '${mode == 'owner' ? await _capabilities(_voiceScopes(mode)) : ''}'
         '${speak == null ? ' Always reply in the language the person speaks.' : ' The person is speaking $speak: reply only in $speak${lang == 'en' ? '' : ', and say names of dishes, products and places in $speak too (translate or write them in $speak script), because the voice can only read $speak'}.'}';
+  }
+
+  /// Names the hearing should expect (people, the assistant, users in connected systems),
+  /// so "Keyhan" isn't heard as "K-Han".
+  Future<String> _vocabulary() async {
+    final names = <String>{};
+    void add(Object? v) {
+      final t = '${v ?? ''}'.trim();
+      if (t.length >= 2 && t.length <= 40 && RegExp(r"^[\p{L} .\-’']+$", unicode: true).hasMatch(t)) names.add(t);
+    }
+
+    add(user?.name);
+    for (final r in await db.all('users', orderBy: 'id')) {
+      add(r['name']);
+    }
+    for (final r in await db.all('agents', orderBy: 'id')) {
+      add(r['name']);
+    }
+    for (final r in await db.all('contacts', orderBy: 'id')) {
+      add(r['name']);
+    }
+    // People in connected systems (from their data snapshots).
+    final dir = Directory(p.join(p.dirname(db.path), 'mcp'));
+    if (dir.existsSync()) {
+      for (final f in dir.listSync(recursive: true).whereType<File>().where((f) => f.path.contains('user') || f.path.contains('contact'))) {
+        for (final line in f.readAsLinesSync()) {
+          if (!line.startsWith('{')) continue;
+          try {
+            final j = jsonDecode(line) as Map;
+            final full = [j['firstName'], j['lastName']].where((x) => x != null).join(' ');
+            add(full.isNotEmpty ? full : (j['name'] ?? j['displayName'] ?? j['fullName']));
+          } catch (_) {}
+        }
+      }
+    }
+    return names.take(80).join(', ');
   }
 
   /// What Ava can use, said plainly, so she knows (and can tell the owner) what she has.
@@ -1066,7 +1103,7 @@ class AppState extends ChangeNotifier {
       if (l != 'auto' && l != 'en' && voiceTarget(l) != null) {
         unawaited(prewarm([ChatMessage('system', await _voiceSystem(m, l))], scopes: _voiceScopes(m), target: voiceTarget(l), useTools: false).catchError((_) {}));
       }
-      return json(200, {'greeting': Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound});
+      return json(200, {'greeting': Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _vocabulary()});
     }
     if (path == '/v1/models') {
       return json(200, {
@@ -1135,9 +1172,24 @@ class AppState extends ChangeNotifier {
     }
     res.headers
       ..contentType = ContentType('text', 'event-stream', charset: 'utf-8')
-      ..set('Cache-Control', 'no-cache');
-    res.bufferOutput = false;
-    void chunk(Map<String, Object?> delta, {String? finish}) => res.write(
+      ..set('Cache-Control', 'no-cache')
+      ..chunkedTransferEncoding = false;
+    res.persistentConnection = false;
+    // Own the connection, so we see the moment the voice agent hangs up on this turn
+    // (the person kept talking or interrupted) and stop working on it straight away.
+    final sock = await res.detachSocket();
+    var gone = false;
+    sock.listen((_) {}, onDone: () => gone = true, onError: (_) => gone = true, cancelOnError: true);
+    void write(String text) {
+      if (gone) return;
+      try {
+        sock.add(utf8.encode(text));
+      } catch (_) {
+        gone = true;
+      }
+    }
+
+    void chunk(Map<String, Object?> delta, {String? finish}) => write(
       'data: ${jsonEncode({
         'id': id,
         'object': 'chat.completion.chunk',
@@ -1149,18 +1201,8 @@ class AppState extends ChangeNotifier {
       })}\n\n',
     );
     chunk({'role': 'assistant', 'content': ''});
-    // The voice agent hangs up on a turn when the caller keeps talking: stop working on it.
-    var gone = false;
-    res.done.then((_) {}, onError: (_) => gone = true);
     // Keep the stream alive while tools run (SSE comments are ignored by clients).
-    // Frequent, so a turn the agent dropped (the person kept talking) stops within half a second.
-    final ping = Timer.periodic(const Duration(milliseconds: 400), (_) {
-      try {
-        res.write(': working\n\n');
-      } catch (_) {
-        gone = true;
-      }
-    });
+    final ping = Timer.periodic(const Duration(seconds: 2), (_) => write(': working\n\n'));
     var sent = '';
     var filled = false, capped = false;
     final t0 = DateTime.now();
@@ -1174,10 +1216,17 @@ class AppState extends ChangeNotifier {
 
     // Like a person: acknowledge the request straight away ("Hmm, let me count your users…")
     // while the answer is worked out; a plain "one moment" only if it's slow anyway.
-    final ack = ackFor(question, lang);
+    // Only one "let me check" per question: not again when they add to it or cut in.
+    final continuing = convo.length >= 2 && convo[convo.length - 2].role == 'user';
+    final lastAi = convo.lastWhere((m) => m.role == 'assistant', orElse: () => ChatMessage('assistant', '')).content.trim();
+    final justAcked = lastAi.isNotEmpty && lastAi.length < 70 && RegExp(r'^(hmm|okay|sure|right|let me|one moment|اممم|یه لحظه|بذار|باشه|حتماً)', caseSensitive: false).hasMatch(lastAi);
+    final ack = continuing || justAcked ? null : ackFor(question, lang);
     if (ack != null) fill(ack);
     final ackAt = ack == null ? null : DateTime.now().difference(t0).inMilliseconds;
-    final slow = Timer(const Duration(milliseconds: 2500), fill);
+    // Backup "one moment" for a slow answer — also once per question.
+    final slow = Timer(const Duration(milliseconds: 2500), () {
+      if (!continuing && !justAcked) fill();
+    });
     try {
       final multilingual = voiceTarget(lang);
       final live = multilingual is LocalTarget && mode == 'owner' && await _needsLiveTools(question, scopes);
@@ -1212,6 +1261,8 @@ class AppState extends ChangeNotifier {
       if (!capped) {
         ping.cancel();
         slow.cancel();
+        _logVoiceTurn(mode, lang, question, '${ack ?? ''}$sent', t0, true);
+        sock.destroy();
         return;
       }
     } catch (e) {
@@ -1221,10 +1272,11 @@ class AppState extends ChangeNotifier {
     ping.cancel();
     slow.cancel();
     _logVoiceTurn(mode, lang, question, '${ack == null ? '' : '[${(ackAt ?? 0)} ms] $ack'}$sent', t0, gone && !capped);
+    chunk({}, finish: 'stop');
+    write('data: [DONE]\n\n');
     try {
-      chunk({}, finish: 'stop');
-      res.write('data: [DONE]\n\n');
-      await res.close();
+      await sock.flush();
+      await sock.close();
     } catch (_) {}
   }
 

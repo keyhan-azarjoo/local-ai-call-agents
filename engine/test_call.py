@@ -44,7 +44,7 @@ async def main(files: list[str]) -> None:
         async for ev in stream:
             pcm = np.frombuffer(ev.frame.data, dtype=np.int16)
             if echo_level:
-                echo.append((pcm.astype(np.float32) * echo_level).astype(np.int16))
+                echo.append((time.monotonic(), (pcm.astype(np.float32) * echo_level).astype(np.int16)))
             if marks["spoke_end"] and not first_audio.is_set() and np.abs(pcm).mean() > 250:
                 first_audio.set()
 
@@ -70,22 +70,35 @@ async def main(files: list[str]) -> None:
     track = rtc.LocalAudioTrack.create_audio_track("mic", source)
     await room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
 
+    clock = {"next": 0.0}
+
+    async def pace() -> None:
+        # Send like a real microphone: one 20 ms frame every 20 ms.
+        now = time.monotonic()
+        clock["next"] = max(clock["next"], now) + 0.02
+        await asyncio.sleep(max(0.0, clock["next"] - now - 0.02))
+
     def take_echo(n: int) -> np.ndarray:
+        # What the speakers played ~150 ms ago comes back into the mic (older sound is gone).
         out = np.zeros(n, np.int16)
         got = 0
-        while echo and got < n:
-            e = echo[0]
+        now = time.monotonic()
+        while echo and echo[0][0] < now - 0.6:
+            echo.pop(0)
+        while echo and got < n and echo[0][0] <= now - 0.15:
+            t, e = echo[0]
             k = min(n - got, len(e))
             out[got : got + k] = e[:k]
             got += k
             if k == len(e):
                 echo.pop(0)
             else:
-                echo[0] = e[k:]
+                echo[0] = (t, e[k:])
         return out
 
     async def silence(seconds: float) -> None:
         for _ in range(int(seconds * 50)):
+            await pace()
             await source.capture_frame(rtc.AudioFrame(take_echo(320).tobytes(), 16000, 1, 320))
 
     async def speak(path: str) -> None:
@@ -94,6 +107,7 @@ async def main(files: list[str]) -> None:
             chunk = pcm[i : i + 320]
             if len(chunk) < 320:
                 chunk = np.pad(chunk, (0, 320 - len(chunk)))
+            await pace()
             mixed = np.clip(chunk.astype(np.int32) + take_echo(320), -32768, 32767).astype(np.int16)
             await source.capture_frame(rtc.AudioFrame(mixed.tobytes(), sr, 1, 320))
 

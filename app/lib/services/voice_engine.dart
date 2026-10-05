@@ -219,11 +219,16 @@ class VoiceEngine extends ChangeNotifier {
 
   /// Stops engine processes left behind by an earlier run of the app (e.g. after a crash).
   void _killStale() {
-    if (!_pidFile.existsSync() || _procs.isNotEmpty) return;
-    for (final pid in _pidFile.readAsStringSync().split(' ').map(int.tryParse).nonNulls) {
-      Process.killPid(pid);
+    if (_procs.isNotEmpty) return;
+    if (_pidFile.existsSync()) {
+      for (final pid in _pidFile.readAsStringSync().split(' ').map(int.tryParse).nonNulls) {
+        Process.killPid(pid);
+      }
+      _pidFile.deleteSync();
     }
-    _pidFile.deleteSync();
+    // Any voice agent of ours still running (e.g. the app was force-quit): it would keep
+    // old code and hold the agent's port, so the new one couldn't start.
+    if (!Platform.isWindows) Process.runSync('pkill', ['-f', script]);
   }
 
   Future<void> start() async {

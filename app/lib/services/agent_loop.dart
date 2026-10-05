@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'cloud_llm.dart';
 import 'mcp/mcp_client.dart';
 import 'ollama.dart' show ChatMessage;
+import 'tool_args.dart';
 import 'tool_results.dart';
 
 /// An MCP tool as offered to the model.
@@ -121,7 +122,9 @@ class ToolLoop {
       '2) Always present the data you received. If a note says some items did not fit, still list the ones shown, '
       'then say how many more exist. '
       '3) If the user asks for a list, list every item (one line each), then add the totals. '
-      '4) For counts, use the "Totals" line from the result exactly; never count by yourself.';
+      '4) For counts, use the "Totals" line from the result exactly; never count by yourself. '
+      '5) Inputs: use ids from earlier results (never names where an id is asked); write dates as YYYY-MM-DD. '
+      '6) If a tool returns an error, read it, fix the inputs and try once more; if it still fails, explain the problem simply.';
 
   Future<String> run({
     required ModelTarget target,
@@ -140,11 +143,14 @@ class ToolLoop {
       CloudTarget _ => 40000,
     };
     if (tools.isNotEmpty) {
+      final now = DateTime.now();
+      const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      final rules = 'Today is ${days[now.weekday - 1]} ${now.toIso8601String().substring(0, 10)}. $toolRules';
       final i = messages.indexWhere((m) => m.role == 'system');
       messages = [
-        if (i < 0) ChatMessage('system', toolRules),
+        if (i < 0) ChatMessage('system', rules),
         for (var j = 0; j < messages.length; j++)
-          j == i ? ChatMessage('system', '${messages[j].content}\n\n$toolRules') : messages[j],
+          j == i ? ChatMessage('system', '${messages[j].content}\n\n$rules') : messages[j],
       ];
     }
     final lastUser = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
@@ -185,6 +191,17 @@ class ToolLoop {
         : null;
     final offered = <ToolBinding>[...active, ?finder];
     final idCache = <String, Map<String, String>>{};
+    final ids = IdMemory();
+    String? pendingRetry; // a tool refused for bad inputs, not yet retried
+    var nudged = false;
+    String? nudge() {
+      if (pendingRetry == null || nudged) return null;
+      nudged = true;
+      return 'You now have what you need. Call $pendingRetry again with the correct id or inputs, then answer my question.';
+    }
+    for (final m in messages) {
+      ids.learn(m.content);
+    }
 
     Future<(String, bool)> exec(String name, Map<String, dynamic> args) async {
       if (name == 'find_tools') {
@@ -202,6 +219,22 @@ class ToolLoop {
       final b = byName[name];
       if (b == null) return ('Unknown tool $name. Use find_tools to search.', true);
       if (!offered.contains(b)) offered.insert(offered.length - (finder == null ? 0 : 1), b);
+      // Check the model's inputs first; don't send the server something it will reject.
+      bool hasLookup(String entity) => ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).isNotEmpty;
+      final prepared = ToolArgs.prepare(b.tool.inputSchema, args,
+          toolName: b.fnName,
+          looksWrongId: (k, v) => ids.looksWrong(v, canLookUp: hasLookup(ToolArgs.entityOf(k))), lookupToolFor: (entity) {
+        final t = ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).firstOrNull;
+        if (t != null && !offered.contains(t)) offered.insert(offered.length - (finder == null ? 0 : 1), t);
+        return t?.fnName;
+      });
+      if (prepared.problem != null) {
+        pendingRetry = b.fnName;
+        onEvent?.call(ToolEvent(b, args, result: prepared.problem!, ok: false));
+        return (prepared.problem!, true);
+      }
+      if (pendingRetry == b.fnName) pendingRetry = null;
+      args = prepared.args;
       final ev = ToolEvent(b, args);
       if (!b.tool.readOnly && !await approve(b, args)) {
         ev
@@ -213,12 +246,18 @@ class ToolLoop {
       }
       try {
         final r = await runTool(b, args);
+        final failed = r.isError || ToolErrors.looksLikeError(r.text);
         ev
-          ..result = r.text
-          ..ok = !r.isError;
+          ..result = failed
+              ? ToolErrors.friendly(r.text)
+              : r.text.trim().isEmpty || RegExp(r'^\{\s*"\w+"\s*:\s*null\s*\}$').hasMatch(r.text.trim())
+                  ? 'The tool returned no data. If you passed an id, it may be wrong: get ids from a list tool first.'
+                  : r.text
+          ..ok = !failed;
+        if (!failed) ids.learn(r.text);
       } catch (e) {
         ev
-          ..result = 'Tool failed: $e'
+          ..result = ToolErrors.friendly('$e')
           ..ok = false;
       }
       onEvent?.call(ev);
@@ -250,16 +289,17 @@ class ToolLoop {
           } catch (_) {}
         }
       }
+      if (!ev.ok) return (ev.result, true);
       final fitted = ToolResults.compact(ev.result, resultLimit, lookups: lookups);
-      return (fitted.text, !ev.ok);
+      return (fitted.text, false);
     }
 
     return switch (target) {
-      LocalTarget t => _ollama(t, messages, offered, exec),
+      LocalTarget t => _ollama(t, messages, offered, exec, nudge),
       CloudTarget t => switch (t.config.provider) {
-          CloudProvider.openai || CloudProvider.azure => _openai(t.config, messages, offered, exec),
-          CloudProvider.anthropic => _anthropic(t.config, messages, offered, exec),
-          CloudProvider.google => _google(t.config, messages, offered, exec),
+          CloudProvider.openai || CloudProvider.azure => _openai(t.config, messages, offered, exec, nudge),
+          CloudProvider.anthropic => _anthropic(t.config, messages, offered, exec, nudge),
+          CloudProvider.google => _google(t.config, messages, offered, exec, nudge),
         },
     };
   }
@@ -328,7 +368,7 @@ class ToolLoop {
 
   // ---------------- Ollama ----------------
   Future<String> _ollama(LocalTarget t, List<ChatMessage> messages, List<ToolBinding> tools,
-      Future<(String, bool)> Function(String, Map<String, dynamic>) exec) async {
+      Future<(String, bool)> Function(String, Map<String, dynamic>) exec, String? Function() nudge) async {
     final msgs = <Map<String, Object?>>[for (final m in messages) m.toJson()];
     for (var round = 0; round < maxRounds; round++) {
       final fns = tools.map(_fn).toList();
@@ -350,7 +390,13 @@ class ToolLoop {
       }
       final m = (r['message'] as Map).cast<String, dynamic>();
       final calls = (m['tool_calls'] as List?) ?? [];
-      if (calls.isEmpty) return _stripThink((m['content'] as String?) ?? '');
+      if (calls.isEmpty) {
+        final n = nudge();
+        if (n == null) return _stripThink((m['content'] as String?) ?? '');
+        msgs.add({'role': 'assistant', 'content': m['content'] ?? ''});
+        msgs.add({'role': 'user', 'content': n});
+        continue;
+      }
       msgs.add({'role': 'assistant', 'content': m['content'] ?? '', 'tool_calls': calls});
       for (final c in calls) {
         final name = c['function']['name'] as String;
@@ -365,7 +411,7 @@ class ToolLoop {
 
   // ---------------- OpenAI / Azure ----------------
   Future<String> _openai(CloudConfig c, List<ChatMessage> messages, List<ToolBinding> tools,
-      Future<(String, bool)> Function(String, Map<String, dynamic>) exec) async {
+      Future<(String, bool)> Function(String, Map<String, dynamic>) exec, String? Function() nudge) async {
     final azure = c.provider == CloudProvider.azure;
     final url = azure
         ? '${c.endpoint.replaceAll(RegExp(r'/+$'), '')}/openai/deployments/${c.model}/chat/completions?api-version=2024-10-21'
@@ -380,7 +426,13 @@ class ToolLoop {
       });
       final m = ((r['choices'] as List).first['message'] as Map).cast<String, dynamic>();
       final calls = (m['tool_calls'] as List?) ?? [];
-      if (calls.isEmpty) return (m['content'] as String?) ?? '';
+      if (calls.isEmpty) {
+        final n = nudge();
+        if (n == null) return (m['content'] as String?) ?? '';
+        msgs.add({'role': 'assistant', 'content': m['content'] ?? ''});
+        msgs.add({'role': 'user', 'content': n});
+        continue;
+      }
       msgs.add({'role': 'assistant', 'content': m['content'], 'tool_calls': calls});
       for (final call in calls) {
         final (text, _) = await exec(call['function']['name'] as String, _args(call['function']['arguments']));
@@ -392,7 +444,7 @@ class ToolLoop {
 
   // ---------------- Anthropic ----------------
   Future<String> _anthropic(CloudConfig c, List<ChatMessage> messages, List<ToolBinding> tools,
-      Future<(String, bool)> Function(String, Map<String, dynamic>) exec) async {
+      Future<(String, bool)> Function(String, Map<String, dynamic>) exec, String? Function() nudge) async {
     final system = messages.where((m) => m.role == 'system').map((m) => m.content).join('\n\n');
     final msgs = <Map<String, Object?>>[
       for (final m in messages.where((m) => m.role != 'system')) {'role': m.role, 'content': m.content}
@@ -413,7 +465,11 @@ class ToolLoop {
       final content = (r['content'] as List).cast<Map<String, dynamic>>();
       final uses = content.where((b) => b['type'] == 'tool_use').toList();
       if (r['stop_reason'] != 'tool_use' || uses.isEmpty) {
-        return content.where((b) => b['type'] == 'text').map((b) => b['text']).join().trim();
+        final n = nudge();
+        if (n == null) return content.where((b) => b['type'] == 'text').map((b) => b['text']).join().trim();
+        msgs.add({'role': 'assistant', 'content': content});
+        msgs.add({'role': 'user', 'content': n});
+        continue;
       }
       // Send the assistant turn back unchanged (thinking blocks included).
       msgs.add({'role': 'assistant', 'content': content});
@@ -429,7 +485,7 @@ class ToolLoop {
 
   // ---------------- Google ----------------
   Future<String> _google(CloudConfig c, List<ChatMessage> messages, List<ToolBinding> tools,
-      Future<(String, bool)> Function(String, Map<String, dynamic>) exec) async {
+      Future<(String, bool)> Function(String, Map<String, dynamic>) exec, String? Function() nudge) async {
     final system = messages.where((m) => m.role == 'system').map((m) => m.content).join('\n\n');
     final contents = <Map<String, Object?>>[
       for (final m in messages.where((m) => m.role != 'system'))
@@ -462,7 +518,18 @@ class ToolLoop {
       final content = ((r['candidates'] as List?)?.firstOrNull?['content'] as Map?)?.cast<String, dynamic>();
       final parts = ((content?['parts'] as List?) ?? []).cast<Map<String, dynamic>>();
       final calls = parts.where((p) => p['functionCall'] != null).toList();
-      if (calls.isEmpty) return parts.map((p) => p['text'] ?? '').join().trim();
+      if (calls.isEmpty) {
+        final n = nudge();
+        if (n == null) return parts.map((p) => p['text'] ?? '').join().trim();
+        if (content != null) contents.add(content);
+        contents.add({
+          'role': 'user',
+          'parts': [
+            {'text': n}
+          ]
+        });
+        continue;
+      }
       contents.add(content!);
       final responses = <Map<String, Object?>>[];
       for (final p in calls) {

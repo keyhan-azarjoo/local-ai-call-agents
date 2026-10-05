@@ -349,6 +349,7 @@ class _ChatPageState extends State<ChatPage> {
       return const SizedBox();
     }
     final ok = j['ok'] == true, denied = j['denied'] == true;
+    final checked = '${j['result']}'.startsWith('The tool was not called because of its inputs');
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Theme(
@@ -359,9 +360,9 @@ class _ChatPageState extends State<ChatPage> {
             dense: true,
             tilePadding: const EdgeInsets.symmetric(horizontal: 12),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            leading: Icon(denied ? Icons.block : ok ? Icons.check_circle_outline : Icons.error_outline,
-                size: 18, color: denied ? context.c.muted : ok ? LL.green : LL.red),
-            title: Text('${denied ? 'Not allowed' : 'Used'} ${j['server']} › ${j['tool']}',
+            leading: Icon(denied ? Icons.block : checked ? Icons.info_outline : ok ? Icons.check_circle_outline : Icons.error_outline,
+                size: 18, color: denied || checked ? context.c.muted : ok ? LL.green : LL.red),
+            title: Text('${denied ? 'Not allowed' : checked ? 'Fixing inputs for' : ok ? 'Used' : 'Error from'} ${j['server']} › ${j['tool']}',
                 style: const TextStyle(fontFamily: LL.mono, fontSize: 12.5)),
             children: [
               Align(

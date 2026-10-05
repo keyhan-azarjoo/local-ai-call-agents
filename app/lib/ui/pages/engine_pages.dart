@@ -11,6 +11,7 @@ import '../../services/system.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
+import 'live_talk.dart';
 
 Tone fitTone(Fit f) => switch (f) {
       Fit.great => Tone.green,
@@ -659,13 +660,7 @@ class _SpeechPageState extends State<SpeechPage> {
         ),
       ]),
       const SizedBox(height: 16),
-      Panel(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Coming next', style: displayStyle(context, 16)),
-          const SizedBox(height: 6),
-          const Muted('Parakeet (fast multilingual hearing), Kokoro voices, streaming speech and phone-quality (8 kHz) tuning arrive with the call engine.'),
-        ]),
-      ),
+      const Section(title: 'Live conversations', children: [Padding(padding: EdgeInsets.all(20), child: VoiceEnginePanel())]),
     ]);
   }
 

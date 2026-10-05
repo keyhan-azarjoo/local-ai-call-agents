@@ -45,6 +45,7 @@ dependencies:
   file_selector: ^1.1.0
   pdfrx: ^2.4.8
   archive: ^4.3.0
+  livekit_client: ^2.13.0
 
 dev_dependencies:
   flutter_test:
@@ -72,6 +73,7 @@ flutter:
 
   assets:
     - assets/catalog/
+    - assets/engine/
 
   fonts:
     - family: Plex

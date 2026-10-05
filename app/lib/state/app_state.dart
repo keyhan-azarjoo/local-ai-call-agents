@@ -582,8 +582,9 @@ class AppState extends ChangeNotifier {
   /// local model when installed, else the main AI), a local model id, or 'cloud'.
   String voiceOtherModel = '';
 
-  /// Talk over Ava to interrupt her (headphones). Off: the mic pauses while she speaks.
-  bool voiceBargeIn = false;
+  /// Talk over Ava to interrupt her (on by default; her own voice is filtered out).
+  /// Off: the mic pauses while she speaks.
+  bool voiceBargeIn = true;
   static const multilingualModel = 'aya-expanse:8b';
 
   String? get otherLanguageModel {
@@ -845,7 +846,7 @@ class AppState extends ChangeNotifier {
     thinkingSound = await db.setting('voice.thinking') ?? 'keyboard';
     ambientSound = await db.setting('voice.ambient') ?? 'none';
     voiceOtherModel = await db.setting('voice.otherModel') ?? '';
-    voiceBargeIn = await db.setting('voice.bargeIn') == '1';
+    voiceBargeIn = await db.setting('voice.bargeIn') != '0';
     for (final r in await db.all('settings', where: "key LIKE 'voice.voice.%'", orderBy: 'key')) {
       voiceChoice['${r['key']}'.substring(12)] = '${r['value']}';
     }
@@ -894,8 +895,87 @@ class AppState extends ChangeNotifier {
     return '$system This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
         'If there are many items, say the three or four most useful ones and ask if they want to hear more. '
         'The person’s words come from speech recognition and may contain mis-heard words: work out what they most likely meant and answer that; never repeat their words back. '
-        'Only state facts you were given; if you don’t know, say you will check and take a message.'
+        'Only state facts you were given; if you don’t know, say you will check and take a message. '
+        'You have already said a short “let me check” when needed: go straight to the answer, don’t start with fillers.'
+        '${mode == 'owner' ? await _capabilities(_voiceScopes(mode)) : ''}'
         '${speak == null ? ' Always reply in the language the person speaks.' : ' The person is speaking $speak: reply only in $speak${lang == 'en' ? '' : ', and say names of dishes, products and places in $speak too (translate or write them in $speak script), because the voice can only read $speak'}.'}';
+  }
+
+  /// What Ava can use, said plainly, so she knows (and can tell the owner) what she has.
+  Future<String> _capabilities(Set<String> scopes) async {
+    final servers = [for (final m in await db.all('mcp_servers', orderBy: 'id')) if (m['status'] == 'connected') '${m['name']}'];
+    final skills = [for (final k in await db.all('skills', where: 'enabled = 1', orderBy: 'id')) '${k['name']}'];
+    final docs = [
+      for (final k in await db.all('knowledge', orderBy: 'id'))
+        if (scopes.contains(k['scope']) && k['name'] != 'Past conversations' && !'${k['name']}'.startsWith('MCP: ')) '${k['name']}',
+    ];
+    return ' What you have: ${servers.isEmpty ? 'no connected systems' : 'connected systems (live tools and data): ${servers.join(', ')}'}; '
+        'skills: ${skills.isEmpty ? 'none' : skills.join(', ')}; documents: ${docs.isEmpty ? 'none' : docs.join(', ')}. '
+        'When asked what you can do, say these.';
+  }
+
+  /// In another language the multilingual model answers, but it can't use tools: when the
+  /// question needs a live tool (an action, or data not in the snapshots), the main AI answers with tools.
+  Future<bool> _needsLiveTools(String question, Set<String> scopes) async {
+    final tools = await toolsFor(scopes);
+    if (tools.isEmpty || question.trim().isEmpty) return false;
+    final en = await searchableQuery(question, model: otherLanguageModel == 'cloud' ? null : otherLanguageModel);
+    final texts = {for (final t in tools) t.fnName: '${t.tool.name.replaceAll('_', ' ')}: ${t.tool.description.length > 300 ? t.tool.description.substring(0, 300) : t.tool.description}'};
+    final ranked = await knowledge.rankToolsScored(en, texts, k: 1);
+    if (ranked.isEmpty) return false;
+    final best = tools.firstWhere((t) => t.fnName == ranked.first.$1);
+    // Changes always need the tool; reading needs it only when it clearly matches.
+    return ranked.first.$2 >= (best.tool.readOnly ? 0.55 : 0.42);
+  }
+
+  static int _ackTurn = 0;
+
+  /// A short, natural acknowledgement that fits the request, said at once (null for chit-chat).
+  static String? ackFor(String question, String lang) {
+    final q = question.trim();
+    final words = q.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.length < 3) return null;
+    String pick(List<String> xs) => xs[_ackTurn++ % xs.length];
+    if (lang == 'fa') {
+      if (RegExp(r'^(سلام|ممنون|مرسی|خداحافظ|تو کی|شما کی|اسمت)').hasMatch(q) && words.length < 5) return null;
+      if (RegExp(r'چند ?تا|تعداد').hasMatch(q)) return pick(['اممم، بذار بشمارم ببینم. ', 'یه لحظه، الان می‌شمارم. ']);
+      if (RegExp(r'قیمت|چنده|چقدر').hasMatch(q)) return pick(['بذار قیمتش رو ببینم. ', 'یه لحظه، قیمتش رو نگاه می‌کنم. ']);
+      if (RegExp(r'رزرو|نوبت|وقت').hasMatch(q)) return pick(['حتماً، بذار ببینم. ', 'باشه، الان بررسی می‌کنم. ']);
+      if (RegExp(r'لیست|فهرست|نشون بده|بگو ببینم').hasMatch(q)) return pick(['باشه، الان میارمش. ', 'یه لحظه، پیداش می‌کنم. ']);
+      if (RegExp(r'[؟?]|چی|چه|کی|کجا|کدوم|آیا|چطور').hasMatch(q)) return pick(['اممم، بذار ببینم. ', 'یه لحظه، نگاه می‌کنم. ', 'باشه، بررسی می‌کنم. ']);
+      return null;
+    }
+    if (lang != 'en') {
+      return RegExp(r'[?؟？]').hasMatch(q) || words.length > 5 ? _oneMoment[lang] : null;
+    }
+    final l = q.toLowerCase();
+    if (RegExp(r'^(hi|hello|hey|thanks|thank you|bye|good (morning|evening|afternoon)|who are you|what.s your name|how are you)\b').hasMatch(l) && words.length < 6) {
+      return null;
+    }
+    const stop = {'do', 'does', 'did', 'are', 'is', 'were', 'was', 'have', 'has', 'we', 'i', 'you', 'there', 'in', 'on', 'at', 'of', 'for', 'right', 'now', 'currently', 'today', 'and', 'who', 'which', 'that', 'with', 'please', 'or'};
+    String topic(String rest) {
+      final t = <String>[];
+      for (final w in rest.replaceAll(RegExp(r'[^a-z0-9 \-]'), ' ').split(' ').where((w) => w.isNotEmpty)) {
+        if ((stop.contains(w) && t.isNotEmpty && t.last != 'the' && t.last != 'my') || t.length >= 4) break;
+        if (stop.contains(w)) continue;
+        t.add(RegExp(r'^[a-z]{1,3}\d+$').hasMatch(w) ? w.toUpperCase() : w); // "rv3" → "RV3"
+      }
+      return t.join(' ');
+    }
+    String your(String t) => t.startsWith('my ') ? t.replaceFirst('my ', 'your ') : t.startsWith('the ') ? t : 'the $t';
+    var m = RegExp(r'how many ([a-z0-9 \-]+)').firstMatch(l);
+    if (m != null && topic(m[1]!).isNotEmpty) return pick(['Hmm, let me count the ${topic(m[1]!)}. ', 'Okay, let me see how many ${topic(m[1]!)} there are. ']);
+    m = RegExp(r'how much (?:is|are|does|do|for) (?:a |an |the )?([a-z0-9 &\-]+)').firstMatch(l);
+    if (m != null && topic(m[1]!).isNotEmpty) return pick(['Let me check the price of ${topic(m[1]!)}. ', 'Sure, let me look up ${topic(m[1]!)}. ']);
+    m = RegExp(r'\b(?:list|show me|tell me about|find|look up|get me) (?:all )?((?:the |my )?[a-z0-9 \-]+)').firstMatch(l);
+    if (m != null && topic(m[1]!).isNotEmpty) return pick(['Sure, let me pull up ${your(topic(m[1]!))}. ', 'Okay, let me find ${your(topic(m[1]!))}. ']);
+    if (RegExp(r'\b(book|reserve|schedule|cancel|change|move|update|add|create|delete|send|call)\b').hasMatch(l)) {
+      return pick(['Sure, let me sort that out. ', 'Okay, on it. ', 'Right, let me do that. ']);
+    }
+    if (RegExp(r'\?|^(what|when|where|which|who|why|how|is|are|do|does|can|could|would)\b').hasMatch(l)) {
+      return pick(['Hmm, let me see. ', 'Let me check that for you. ', 'Okay, one sec, let me look. ']);
+    }
+    return null;
   }
 
   static const _languageNames = {
@@ -1073,7 +1153,8 @@ class AppState extends ChangeNotifier {
     var gone = false;
     res.done.then((_) {}, onError: (_) => gone = true);
     // Keep the stream alive while tools run (SSE comments are ignored by clients).
-    final ping = Timer.periodic(const Duration(seconds: 2), (_) {
+    // Frequent, so a turn the agent dropped (the person kept talking) stops within half a second.
+    final ping = Timer.periodic(const Duration(milliseconds: 400), (_) {
       try {
         res.write(': working\n\n');
       } catch (_) {
@@ -1084,18 +1165,25 @@ class AppState extends ChangeNotifier {
     var filled = false, capped = false;
     final t0 = DateTime.now();
     // Something to hear while a slow answer (or a tool) is on its way, like a person saying "let me check".
-    void fill() {
+    final question = convo.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
+    void fill([String? text]) {
       if (filled || sent.isNotEmpty || gone) return;
       filled = true;
-      chunk({'content': _oneMoment[lang] ?? _oneMoment['en']!});
+      chunk({'content': text ?? _oneMoment[lang] ?? _oneMoment['en']!});
     }
 
-    final slow = Timer(const Duration(milliseconds: 2200), fill);
+    // Like a person: acknowledge the request straight away ("Hmm, let me count your users…")
+    // while the answer is worked out; a plain "one moment" only if it's slow anyway.
+    final ack = ackFor(question, lang);
+    if (ack != null) fill(ack);
+    final slow = Timer(const Duration(milliseconds: 2500), fill);
     try {
+      final multilingual = voiceTarget(lang);
+      final live = multilingual is LocalTarget && mode == 'owner' && await _needsLiveTools(question, scopes);
       final full = await agentReply(
         messages,
-        target: voiceTarget(lang),
-        useTools: voiceTarget(lang) is! LocalTarget,
+        target: live ? null : multilingual,
+        useTools: live || multilingual is! LocalTarget,
         cancelled: () => gone,
         scopes: scopes,
         approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later

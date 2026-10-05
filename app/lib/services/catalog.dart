@@ -16,9 +16,16 @@ extension FitX on Fit {
 }
 
 class LlmEntry {
-  LlmEntry(this.id, this.name, this.sizeGb, this.params, this.note);
+  LlmEntry(this.id, this.name, this.sizeGb, this.params, this.note, {this.think, this.slow = false});
   final String id, name, note;
   final double sizeGb, params;
+
+  /// 'off' = hybrid model, ask Ollama not to think (fast replies).
+  /// 'separate' = always thinks; Ollama returns the thinking apart from the reply.
+  final String? think;
+
+  /// Too slow to start speaking for phone calls; never auto-picked.
+  final bool slow;
 
   /// Weights + KV cache (8k context) + runtime overhead.
   double get needGb {
@@ -60,7 +67,8 @@ class Catalog {
     return Catalog(
       [
         for (final e in m['llm'])
-          LlmEntry(e['id'], e['name'], (e['sizeGb'] as num).toDouble(), (e['params'] as num).toDouble(), e['note'])
+          LlmEntry(e['id'], e['name'], (e['sizeGb'] as num).toDouble(), (e['params'] as num).toDouble(), e['note'],
+              think: e['think'] as String?, slow: e['slow'] == true)
       ],
       [for (final e in m['stt']) sp(e)],
       [for (final e in m['tts']) sp(e)],
@@ -69,10 +77,41 @@ class Catalog {
 
   static Future<Catalog> load() async => parse(await rootBundle.loadString('assets/catalog/models.json'));
 
+  /// A short list to choose from on this machine, best first:
+  /// the recommended model, one smarter option if it still fits,
+  /// and lighter/faster options.
+  List<(LlmEntry, String)> choices(Hardware hw) {
+    final rec = recommend(hw);
+    final fitting = llm.where((m) => !m.slow && (m.fitFor(hw) == Fit.great || m.fitFor(hw) == Fit.fits)).toList()
+      ..sort((a, b) => b.params.compareTo(a.params));
+    final out = <(LlmEntry, String)>[(rec, 'Best for this computer')];
+    final smarter = fitting.where((m) => m.params > rec.params).toList();
+    if (smarter.isNotEmpty) out.add((smarter.last, 'Smarter, a little slower'));
+    final lighter = fitting.where((m) => m.params < rec.params).take(2);
+    for (final m in lighter) {
+      out.add((m, m.params < 1 ? 'Tiny · for testing' : 'Faster, lighter'));
+    }
+    return out;
+  }
+
+  /// Best already-downloaded model: largest catalog model that fits well.
+  String? bestInstalled(Hardware? hw, List<String> installed) {
+    if (installed.isEmpty) return null;
+    final known = llm.where((m) => installed.contains(m.id) && !m.slow).toList();
+    if (hw != null) {
+      final good = known.where((m) => m.fitFor(hw) == Fit.great || m.fitFor(hw) == Fit.fits).toList()
+        ..sort((a, b) => b.params.compareTo(a.params));
+      if (good.isNotEmpty) return good.first.id;
+    }
+    if (known.isNotEmpty) return known.first.id;
+    // Only slow or unknown models downloaded: still better than nothing.
+    return installed.first;
+  }
+
   /// The model we suggest for calls on this machine: the strongest
   /// "great fit" from a short list known to hold a phone conversation well.
   LlmEntry recommend(Hardware hw) {
-    const preferred = ['qwen3:8b', 'qwen3:4b', 'qwen3:1.7b', 'qwen2.5:0.5b'];
+    const preferred = ['qwen3:8b', 'qwen3:4b-instruct', 'qwen3:1.7b', 'qwen2.5:0.5b'];
     for (final id in preferred) {
       final e = llm.firstWhere((m) => m.id == id);
       if (e.fitFor(hw) == Fit.great) return e;

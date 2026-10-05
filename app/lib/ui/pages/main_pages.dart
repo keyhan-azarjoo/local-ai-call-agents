@@ -277,7 +277,7 @@ class _OutboundPageState extends State<OutboundPage> {
     setState(() => drafting = true);
     try {
       final buf = StringBuffer();
-      await for (final p in s.ollama.chat(s.llmModel!, [
+      await for (final p in s.chat([
         ChatMessage('system',
             'Extract a phone call task from the user request. Reply with JSON only: {"to": "<who to call>", "number": "<phone number if given, else empty>", "goal": "<what to achieve, written as an instruction to the caller agent>"}'),
         ChatMessage('user', ask.text),

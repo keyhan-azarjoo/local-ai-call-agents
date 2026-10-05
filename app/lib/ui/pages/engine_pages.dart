@@ -79,25 +79,17 @@ class _EngineSetupPanelState extends State<EngineSetupPanel> {
         ],
       );
     } else {
-      final hasRec = s.installedModels.any((m) => m.name == rec.id);
-      final pulling = s.pulls.containsKey(rec.id);
+      final entry = s.catalog.llm.where((m) => m.id == s.llmModel).firstOrNull;
       thinking = _row(
         'Thinking',
-        s.llmReady ? s.llmModel! : 'No model downloaded yet',
+        s.llmReady ? (entry?.name ?? s.llmModel!) : 'Choose a model below',
         s.llmReady
-            ? (s.llmModel == rec.id ? 'Recommended for this computer.' : 'Recommended here: ${rec.name} (${rec.sizeGb} GB).')
-            : 'Recommended: ${rec.name} · ${rec.sizeGb} GB download.',
+            ? (s.llmModel == rec.id ? 'Best for this computer · downloaded' : 'Downloaded · best here: ${rec.name}')
+            : 'Pick one to download. We marked the best for this computer.',
         s.llmReady ? LampState.on : LampState.off,
-        [
-          if (!hasRec)
-            Btn(pulling ? 'Downloading…' : 'Download ${rec.name}', icon: Icons.download, kind: s.llmReady ? BtnKind.normal : BtnKind.primary, small: true,
-                onPressed: pulling ? null : () => s.pullModel(rec.id)),
-          if (hasRec && s.llmModel != rec.id) Btn('Use ${rec.name}', small: true, onPressed: () => s.setLlmModel(rec.id)),
-        ],
-        progress: pulling ? (s.pulls[rec.id] ?? 0) : null,
+        const [],
       );
     }
-
     final sttEntry = s.catalog.stt.firstWhere((e) => e.id == s.sttModel, orElse: () => s.catalog.stt.first);
     final sttPath = s.speech.sttModelPath(sttEntry.id);
     final hearing = sp == null
@@ -158,6 +150,7 @@ class _EngineSetupPanelState extends State<EngineSetupPanel> {
       ),
       const SizedBox(height: 12),
       Panel(padding: EdgeInsets.zero, child: Column(children: [thinking, hearing, voice])),
+      if (s.ollamaVersion != null) ...[const SizedBox(height: 12), const ModelPicker()],
     ]);
   }
 
@@ -180,6 +173,65 @@ class _EngineSetupPanelState extends State<EngineSetupPanel> {
           Wrap(spacing: 6, children: actions),
         ]),
       );
+}
+
+// ====================== Model picker ======================
+
+/// The best few models for this computer plus everything already downloaded.
+/// Tap one to use it; download it first if needed.
+class ModelPicker extends StatelessWidget {
+  const ModelPicker({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
+    final hw = s.hardware;
+    if (hw == null) return const SizedBox();
+    final installed = s.installedModels.map((m) => m.name).toSet();
+    final choices = s.catalog.choices(hw);
+    final shown = choices.map((c) => c.$1.id).toSet();
+    final others = s.installedModels.where((m) => !shown.contains(m.name)).toList();
+
+    Widget row(String id, String name, String size, String label, Fit? fit, {bool last = false}) {
+      final have = installed.contains(id);
+      final selected = s.llmModel == id && have;
+      final pulling = s.pulls.containsKey(id);
+      return Tile(
+        last: last,
+        onTap: have && !selected ? () => s.setLlmModel(id, manual: true) : null,
+        leading: Icon(selected ? Icons.radio_button_checked : Icons.radio_button_off, color: selected ? LL.green : context.c.muted, size: 20),
+        title: Row(children: [
+          Flexible(child: Text(name)),
+          const SizedBox(width: 8),
+          Muted(size, mono: true),
+          const SizedBox(width: 8),
+          if (label.isNotEmpty) Pill(label, tone: label.startsWith('Best') ? Tone.amber : Tone.neutral),
+        ]),
+        subtitle: pulling
+            ? Padding(padding: const EdgeInsets.only(top: 6, right: 30), child: Meter(s.pulls[id] ?? 0, color: LL.amber))
+            : Muted(have ? (selected ? 'Downloaded · in use' : 'Downloaded · tap to use') : 'Not downloaded'),
+        trailing: Wrap(spacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          if (fit != null) Pill(fit.label, tone: fitTone(fit)),
+          if (!have)
+            Btn(pulling ? '${((s.pulls[id] ?? 0) * 100).toStringAsFixed(0)}%' : 'Download', icon: Icons.download, small: true,
+                kind: label.startsWith('Best') ? BtnKind.primary : BtnKind.normal, onPressed: pulling ? null : () => s.pullModel(id)),
+          if (have && !selected) Btn('Use', small: true, onPressed: () => s.setLlmModel(id, manual: true)),
+        ]),
+      );
+    }
+
+    final rows = [
+      for (final (m, label) in choices) (m.id, m.name, '${m.sizeGb} GB', label, m.fitFor(hw)),
+      for (final o in others)
+        (o.name, s.catalog.llm.where((c) => c.id == o.name).firstOrNull?.name ?? o.name, '${o.sizeGb.toStringAsFixed(1)} GB', 'Downloaded earlier',
+            s.catalog.llm.where((c) => c.id == o.name).firstOrNull?.fitFor(hw)),
+    ];
+    return Section(
+      title: 'Choose the thinking model',
+      trailing: Muted('Up to ${hw.modelBudgetGb.toStringAsFixed(0)} GB fits here', mono: true),
+      children: [for (var i = 0; i < rows.length; i++) row(rows[i].$1, rows[i].$2, rows[i].$3, rows[i].$4, rows[i].$5, last: i == rows.length - 1)],
+    );
+  }
 }
 
 // ====================== Language models ======================
@@ -319,8 +371,7 @@ class _ModelsPageState extends State<ModelsPage> {
             for (final m in [
               ...catalog,
               // Installed models that aren't in our catalog still show up.
-              if (filter != 'fits')
-                for (final i in s.installedModels.where((i) => !s.catalog.llm.any((c) => c.id == i.name)))
+              for (final i in s.installedModels.where((i) => !s.catalog.llm.any((c) => c.id == i.name)))
                   LlmEntry(i.name, i.name, double.parse(i.sizeGb.toStringAsFixed(1)), 0, 'Downloaded · ${i.params} ${i.quant}'),
             ])
               _modelTile(s, hw, m),
@@ -350,7 +401,7 @@ class _ModelsPageState extends State<ModelsPage> {
         if (!installed)
           Btn(pulling ? '${((s.pulls[m.id] ?? 0) * 100).toStringAsFixed(0)}%' : 'Download', icon: Icons.download, small: true,
               onPressed: pulling || fit == Fit.tooLarge ? null : () => s.pullModel(m.id)),
-        if (installed && m.id != s.llmModel) Btn('Use for calls', small: true, onPressed: () => s.setLlmModel(m.id)),
+        if (installed && m.id != s.llmModel) Btn('Use for calls', small: true, onPressed: () => s.setLlmModel(m.id, manual: true)),
         if (installed && !loaded)
           Btn(busy.contains(m.id) ? 'Loading…' : 'Load', icon: Icons.play_arrow, small: true, kind: BtnKind.primary,
               onPressed: busy.contains(m.id) ? null : () => _act(m.id, () => s.ollama.load(m.id), 'Loaded ${m.id}')),

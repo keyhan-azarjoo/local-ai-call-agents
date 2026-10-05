@@ -139,7 +139,7 @@ class Ollama {
   }
 
   /// Streams the assistant's reply token by token.
-  Stream<String> chat(String model, List<ChatMessage> messages) async* {
+  Stream<String> chat(String model, List<ChatMessage> messages, {bool disableThinking = false}) async* {
     final body = <String, Object?>{
       'model': model,
       'messages': messages.map((m) => m.toJson()).toList(),
@@ -147,18 +147,32 @@ class Ollama {
       'keep_alive': -1,
       'options': {'num_ctx': 4096, 'temperature': 0.6},
     };
-    if (model.startsWith('qwen3')) body['think'] = false;
+    // Only hybrid models honour think:false; thinking-only models would then
+    // write their reasoning into the reply, so we leave them alone and
+    // read just the answer (Ollama returns thinking in a separate field).
+    if (disableThinking) body['think'] = false;
     final req = http.Request('POST', _u('/api/chat'))..body = jsonEncode(body);
     final res = await _c.send(req);
     if (res.statusCode != 200) {
       throw OllamaError(_err(await res.stream.bytesToString()));
     }
+    var inThink = false;
     await for (final line in res.stream.transform(utf8.decoder).transform(const LineSplitter())) {
       if (line.trim().isEmpty) continue;
       final m = jsonDecode(line) as Map;
       if (m['error'] != null) throw OllamaError(m['error'].toString());
-      final piece = m['message']?['content'] as String?;
-      if (piece != null && piece.isNotEmpty) yield piece;
+      var piece = m['message']?['content'] as String? ?? '';
+      // Some models inline <think>…</think> in the reply; drop it.
+      if (piece.contains('<think>')) {
+        inThink = true;
+        piece = piece.split('<think>').first;
+      }
+      if (inThink) {
+        if (!piece.contains('</think>')) continue;
+        inThink = false;
+        piece = piece.split('</think>').last;
+      }
+      if (piece.isNotEmpty) yield piece;
     }
   }
 

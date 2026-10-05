@@ -1,6 +1,6 @@
-# LocalLine — Architecture & Plan
+# LocalAILine — Architecture & Plan
 
-> Your computer answers your phone. A private, self-hosted AI receptionist: local LLM, local speech-to-text and text-to-speech, a built-in LiveKit voice server, and phone lines from Twilio, Telnyx, any SIP provider, or a real landline. No LocalLine cloud, no accounts, no telemetry.
+> Your computer answers your phone. A private, self-hosted AI receptionist: local LLM, local speech-to-text and text-to-speech, a built-in LiveKit voice server, and phone lines from Twilio, Telnyx, any SIP provider, or a real landline. No LocalAILine cloud, no accounts, no telemetry.
 
 Status: **design / pre-implementation**. The clickable UI demo lives in [`/demo`](../demo).
 
@@ -22,9 +22,9 @@ Status: **design / pre-implementation**. The clickable UI demo lives in [`/demo`
 
 1. **Phones can't be the host.** iOS can't run a background server or answer a cellular call with an app; Android only partly. Mobile apps are **companions** to a desktop host. (Optional later: an Android "lite host" for small models.)
 2. **LiveKit SIP can't register to a provider.** It only accepts INVITEs at a reachable address, and needs Redis, cgo libs and host networking (weak on Windows/macOS Docker). Most home users have no public IP.
-   → LocalLine ships its own small **Go phone gateway** (`llgw`) that *registers outward* to providers, accepts trunk/FXO INVITEs on the LAN, and publishes calls straight into LiveKit rooms via the LiveKit Go SDK. No Redis, no Docker, native on all three OSes. `livekit-sip` stays an optional "advanced trunk" mode on Linux.
+   → LocalAILine ships its own small **Go phone gateway** (`llgw`) that *registers outward* to providers, accepts trunk/FXO INVITEs on the LAN, and publishes calls straight into LiveKit rooms via the LiveKit Go SDK. No Redis, no Docker, native on all three OSes. `livekit-sip` stays an optional "advanced trunk" mode on Linux.
 3. **Raw SIP/RTP doesn't pass through Cloudflare Tunnel or Tailscale Funnel** (HTTP/TCP only). The fallback for providers without registration is **Media Streams over WebSocket** (Twilio `<Connect><Stream>`, Telnyx media streaming), which does tunnel fine.
-4. **Licences.** LocalLine is Apache-2.0. Piper TTS is now GPL-3.0 → offered as an optional download, not bundled. Default voice is **Kokoro-82M** (Apache-2.0). Parakeet STT is CC-BY-4.0 (attribution in About). LiveKit turn-detector model has its own licence → downloaded on first run, user accepts terms.
+4. **Licences.** LocalAILine is Apache-2.0. Piper TTS is now GPL-3.0 → offered as an optional download, not bundled. Default voice is **Kokoro-82M** (Apache-2.0). Parakeet STT is CC-BY-4.0 (attribution in About). LiveKit turn-detector model has its own licence → downloaded on first run, user accepts terms.
 5. **"Local" turn detection must really be local.** Pin the LiveKit local EOT model and never use `livekit.agents.inference` LLM/STT/TTS (those bill LiveKit Cloud).
 
 ## 3. Architecture
@@ -32,10 +32,10 @@ Status: **design / pre-implementation**. The clickable UI demo lives in [`/demo`
 ```
  ┌───────────────────────── Host computer (Win / macOS / Linux) ─────────────────────────┐
  │                                                                                        │
- │  LocalLine app (Flutter desktop)  ── UI, setup wizard, tray, supervisor                │
+ │  LocalAILine app (Flutter desktop)  ── UI, setup wizard, tray, supervisor                │
  │        │  local API (HTTP + WebSocket, random port + token)                             │
  │        ▼                                                                                │
- │  LocalLine Engine (Python, bundled runtime)                                            │
+ │  LocalAILine Engine (Python, bundled runtime)                                            │
  │   ├─ Control API  — auth, users/roles, settings, calls, audit (SQLite + SQLCipher)     │
  │   ├─ Agent worker — LiveKit Agents: VAD → STT → LLM → TTS, barge-in, tools            │
  │   ├─ Speech servers — OpenAI-compatible /v1/audio/transcriptions & /v1/audio/speech   │
@@ -47,7 +47,7 @@ Status: **design / pre-implementation**. The clickable UI demo lives in [`/demo`
  │        │                                                                                │
  │  livekit-server (Go, native binary, single node, no Redis)  :7880                      │
  │        ▲                                                                                │
- │  llgw — LocalLine phone gateway (Go)                                                   │
+ │  llgw — LocalAILine phone gateway (Go)                                                   │
  │   ├─ SIP REGISTER client  → Telnyx, Twilio SIP Domains, voip.ms, sipgate, any SIP     │
  │   ├─ SIP trunk listener   ← Twilio Elastic SIP, Telnyx, Vonage, Plivo (if reachable)  │
  │   ├─ FXO landline         ← Grandstream HT813 / Obihai on the LAN                      │
@@ -58,7 +58,7 @@ Status: **design / pre-implementation**. The clickable UI demo lives in [`/demo`
  └────────────────────────────────────────────────────────────────────────────────────────┘
           ▲  LAN / Tailscale (WebRTC + local API)
           │
-   LocalLine mobile (Flutter, Android / iOS) — pair by QR, ring alerts, listen, take over
+   LocalAILine mobile (Flutter, Android / iOS) — pair by QR, ring alerts, listen, take over
 ```
 
 ### Call flow (inbound)
@@ -128,7 +128,7 @@ Catalog is a versioned JSON in the repo (`catalog/models.json`): id, source URL,
 ## 7. Repository layout (planned)
 
 ```
-LocalLine/
+LocalAILine/
 ├─ app/          Flutter app (desktop host UI + mobile companion)
 ├─ engine/       Python engine (API, agent, speech, knowledge, tools, models)
 ├─ gateway/      Go phone gateway (llgw)
@@ -153,7 +153,7 @@ LocalLine/
 
 ## 9. Open questions for the owner
 
-- Name: **LocalLine** — OK?
+- Name: **LocalAILine** — OK?
 - Default languages to ship voices for (English + Persian?).
 - Should the first release also support **Twilio Media Streams** (tunnel) or only SIP registration + FXO?
 - Licence: Apache-2.0 (recommended) vs GPL-3.0 (would allow bundling Piper).

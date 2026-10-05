@@ -1,4 +1,4 @@
-/* LocalLine — clickable design demo. Static mock data, no backend. */
+/* LocalAILine — clickable design demo. Static mock data, no backend. */
 
 const I = {
   dash: '<path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/>',
@@ -30,6 +30,8 @@ const I = {
   upload: '<path d="M12 21V9M7 14l5-5 5 5M5 3h14"/>',
   check: '<path d="M5 12l5 5L20 7"/>',
   shield: '<path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/>',
+  out: '<path d="M15 3h6v6M21 3l-8 8"/><path d="M20 15.5v3a2 2 0 0 1-2.2 2A17 17 0 0 1 3.5 6.2 2 2 0 0 1 5.5 4h3l1.5 4-2 1.5a12 12 0 0 0 6.5 6.5l1.5-2z"/>',
+  loop: '<path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/>',
   qr: '<rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3"/>',
 };
 const ic = (n, s = 17) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
@@ -37,12 +39,15 @@ const ic = (n, s = 17) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" f
 const NAV = [
   ['Operate', [
     ['dashboard', 'Overview', 'dash'],
+    ['talk', 'Talk to Ava', 'mic'],
     ['live', 'Live call', 'live', '<span class="lamp ring"></span>'],
+    ['outbound', 'Make a call', 'out'],
     ['calls', 'Call history', 'phone'],
     ['contacts', 'Contacts & rules', 'contact'],
   ]],
   ['Assistant', [
-    ['assistant', 'Persona & call flow', 'bot'],
+    ['agents', 'Agents', 'bot'],
+    ['automations', 'Automations & loops', 'loop'],
     ['knowledge', 'Knowledge', 'book'],
     ['tools', 'Tools (MCP)', 'plug'],
     ['skills', 'Skills', 'spark'],
@@ -63,7 +68,25 @@ const NAV = [
     ['settings', 'Settings', 'gear'],
   ]],
 ];
+
+/* Simple mode: what a new user sees. Everything else is behind "Show all features". */
+const SIMPLE_NAV = [
+  ['home', 'Home', 'dash'],
+  ['talk', 'Talk to Ava', 'mic'],
+  ['calls', 'Calls', 'phone'],
+  ['outbound', 'Make a call', 'out'],
+  ['assistant', 'My assistant', 'bot'],
+  ['lines', 'Phone line', 'line'],
+  ['settings', 'Settings', 'gear'],
+];
+let advanced = localStorage.getItem('ll-adv') === '1';
+function setAdvanced(v) { advanced = v; localStorage.setItem('ll-adv', v ? '1' : ''); render(); }
+
 const TITLES = Object.fromEntries(NAV.flatMap(([g, items]) => items.map(i => [i[0], [g, i[1]]])));
+TITLES.assistant = ['Assistant', 'Agents › Ava'];
+TITLES.home = ['', 'Home'];
+TITLES.talk = ['Operate', 'Talk to Ava'];
+TITLES.call = ['Operate', 'Call history › Sarah Mitchell'];
 
 /* ---------- shared fragments ---------- */
 const head = (title, desc, actions = '') => `
@@ -98,6 +121,7 @@ function callPath(live = true) {
 
 /* ---------- mock data ---------- */
 const CALLS = [
+  ['Riverside Dental', '+44 20 7946 0011', 'Today 11:05', '2m 40s', '↗ AI called · goal met', 'Moved check-up to Tue 14 Oct, 10:00', 'green'],
   ['Sarah Mitchell', '+44 7700 900123', 'Today 10:42', '3m 12s', 'AI answered', 'Booked a viewing for Thursday 2pm', 'green'],
   ['Unknown', '+44 20 7946 0958', 'Today 09:15', '0m 48s', 'Screened', 'Sales call — declined politely', 'amber'],
   ['Dr. Patel’s office', '+44 161 496 0321', 'Today 08:30', '1m 55s', 'AI answered', 'Appointment moved to 14 Oct', 'green'],
@@ -118,9 +142,59 @@ const MODELS = [
 /* ---------- pages ---------- */
 const P = {};
 
+
+
+let talkMode = 'caller', talking = false;
+P.talk = () => `
+  <div style="max-width:760px;margin:0 auto">
+  <div style="text-align:center;margin-bottom:22px">
+    <h1 style="font-size:30px">Talk to Ava</h1>
+    <p class="muted" style="margin:6px 0 14px">Uses your microphone. Nothing leaves this computer.</p>
+    <div class="seg"><button class="${talkMode === 'caller' ? 'on' : ''}" onclick="talkMode='caller';render()">Pretend I’m a caller</button><button class="${talkMode === 'owner' ? 'on' : ''}" onclick="talkMode='owner';render()">Give Ava instructions</button></div>
+    <p class="small muted" style="margin-top:10px">${talkMode === 'caller' ? 'Ava answers exactly as she would on a real call — same greeting, rules and tools.' : 'Ask Ava to make calls, check messages or change how she answers. e.g. “Call the dentist and move my appointment.”'}</p>
+  </div>
+  <div class="card card-pad" style="padding:34px;text-align:center">
+    <button onclick="talking=!talking;render()" aria-label="${talking ? 'Stop talking' : 'Start talking'}" style="width:112px;height:112px;border-radius:50%;border:0;cursor:pointer;background:${talking ? 'var(--red)' : 'var(--amber)'};color:var(--navy);display:inline-grid;place-items:center;box-shadow:0 0 0 ${talking ? 14 : 0}px rgba(242,169,59,.18)">${ic(talking ? 'stop' : 'mic', 40)}</button>
+    <div style="margin-top:16px;font-weight:600">${talking ? 'Listening… tap to stop' : 'Tap to start talking'}</div>
+    <div style="display:flex;justify-content:center;margin-top:14px">${wave(34, !talking)}</div>
+  </div>
+  <div class="card" style="margin-top:16px"><div class="card-head"><h2>Conversation</h2><div class="right">${btn('Clear', 'sm ghost')}</div></div>
+    <div class="card-pad transcript">${talkMode === 'caller' ? `
+      <div class="turn ai"><div class="who">Ava</div><div class="bubble">Hi, you’ve reached Keyhan’s line. I’m Ava, his assistant — how can I help?</div></div>
+      <div class="turn"><div class="who">You</div><div class="bubble">Hi, is the flat on Elm Street still available?</div></div>
+      <div class="turn ai"><div class="who">Ava</div><div><div class="bubble">It is! It’s a two-bed with parking at the rear. Would you like to book a viewing?</div><div class="meta">0.44 s reply · from Knowledge: listings-oct.pdf</div></div></div>` : `
+      <div class="turn"><div class="who">You</div><div class="bubble">Call Riverside Dental and move my check-up to next week, mornings only.</div></div>
+      <div class="turn ai"><div class="who">Ava</div><div><div class="bubble">Okay — I’ll call Riverside Dental now from your Twilio number and ask for a morning next week. I’ll let you know what they say.</div>
+        <div class="row" style="margin-top:8px">${btn('Start the call', 'amber sm', 'out', "go('outbound')")}${btn('Edit details', 'sm', '', "go('outbound')")}</div></div></div>`}
+    </div>
+    <div class="modal-foot" style="justify-content:stretch"><input class="input" placeholder="Or type a message…"><button class="btn primary">Send</button></div>
+  </div></div>`;
+
+P.home = () => `
+  <div style="max-width:880px;margin:0 auto">
+  <div class="card card-pad" style="padding:28px;margin-bottom:16px">
+    <div class="row between">
+      <div><div class="row">${lamp('on')}<span class="eyebrow">Answering on +44 20 3870 1142</span></div>
+      <h1 style="font-size:30px;margin-top:10px">Ava is answering your calls.</h1>
+      <p class="muted" style="margin:6px 0 0">Everything runs on this computer. 4 calls today · 1 message waiting.</p></div>
+      <label class="row" style="gap:10px"><span class="small">Answering</span>${tog(true)}</label>
+    </div>
+  </div>
+  <div class="grid g3" style="margin-bottom:16px">
+    ${[['out', 'Make a call', 'Tell Ava who to call and why.', 'outbound'], ['mic', 'Talk to Ava', 'Try her as a caller, or give her instructions.', 'talk'], ['bot', 'Change what Ava says', 'Greeting, instructions, voice.', 'assistant']].map(a => `
+      <a class="card card-pad pick" href="#/${a[3]}" style="text-decoration:none;display:block;padding:22px">
+        <div class="logo" style="background:var(--amber-soft);border-color:transparent;color:#9a5f00">${ic(a[0], 19)}</div>
+        <h3 style="margin-top:14px;font-size:16px">${a[1]}</h3><div class="small muted">${a[2]}</div></a>`).join('')}
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>Latest calls</h2><div class="right"><a class="btn sm" href="#/calls">See all</a></div></div>
+    ${CALLS.slice(0, 4).map(c => `<div class="tile click" style="cursor:pointer" onclick="go('call')"><div class="logo">${c[4].startsWith('↗') ? ic('out', 16) : ic('phone', 16)}</div>
+      <div style="flex:1"><b>${c[0]}</b><div class="small muted">${c[5]}</div></div><div style="text-align:right">${badge(c[4], c[6])}<div class="small muted mono" style="margin-top:4px">${c[2]}</div></div></div>`).join('')}
+  </div></div>`;
+
 P.dashboard = () => `
   ${head('Good morning, Keyhan', 'Your assistant is answering on 2 lines. Everything runs on this computer.',
-    btn('Talk to your assistant', '', 'mic', "go('live')") + btn('Simulate incoming call', 'amber', 'phone', 'ring()'))}
+    btn('Talk to your assistant', '', 'mic', "go('talk')") + btn('Make a call', '', 'out', "go('outbound')") + btn('Simulate incoming call', 'amber', 'phone', 'ring()'))}
   <div class="card card-pad" style="margin-bottom:16px">
     <div class="row between" style="margin-bottom:12px"><h2>Call path</h2>${badge(lamp('on') + 'All stages ready', 'green')}</div>
     ${callPath(false)}
@@ -128,7 +202,7 @@ P.dashboard = () => `
   <div class="grid g4" style="margin-bottom:16px">
     <div class="card card-pad"><div class="eyebrow">Calls today</div><div class="stat">14</div><div class="small muted">11 handled by AI · 2 screened · 1 blocked</div></div>
     <div class="card card-pad"><div class="eyebrow">Avg reply time</div><div class="stat">0.48<small>s</small></div><div class="small muted">From caller pause to first word</div></div>
-    <div class="card card-pad"><div class="eyebrow">Messages waiting</div><div class="stat">3</div><div class="small muted"><a href="#/calls">Review messages</a></div></div>
+    <div class="card card-pad"><div class="eyebrow">Calls made by AI</div><div class="stat">5</div><div class="small muted">4 goals met · 1 retry at 14:00 · <a href="#/outbound">View</a></div></div>
     <div class="card card-pad"><div class="eyebrow">Memory in use</div><div class="stat">11.4<small>/ 32 GB</small></div>${meter(36)}</div>
   </div>
   <div class="grid g3">
@@ -195,7 +269,7 @@ P.live = () => `
 P.calls = () => `
   ${head('Call history', 'Every call is recorded on this computer only. Recordings and transcripts never leave it.', btn('Export', '', 'dl'))}
   <div class="row wrap" style="margin-bottom:14px">
-    <div class="seg"><button class="on">All</button><button>AI answered</button><button>Messages</button><button>Screened</button><button>Blocked</button></div>
+    <div class="seg"><button class="on">All</button><button>Incoming</button><button>Made by AI</button><button>AI answered</button><button>Messages</button><button>Screened</button><button>Blocked</button></div>
     <input class="input" style="width:260px;margin-left:auto" placeholder="Search name, number or words said">
     <select class="input" style="width:150px"><option>All lines</option><option>Twilio</option><option>Home landline</option></select>
   </div>
@@ -250,8 +324,8 @@ P.contacts = () => `
   </div>`;
 
 P.assistant = () => `
-  ${head('Persona & call flow', 'How your assistant sounds, what it says first, and what it does on every call.', btn('Test with a call', 'amber', 'phone', 'ring()') + btn('Save changes', 'primary'))}
-  <div class="tabs"><button class="on">Persona</button><button>Call flow</button><button>Hours</button><button>Safety</button></div>
+  ${head('Ava · Receptionist', 'How this agent sounds, what it says first, and what it does on every call it answers.', btn('Test with a call', 'amber', 'phone', 'ring()') + btn('Save changes', 'primary'))}
+  <div class="tabs"><button class="on">Persona</button><button>Call flow</button><button>Skills & tools</button><button>Hand-offs</button><button>Hours</button><button>Safety</button></div>
   <div class="grid g2">
     <div class="card card-pad stack">
       <div class="field"><label>Assistant name</label><input class="input" value="Ava"></div>
@@ -367,7 +441,7 @@ P.speech = () => `
   </div>`;
 
 P.hardware = () => `
-  ${head('This computer', 'What LocalLine found, and what it recommends.', btn('Scan again', '', '', "toast('Scanned. No changes.')"))}
+  ${head('This computer', 'What LocalAILine found, and what it recommends.', btn('Scan again', '', '', "toast('Scanned. No changes.')"))}
   <div class="grid g4" style="margin-bottom:16px">
     <div class="card card-pad"><div class="eyebrow">Processor</div><div style="font-weight:600;margin-top:6px">Apple M3 Pro</div><div class="small muted">12 cores</div></div>
     <div class="card card-pad"><div class="eyebrow">Memory</div><div style="font-weight:600;margin-top:6px">32 GB unified</div>${meter(36)}</div>
@@ -438,7 +512,7 @@ P.devices = () => `
   </div>`;
 
 P.users = () => `
-  ${head('Users & access', 'Everyone who can sign in to this LocalLine, and what they can do.', btn('Invite user', 'primary', 'plus', "modal('user')"))}
+  ${head('Users & access', 'Everyone who can sign in to this LocalAILine, and what they can do.', btn('Invite user', 'primary', 'plus', "modal('user')"))}
   <div class="tabs"><button class="on">Users</button><button>Roles</button><button>Sessions</button></div>
   <div class="card" style="margin-bottom:16px"><table>
     <thead><tr><th>User</th><th>Role</th><th>Lines</th><th>Two-step sign-in</th><th>Last active</th><th></th></tr></thead><tbody>
@@ -456,7 +530,7 @@ P.logs = () => `
   ${head('Activity & logs', 'Who changed what, and what the system is doing.', btn('Export', '', 'dl'))}
   <div class="tabs"><button class="on">Audit trail</button><button>System</button><button>Errors</button></div>
   <div class="card"><table><thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead><tbody>
-    ${[['10:44', 'Keyhan', 'Approved calendar.create_event during call with Sarah Mitchell'], ['10:20', 'Maya', 'Signed in from Office PC'], ['09:58', 'System', 'Loaded Qwen3 8B (5.2 GB) in 3.1 s'], ['09:57', 'System', 'LocalLine started · all services healthy'], ['Yesterday', 'Keyhan', 'Changed answering mode to “After 3 rings”'], ['Yesterday', 'Keyhan', 'Added phone line Telnyx']].map(r => `
+    ${[['10:44', 'Keyhan', 'Approved calendar.create_event during call with Sarah Mitchell'], ['10:20', 'Maya', 'Signed in from Office PC'], ['09:58', 'System', 'Loaded Qwen3 8B (5.2 GB) in 3.1 s'], ['09:57', 'System', 'LocalAILine started · all services healthy'], ['Yesterday', 'Keyhan', 'Changed answering mode to “After 3 rings”'], ['Yesterday', 'Keyhan', 'Added phone line Telnyx']].map(r => `
       <tr><td class="mono small muted">${r[0]}</td><td class="small"><b>${r[1]}</b></td><td class="small">${r[2]}</td></tr>`).join('')}
   </tbody></table></div>`;
 
@@ -467,7 +541,7 @@ P.settings = () => `
     <div class="card card-pad stack">
       <h3>General</h3>
       <div class="field"><label>Computer name</label><input class="input" value="Keyhan’s MacBook"></div>
-      <div class="row between"><span>Start LocalLine when I sign in</span>${tog(true)}</div>
+      <div class="row between"><span>Start LocalAILine when I sign in</span>${tog(true)}</div>
       <div class="row between"><span>Keep running when the window is closed</span>${tog(true)}</div>
       <div class="row between"><span>Stop my computer sleeping while lines are active</span>${tog(true)}</div>
       <div class="row between"><span>Dark appearance</span><label class="toggle"><input type="checkbox" onchange="theme()" ${document.documentElement.dataset.theme === 'dark' ? 'checked' : ''}><span></span></label></div>
@@ -477,7 +551,7 @@ P.settings = () => `
       <div class="field"><label>Keep recordings for</label><select class="input"><option>30 days</option><option>7 days</option><option>Forever</option><option>Don’t record</option></select></div>
       <div class="row between"><span>Tell callers the call is recorded</span>${tog(true)}</div>
       <div class="row between"><span>Encrypt database and recordings</span>${tog(true)}</div>
-      <dl class="kv small"><dt>Data folder</dt><dd class="mono">~/LocalLine</dd><dt>Database</dt><dd class="mono">localline.db · 48 MB</dd><dt>Recordings</dt><dd class="mono">1.2 GB</dd></dl>
+      <dl class="kv small"><dt>Data folder</dt><dd class="mono">~/LocalAILine</dd><dt>Database</dt><dd class="mono">localline.db · 48 MB</dd><dt>Recordings</dt><dd class="mono">1.2 GB</dd></dl>
     </div>
     <div class="card card-pad stack">
       <h3>Backups</h3>
@@ -486,8 +560,142 @@ P.settings = () => `
     </div>
     <div class="card card-pad stack">
       <h3>About</h3>
-      <dl class="kv small"><dt>Version</dt><dd class="mono">0.1.0-demo</dd><dt>License</dt><dd>Apache-2.0</dd><dt>Source</dt><dd class="mono">github.com/keyhan-azarjoo/LocalLine</dd></dl>
+      <dl class="kv small"><dt>Version</dt><dd class="mono">0.1.0-demo</dd><dt>License</dt><dd>Apache-2.0</dd><dt>Source</dt><dd class="mono">github.com/keyhan-azarjoo/LocalAILine</dd></dl>
       <div class="row">${btn('Check for updates', '')}</div>
+    </div>
+  </div>`;
+
+
+P.outbound = () => `
+  ${head('Make a call', 'Tell your assistant who to call and what to achieve. It calls from your number, introduces itself as your AI assistant, and reports back.', btn('Import call list', '', 'upload'))}
+  <div class="card card-pad" style="margin-bottom:16px">
+    <div class="eyebrow">Just ask</div>
+    <div class="row" style="margin-top:8px">
+      <input class="input" style="height:44px;font-size:15px" value="Call Riverside Dental and move my check-up to next week, any morning except Wednesday.">
+      <button class="btn primary lg" onclick="toast('Call task drafted — check the details below')">${ic('out')}Draft call</button>
+      <button class="btn lg" title="Say it" onclick="toast('Listening…')">${ic('mic')}</button>
+    </div>
+    <div class="small muted" style="margin-top:8px">Or fill in the details yourself. Nothing is dialled until you press Start call.</div>
+  </div>
+  <div class="grid g3">
+    <div class="card span2">
+      <div class="card-head"><h2>Call task</h2><div class="right">${badge('Draft', 'amber')}</div></div>
+      <div class="card-pad stack">
+        <div class="grid g2">
+          <div class="field"><label>Who to call</label><input class="input" value="Riverside Dental · +44 20 7946 0011"><span class="hint">A contact, a number, or a list for several calls.</span></div>
+          <div class="field"><label>Call from</label><select class="input"><option>Twilio · +44 20 3870 1142</option><option>Home landline</option></select></div>
+        </div>
+        <div class="field"><label>Goal</label><textarea class="input" rows="3">Move my dental check-up (currently Thu 9 Oct, 09:30) to next week. Any morning except Wednesday.</textarea></div>
+        ${advanced ? `        <div class="grid g2">
+          <div class="field"><label>Must find out</label>
+            <div class="row wrap">${['New date & time', 'Any cancellation fee', 'Name of person spoken to'].map(x => badge(x, 'blue')).join('')}<button class="btn sm ghost">${ic('plus')}Add</button></div></div>
+          <div class="field"><label>Allowed to share</label>
+            <div class="row wrap">${['My full name', 'Date of birth', 'Patient number'].map(x => badge(x)).join('')}<button class="btn sm ghost">${ic('plus')}Add</button></div><span class="hint">Anything not listed stays private.</span></div>
+        </div>
+        <div class="grid g3">
+          <div class="field"><label>Agent</label><select class="input"><option>Max · Outbound caller</option><option>Ava · Receptionist</option></select></div>
+          <div class="field"><label>Language</label><select class="input"><option>English (UK)</option><option>فارسی</option></select></div>
+          <div class="field"><label>Max call length</label><select class="input"><option>5 minutes</option><option>10 minutes</option></select></div>
+        </div>
+        <div class="grid g3">
+          <div class="field"><label>When</label><select class="input"><option>Now</option><option>Schedule…</option><option>Next business hours</option></select></div>
+          <div class="field"><label>If no answer</label><select class="input"><option>Retry 2× every 30 min</option><option>Leave a voicemail</option><option>Give up</option></select></div>
+          <div class="field"><label>If they need a decision</label><select class="input"><option>Ask me live (ring my phone)</option><option>Say I’ll call back</option></select></div>
+        </div>
+` : `<button class="btn sm ghost" style="align-self:flex-start" onclick="setAdvanced(true)">More options (what to find out, retries, schedule…)</button>`}
+      </div>
+      <div class="modal-foot" style="justify-content:space-between">
+        <span class="small muted">${ic('shield', 14)} Opens with “Hi, I’m Keyhan’s AI assistant calling on his behalf.” Recorded with notice.</span>
+        <div class="row">${btn('Preview conversation', '', '', "modal('script')")}${btn('Schedule', '')}${btn('Start call', 'amber', 'out', "toast('Dialling Riverside Dental…');go('live')")}</div>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="card card-pad"><h3>Calling rules</h3>
+        <div class="row between" style="margin-top:8px"><span class="small">Only call 09:00–20:00 local time</span>${tog(true)}</div>
+        <div class="row between" style="margin-top:8px"><span class="small">Hang up if voicemail and none allowed</span>${tog(true)}</div>
+        <div class="row between" style="margin-top:8px"><span class="small">Never call numbers on my do-not-call list</span>${tog(true)}</div>
+        <div class="row between" style="margin-top:8px"><span class="small">Daily limit</span><span class="mono small">20 calls</span></div>
+        <div class="row between" style="margin-top:8px"><span class="small">Spend limit (provider)</span><span class="mono small">£5 / day</span></div>
+      </div>
+      <div class="card card-pad"><h3>Last result</h3>
+        <div class="row" style="margin-top:8px">${badge(lamp('on') + 'Goal met', 'green')}<span class="small muted mono">11:05 · 2m 40s</span></div>
+        <dl class="kv small" style="margin-top:10px"><dt>New time</dt><dd>Tue 14 Oct, 10:00</dd><dt>Fee</dt><dd>None</dd><dt>Spoke to</dt><dd>Hannah, reception</dd></dl>
+        <div class="row" style="margin-top:10px">${btn('Add to calendar', 'sm primary')}${btn('Open call', 'sm', '', "go('call')")}</div>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <div class="card-head"><h2>Call queue</h2><div class="right"><div class="seg"><button class="on">Active & scheduled</button><button>Finished</button></div></div></div>
+    <table><thead><tr><th>Who</th><th>Goal</th><th>Status</th><th>Attempt</th><th>When</th><th></th></tr></thead><tbody>
+      <tr><td><b>Greenway Plumbing</b><div class="small muted mono">+44 161 496 0777</div></td><td class="small">Get a quote for a boiler service</td><td>${badge(lamp('ring') + 'On call · 00:52', 'amber')}</td><td class="mono small">1 / 3</td><td class="mono small muted">Now</td><td>${btn('Listen', 'sm', '', "go('live')")}</td></tr>
+      <tr><td><b>Council tax office</b><div class="small muted mono">+44 20 7946 0400</div></td><td class="small">Confirm single-person discount was applied</td><td>${badge('No answer · retrying')}</td><td class="mono small">2 / 3</td><td class="mono small muted">14:00</td><td>${btn('Cancel', 'sm ghost')}</td></tr>
+      <tr><td><b>Supplier list</b> <span class="small muted">· 3 numbers</span></td><td class="small">Ask today’s price for 20 bags of cement</td><td>${badge('Scheduled', 'blue')}</td><td class="mono small">—</td><td class="mono small muted">Mon 09:30</td><td>${btn('Edit', 'sm ghost')}</td></tr>
+    </tbody></table>
+  </div>`;
+
+const AGENTS = [
+  ['Ava', 'Receptionist', 'Answers all incoming calls, screens strangers, takes messages, books viewings.', 'Incoming · all lines', 'Qwen3 8B', 'Kokoro · Bella', 6, 3, 'on'],
+  ['Max', 'Outbound caller', 'Makes calls you ask for: rescheduling, quotes, confirmations. Reports back.', 'Outgoing · Twilio', 'Qwen3 8B', 'Kokoro · Adam', 4, 2, 'on'],
+  ['Sam', 'Support', 'Handles existing customers: orders, invoices, troubleshooting from Knowledge.', 'Hand-off from Ava', 'Gemma 3 12B', 'Kokoro · Bella', 3, 2, 'on'],
+  ['Copper Kettle orders', 'Order taker', 'Takes takeaway orders from the menu, quotes prices, places the order.', 'Hand-off from Ava', 'Qwen3 8B', 'Piper · Amy', 2, 1, 'off'],
+];
+P.agents = () => `
+  ${head('Agents', 'Each agent has its own voice, instructions, skills and tools. Agents can hand a call to each other or to you.', btn('Import agent', '', 'upload') + btn('New agent', 'primary', 'plus', "modal('agent')"))}
+  <div class="grid g2" style="margin-bottom:16px">
+    ${AGENTS.map(a => `<div class="card">
+      <div class="card-pad"><div class="row between"><div class="row"><div class="logo">${ic('bot', 18)}</div><div><h3>${a[0]}</h3><div class="small muted">${a[1]}</div></div></div><div class="row">${lamp(a[8])}${tog(a[8] === 'on')}</div></div>
+      <p class="small" style="margin:12px 0">${a[2]}</p>
+      <dl class="kv small"><dt>Handles</dt><dd>${a[3]}</dd><dt>Thinks with</dt><dd>${a[4]}</dd><dt>Voice</dt><dd>${a[5]}</dd><dt>Skills · tools</dt><dd>${a[6]} skills · ${a[7]} MCP servers</dd></dl></div>
+      <div class="modal-foot" style="justify-content:flex-start">${btn('Edit', 'sm primary', '', "go('assistant')")}${btn('Test call', 'sm', 'phone', 'ring()')}${btn('Duplicate', 'sm ghost')}</div></div>`).join('')}
+  </div>
+  <div class="card card-pad">
+    <div class="row between" style="margin-bottom:12px"><h2>Hand-offs</h2><span class="small muted">Who passes a call to whom, and when.</span></div>
+    <div class="callpath">
+      <div class="jack"><div class="eyebrow">${lamp('on')}Incoming</div><div class="name">Any line</div></div><div class="cord idle"></div>
+      <div class="jack hot"><div class="eyebrow">${lamp('ring')}Agent</div><div class="name">Ava · Receptionist</div><div class="ms">greets & routes</div></div><div class="cord idle"></div>
+      <div class="jack"><div class="eyebrow">${lamp('on')}If “order”</div><div class="name">Copper Kettle orders</div></div><div class="cord idle"></div>
+      <div class="jack"><div class="eyebrow">${lamp('on')}If customer</div><div class="name">Sam · Support</div></div><div class="cord idle"></div>
+      <div class="jack"><div class="eyebrow">${lamp('on')}If “urgent”</div><div class="name">Transfer to you</div><div class="ms">rings paired phone</div></div>
+    </div>
+  </div>`;
+
+const AUTOS = [
+  ['Morning briefing', 'Every day 08:00', 'Summarise yesterday’s calls → send to my phone', 'on', 'Today 08:00 · done'],
+  ['Call back missed messages', 'After a call ends with “Message taken”', 'Wait 2 h → if I haven’t called back, Max calls them → repeat until reached (max 3)', 'on', 'Today 10:51 · waiting'],
+  ['Appointment reminders', 'Every weekday 17:00', 'For each calendar event tomorrow → call the guest → confirm or reschedule → update calendar', 'on', 'Yesterday · 4 calls'],
+  ['Supplier price check', 'Every Monday 09:30', 'For each supplier in list → ask price of item → compare → text me the cheapest', 'on', 'Mon · 3 calls'],
+  ['Spam learning', 'After a call ends with “Screened”', 'If caller was sales → add number to block list', 'off', '—'],
+];
+P.automations = () => `
+  ${head('Automations & loops', 'Tasks your agents run on their own: on a schedule, after a call, or in a loop until a goal is met. Every step is logged.', btn('Templates', '') + btn('New automation', 'primary', 'plus'))}
+  <div class="card" style="margin-bottom:16px"><table>
+    <thead><tr><th>Automation</th><th>Starts</th><th>Does</th><th>Last run</th><th></th></tr></thead><tbody>
+    ${AUTOS.map((a, i) => `<tr class="click"><td><div class="row">${lamp(a[3])}<b>${a[0]}</b></div></td><td class="small">${a[1]}</td><td class="small muted">${a[2]}</td><td class="small mono muted">${a[4]}</td><td>${tog(a[3] === 'on')}</td></tr>`).join('')}
+    </tbody></table></div>
+  <div class="grid g3">
+    <div class="card span2">
+      <div class="card-head"><h2>Appointment reminders</h2><div class="right">${btn('Run now', 'sm', 'play', "toast('Run started — 4 calls queued')")}${btn('Save', 'sm primary')}</div></div>
+      <div class="card-pad">
+        ${[
+          ['Trigger', 'clock', 'Every weekday at 17:00', ''],
+          ['Get', 'tool', 'Google Calendar → events tomorrow with a guest phone number', ''],
+          ['Loop', 'loop', 'For each event', 'loop'],
+          ['Call', 'call', 'Max calls the guest: “Confirm tomorrow’s appointment, or offer another slot”', 'in'],
+          ['Branch', 'if', 'If they want another time → find_free_slots → book → update event', 'in'],
+          ['Until', 'until', 'Reached, or 2 attempts 30 min apart', 'in'],
+          ['Notify', 'bell', 'Text me: “3 confirmed, 1 moved to Fri 11:00”', ''],
+        ].map(s => `<div class="row" style="align-items:flex-start;margin-left:${s[3] === 'in' ? 34 : 0}px;padding:10px 0;border-bottom:1px solid var(--line)">
+          <span class="badge ${s[0] === 'Loop' || s[0] === 'Until' ? 'amber' : s[0] === 'Trigger' ? 'blue' : ''}" style="min-width:64px;justify-content:center">${s[0]}</span>
+          <span class="small" style="flex:1">${s[2]}</span><button class="btn sm ghost">Edit</button></div>`).join('')}
+        <div style="margin-top:12px">${btn('Add step', 'sm', 'plus')}</div>
+      </div>
+    </div>
+    <div class="stack">
+      <div class="card card-pad"><h3>Limits</h3>
+        <dl class="kv small" style="margin-top:8px"><dt>Max calls per run</dt><dd class="mono">10</dd><dt>Max loop rounds</dt><dd class="mono">3</dd><dt>Stop if spend over</dt><dd class="mono">£2</dd><dt>Needs my approval</dt><dd>Booking changes</dd></dl></div>
+      <div class="card"><div class="card-head"><h3>Runs</h3></div>
+        ${[['Yesterday 17:00', '4 calls · 3 confirmed · 1 moved', 'green'], ['Fri 17:00', '2 calls · 1 no answer', 'amber'], ['Thu 17:00', 'No events', '']].map(r => `<div class="tile"><div style="flex:1"><div class="mono small">${r[0]}</div><div class="small muted">${r[1]}</div></div>${badge(r[2] === 'green' ? 'Done' : r[2] === 'amber' ? 'Partly' : 'Skipped', r[2])}</div>`).join('')}
+      </div>
     </div>
   </div>`;
 
@@ -500,12 +708,12 @@ P.login = () => `
     <div class="field"><label>Username</label><input class="input" value="keyhan"></div>
     <div class="field"><label>Password</label><input class="input" type="password" value="password"></div>
     <div class="field"><label>Code from your authenticator app</label><input class="input mono" placeholder="000 000"></div>
-    <button class="btn primary lg" style="width:100%;justify-content:center" onclick="go('dashboard')">Sign in</button>
+    <button class="btn primary lg" style="width:100%;justify-content:center" onclick="go('home')">Sign in</button>
     <p class="small muted">Forgot your password? Ask the owner of this computer to reset it from Users & access.</p>
-    <p class="small"><a href="#/welcome">First time? Set up LocalLine</a></p>
+    <p class="small"><a href="#/welcome">First time? Set up LocalAILine</a></p>
   </div></div></div>`;
 
-const STEPS = ['Welcome', 'Create owner account', 'Check this computer', 'Choose AI engine', 'Pick models', 'Connect a phone line', 'Make a test call'];
+const STEPS = ['Welcome', 'Create your account', 'Set up the AI', 'Connect your phone line', 'Try it'];
 let step = 0;
 P.welcome = () => `
   <div class="full"><div class="full-side">${brand()}
@@ -513,28 +721,20 @@ P.welcome = () => `
     <p class="small" style="margin-top:auto;color:#6f86a3">Nothing is sent to any server during setup.</p></div>
   <div class="full-main">
     <div class="wizard-step ${step === 0 ? 'on' : ''}"><div class="eyebrow">Setup · about 10 minutes</div><h1 style="font-size:34px;margin:8px 0 12px">Let’s turn this computer into your receptionist.</h1>
-      <p class="muted" style="max-width:520px">LocalLine installs an AI engine, a speech engine and a voice server on this computer, then connects it to your phone number. You can change everything later.</p>
+      <p class="muted" style="max-width:520px">LocalAILine installs an AI engine, a speech engine and a voice server on this computer, then connects it to your phone number. You can change everything later.</p>
       <div class="grid g3" style="margin:24px 0">${[['Hears', 'Speech-to-text, locally'], ['Thinks', 'A language model you choose'], ['Speaks', 'Natural voices, no cloud']].map(x => `<div class="card card-pad"><b>${x[0]}</b><div class="small muted">${x[1]}</div></div>`).join('')}</div>
       ${wizNav()}</div>
     <div class="wizard-step ${step === 1 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Create the owner account</h1><p class="muted">The owner can add other users and change everything.</p>
       <div class="stack" style="max-width:420px;margin:20px 0"><div class="field"><label>Your name</label><input class="input" value="Keyhan Azarjoo"></div><div class="field"><label>Username</label><input class="input" value="keyhan"></div><div class="field"><label>Password</label><input class="input" type="password" value="xxxxxxxxxx"><span class="hint">At least 10 characters.</span></div><div class="row between"><span>Turn on two-step sign-in</span>${tog(true)}</div></div>${wizNav()}</div>
-    <div class="wizard-step ${step === 2 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Checking this computer</h1><p class="muted">So we only suggest models that run well here.</p>
-      <div class="code" style="margin:20px 0"><span class="ok">✓</span> Apple M3 Pro · 12 cores
-<span class="ok">✓</span> 32 GB unified memory
-<span class="ok">✓</span> GPU acceleration: Metal
-<span class="ok">✓</span> 212 GB free disk
-<span class="ok">✓</span> Microphone and speakers found
-<span class="warn">!</span> No public IP — we’ll register with your phone provider instead</div>
-      <div class="card card-pad"><div class="eyebrow">Recommended</div><b>Balanced</b> — Qwen3 8B, Whisper turbo, Kokoro voice. About 7 GB download.</div><div style="margin-top:20px">${wizNav()}</div></div>
-    <div class="wizard-step ${step === 3 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Choose an AI engine</h1><p class="muted">The program that runs language models. Already installed engines are detected.</p>
-      <div class="grid g2" style="margin:20px 0">${[['Ollama', 'Detected · v0.12 · Recommended', 'sel'], ['Built-in (llama.cpp)', 'No install needed', ''], ['LM Studio', 'Install for me', ''], ['vLLM', 'Needs NVIDIA GPU on Linux', '']].map(e => `<div class="card card-pad pick ${e[2]}" onclick="this.parentNode.querySelectorAll('.pick').forEach(p=>p.classList.remove('sel'));this.classList.add('sel')"><b>${e[0]}</b><div class="small muted">${e[1]}</div></div>`).join('')}</div>${wizNav()}</div>
-    <div class="wizard-step ${step === 4 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Pick models</h1><p class="muted">Downloads happen once. You can swap any of these later.</p>
-      <div class="card" style="margin:20px 0">${[['Thinking', 'Qwen3 8B · Q4', '5.2 GB', 72], ['Hearing', 'Whisper large-v3-turbo', '1.6 GB', 100], ['Voice', 'Kokoro 82M', '0.3 GB', 100], ['Knowledge search', 'nomic-embed-text', '0.3 GB', 30]].map(m => `<div class="tile"><div style="width:110px" class="small muted">${m[0]}</div><div style="flex:1"><b>${m[1]}</b> <span class="mono small muted">${m[2]}</span><div style="margin-top:6px">${meter(m[3], m[3] === 100 ? 'green' : 'amber')}</div></div><span class="mono small">${m[3]}%</span></div>`).join('')}</div>${wizNav()}</div>
-    <div class="wizard-step ${step === 5 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Connect a phone line</h1><p class="muted">You can add more later, or skip and talk to the assistant from this computer first.</p>
+    <div class="wizard-step ${step === 2 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Setting up the AI for this computer</h1><p class="muted">We checked your computer and picked what runs best. This downloads about 7 GB once.</p>
+      <div class="card card-pad" style="margin:20px 0"><div class="row between"><div><div class="eyebrow">Your computer</div><b>Apple M3 Pro · 32 GB memory</b></div>${badge('Great for AI', 'green')}</div></div>
+      <div class="card" style="margin-bottom:12px">${[['Thinking', 'Qwen3 8B', '5.2 GB', 72], ['Hearing', 'Whisper turbo', '1.6 GB', 100], ['Voice', 'Kokoro · Bella', '0.3 GB', 100]].map(m => `<div class="tile"><div style="width:90px" class="small muted">${m[0]}</div><div style="flex:1"><b>${m[1]}</b> <span class="mono small muted">${m[2]}</span><div style="margin-top:6px">${meter(m[3], m[3] === 100 ? 'green' : 'amber')}</div></div><span class="mono small">${m[3] === 100 ? 'Ready' : m[3] + '%'}</span></div>`).join('')}</div>
+      <p class="small"><a href="#" onclick="toast('Opens engine & model choices');return false">Choose engine and models myself</a></p>${wizNav()}</div>
+    <div class="wizard-step ${step === 3 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Connect a phone line</h1><p class="muted">You can add more later, or skip and talk to the assistant from this computer first.</p>
       ${lineForm()}<div style="margin-top:20px">${wizNav('Skip for now')}</div></div>
-    <div class="wizard-step ${step === 6 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Make a test call</h1><p class="muted">Call <b class="mono">+44 20 3870 1142</b> from your mobile, or talk right here.</p>
+    <div class="wizard-step ${step === 4 ? 'on' : ''}"><h1 style="font-size:28px;margin-bottom:6px">Make a test call</h1><p class="muted">Call <b class="mono">+44 20 3870 1142</b> from your mobile, or talk right here.</p>
       <div class="card card-pad" style="margin:20px 0"><div class="row between"><div class="row">${lamp('ring')}<b>Waiting for a call…</b></div>${wave(30)}</div></div>
-      <div class="row">${btn('Talk from this computer', '', 'mic', "go('live')")}${btn('Finish setup', 'primary', 'check', "go('dashboard')")}</div></div>
+      <div class="row">${btn('Talk from this computer', '', 'mic', "go('live')")}${btn('Finish setup', 'primary', 'check', "go('home')")}</div></div>
   </div></div>`;
 
 function wizNav(skip) {
@@ -544,23 +744,29 @@ function lineForm() {
   return `<div class="grid g4" style="margin:18px 0">${['Twilio', 'Telnyx', 'Other SIP', 'Landline box'].map((p, i) => `<div class="card card-pad pick ${i ? '' : 'sel'}" onclick="this.parentNode.querySelectorAll('.pick').forEach(p=>p.classList.remove('sel'));this.classList.add('sel')"><b>${p}</b></div>`).join('')}</div>
     <div class="grid g2"><div class="field"><label>Account SID</label><input class="input mono" value="AC••••••••••••••••••••••••3f1"></div><div class="field"><label>Auth token</label><input class="input mono" type="password" value="xxxxxxxxxxxxxxxx"><span class="hint">Stored encrypted on this computer.</span></div>
     <div class="field"><label>Phone number</label><select class="input mono"><option>+44 20 3870 1142</option><option>+44 161 850 2210</option></select><span class="hint">Found 2 numbers on your account.</span></div>
-    <div class="field"><label>Connection</label><select class="input"><option>Automatic (recommended)</option><option>SIP trunk to my public IP</option><option>Tunnel</option></select><span class="hint">LocalLine creates the SIP trunk on your account for you.</span></div></div>`;
+    <div class="field"><label>Connection</label><select class="input"><option>Automatic (recommended)</option><option>SIP trunk to my public IP</option><option>Tunnel</option></select><span class="hint">LocalAILine creates the SIP trunk on your account for you.</span></div></div>`;
 }
 function brand() {
-  return `<a class="brand" href="#/dashboard"><span class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f2a93b" stroke-width="2.2" stroke-linecap="round"><path d="M4 12h3l2-6 4 12 2-6h5"/></svg></span><span class="brand-name">Local<b>Line</b></span></a>`;
+  return `<a class="brand" href="#/"><span class="brand-mark"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f2a93b" stroke-width="2.2" stroke-linecap="round"><path d="M4 12h3l2-6 4 12 2-6h5"/></svg></span><span class="brand-name">Local<b>AI</b>Line</span></a>`;
 }
 
 /* ---------- modals ---------- */
 const MODALS = {
+  agent: ['New agent', `<div class="stack"><div class="field"><label>Start from</label><div class="grid g2">${['Receptionist', 'Outbound caller', 'Support', 'Order taker', 'Appointment setter', 'Blank'].map((t, i) => `<div class="card card-pad pick ${i ? '' : 'sel'}" onclick="this.parentNode.querySelectorAll('.pick').forEach(p=>p.classList.remove('sel'));this.classList.add('sel')"><b>${t}</b></div>`).join('')}</div></div>
+    <div class="field"><label>Name</label><input class="input" placeholder="e.g. Nora"></div></div>`, 'Create agent'],
+  script: ['Preview conversation', `<p class="small muted" style="margin-top:0">A rehearsal with the AI playing the other side. Nothing is dialled.</p><div class="transcript">
+    <div class="turn ai"><div class="who">Max</div><div class="bubble">Hi, I’m Keyhan Azarjoo’s AI assistant calling on his behalf. I’d like to move his check-up on Thursday to next week, please.</div></div>
+    <div class="turn"><div class="who">Them</div><div class="bubble">Sure, can I take his date of birth?</div></div>
+    <div class="turn ai"><div class="who">Max</div><div class="bubble">Of course — it’s the 4th of March. Do you have any mornings next week, apart from Wednesday?</div></div></div>`, 'Looks good'],
   line: ['Add phone line', `<p class="muted small" style="margin-top:0">Choose where calls come from.</p>${lineForm()}`, 'Connect line'],
   mcp: ['Add MCP server', `<div class="stack"><div class="field"><label>Name</label><input class="input" placeholder="e.g. Shop orders"></div>
     <div class="field"><label>Type</label><div class="seg"><button class="on">Local command</button><button>URL</button></div></div>
     <div class="field"><label>Command</label><input class="input mono" value="npx -y @modelcontextprotocol/server-filesystem ~/Documents"></div>
     <div class="field"><label>Who can use it</label><select class="input"><option>Only me (when I talk to the assistant)</option><option>Known contacts</option><option>All callers</option></select></div></div>`, 'Add and test'],
-  install: ['Install LM Studio', `<p class="small muted" style="margin-top:0">LocalLine will download the official installer (≈ 480 MB) and run it.</p><div class="code">Downloading LM-Studio-0.3.x-arm64.dmg   <span class="warn">38%</span>
+  install: ['Install LM Studio', `<p class="small muted" style="margin-top:0">LocalAILine will download the official installer (≈ 480 MB) and run it.</p><div class="code">Downloading LM-Studio-0.3.x-arm64.dmg   <span class="warn">38%</span>
 <span class="dim">Verifying signature…</span></div>`, 'Install'],
   pair: ['Pair a device', `<div style="display:grid;place-items:center;padding:10px"><div style="width:180px;height:180px;border-radius:10px;background:var(--canvas);display:grid;place-items:center;border:1px solid var(--line)">${ic('qr', 120)}</div>
-    <p class="small muted" style="text-align:center">Open LocalLine on your phone and scan this code.<br>Both devices must be on the same network or tunnel.</p><div class="mono">PAIR-7Q4K-2M9X</div></div>`, 'Done'],
+    <p class="small muted" style="text-align:center">Open LocalAILine on your phone and scan this code.<br>Both devices must be on the same network or tunnel.</p><div class="mono">PAIR-7Q4K-2M9X</div></div>`, 'Done'],
   user: ['Invite user', `<div class="stack"><div class="field"><label>Name</label><input class="input"></div><div class="field"><label>Username</label><input class="input"></div>
     <div class="field"><label>Role</label><select class="input"><option>Operator</option><option>Admin</option><option>Viewer</option></select></div>
     <div class="field"><label>Lines they can see</label><select class="input"><option>All lines</option><option>Twilio</option><option>Home landline</option></select></div>
@@ -596,20 +802,22 @@ function theme() {
 }
 
 function render() {
-  const r = (location.hash.replace('#/', '') || 'dashboard');
+  const r = (location.hash.replace('#/', '') || (advanced ? 'dashboard' : 'home'));
   const root = document.getElementById('root');
   if (r === 'welcome' || r === 'login') { root.innerHTML = P[r](); return; }
-  const page = P[r] ? r : 'dashboard';
-  const t = page === 'call' ? ['Operate', 'Call history › Sarah Mitchell'] : TITLES[page];
+  const page = P[r] ? r : 'home';
+  const t = TITLES[page];
   root.innerHTML = `<div class="app">
     <aside class="sidebar">${brand()}
-      <nav class="nav">${NAV.map(([g, items]) => `<div class="nav-group"><div class="nav-label">${g}</div>
-        ${items.map(i => `<a href="#/${i[0]}" class="${i[0] === page || (page === 'call' && i[0] === 'calls') ? 'active' : ''}">${ic(i[2])}${i[1]}${i[3] || ''}</a>`).join('')}</div>`).join('')}</nav>
+      <nav class="nav">${advanced ? NAV.map(([g, items]) => `<div class="nav-group"><div class="nav-label">${g}</div>
+        ${items.map(i => `<a href="#/${i[0]}" class="${i[0] === page || (page === 'call' && i[0] === 'calls') || (page === 'assistant' && i[0] === 'agents') ? 'active' : ''}">${ic(i[2])}${i[1]}${i[3] || ''}</a>`).join('')}</div>`).join('')
+        : `<div class="nav-group">${SIMPLE_NAV.map(i => `<a href="#/${i[0]}" style="padding:10px 12px;font-size:14.5px" class="${i[0] === page || (page === 'call' && i[0] === 'calls') ? 'active' : ''}">${ic(i[2], 19)}${i[1]}</a>`).join('')}</div>`}
+        <div class="nav-group" style="padding:0 10px;margin-top:22px"><label class="row between small" style="color:#8fa6c2;cursor:pointer"><span>Show all features</span><label class="toggle"><input type="checkbox" ${advanced ? 'checked' : ''} onchange="setAdvanced(this.checked)"><span></span></label></label></div></nav>
       <div class="sidebar-foot"><div class="me"><span class="avatar">KA</span><div><div style="color:#fff">Keyhan</div><div style="color:#6f86a3;font-size:11.5px">Owner · <a href="#/login" style="color:#6f86a3">Sign out</a></div></div></div></div>
     </aside>
     <div class="main">
-      <header class="topbar"><div class="crumb">${t[0]} / <b>${t[1]}</b></div><div class="spacer"></div>
-        <div class="search">${ic('search', 15)}Search calls, contacts, settings<span class="kbd">⌘K</span></div>
+      <header class="topbar"><div class="crumb">${t[0] && advanced ? t[0] + ' / ' : ''}<b>${t[1]}</b></div><div class="spacer"></div>
+        ${advanced ? `<div class="search">${ic('search', 15)}Search calls, contacts, settings<span class="kbd">⌘K</span></div>` : ''}
         ${badge(lamp('on') + 'Answering', 'green')}
         <button class="btn ghost sm" title="Notifications">${ic('bell', 16)}</button>
         <button class="btn ghost sm" title="Toggle dark mode" onclick="theme()">${ic('moon', 16)}</button>

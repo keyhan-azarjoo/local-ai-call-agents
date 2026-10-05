@@ -152,6 +152,8 @@ class WhisperStreamingSTT(stt.STT):
         self.user_level = 0.0
         # Loudness of what Ava plays, every 20 ms (time bin -> log energy), to recognise her echo.
         self.agent_env: dict[int, float] = {}
+        # Names to expect (from the app), given to Whisper as a hint for English.
+        self.vocabulary = ""
         self.play_end = 0.0
 
     def record_agent_audio(self, pcm: np.ndarray, sr: int) -> None:
@@ -279,6 +281,8 @@ class WhisperStreamingSTT(stt.STT):
 
     async def _whisper(self, pcm: np.ndarray, sr: int, language: str) -> dict:
         form = aiohttp.FormData()
+        if self.vocabulary and language in ("en", "auto") and self.detected_language == "en":
+            form.add_field("prompt", self.vocabulary)
         form.add_field("file", wav_bytes(pcm, sr), filename="a.wav", content_type="audio/wav")
         form.add_field("response_format", "verbose_json")
         form.add_field("language", language)
@@ -793,6 +797,7 @@ async def entrypoint(ctx: JobContext) -> None:
     language = parts[2] if len(parts) > 3 and parts[0] == "talk" else cfg.get("language", LANGUAGE)
     vad = silero.VAD.load(min_silence_duration=0.35)
     stt_ = WhisperStreamingSTT(vad=silero.VAD.load(min_silence_duration=0.4), language=language)
+    stt_.vocabulary = cfg.get("vocabulary") or ""
     model = mode if os.environ.get("LL_APP_URL") else os.environ.get("LL_LLM_MODEL", "qwen3:4b-instruct")
     session = build_session(stt_, vad, model)
     session.tts._language = language  # noqa: SLF001

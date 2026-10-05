@@ -8,6 +8,7 @@ import '../../services/mcp/mcp_manager.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
+import 'connectors_section.dart';
 import 'live_talk.dart';
 import 'devices_section.dart';
 import 'knowledge_page.dart' show addSkillFromDocument;
@@ -289,8 +290,8 @@ class _ToolsPageState extends State<ToolsPage> {
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      PageHead('Tools (MCP)',
-          description: 'Connect MCP servers so Ava can look things up and act for you. Anything that changes data asks you first.',
+      PageHead('Tools & connectors',
+          description: 'Connect your apps (email, calendar, work tools) or any MCP server, so Ava can look things up and act for you. Anything that changes data asks you first.',
           actions: [Btn('Add MCP server', icon: Icons.add, kind: BtnKind.primary, onPressed: () => showMcpDialog(context))]),
       FutureBuilder(
         future: s.mcp.servers(),
@@ -308,6 +309,8 @@ class _ToolsPageState extends State<ToolsPage> {
           return Column(children: [for (final srv in list) ...[_server(context, s, srv), const SizedBox(height: 12)]]);
         },
       ),
+      const SizedBox(height: 18),
+      const ConnectorsSection(),
     ]);
   }
 

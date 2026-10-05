@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Ava reads and adds calendar events when you connect Apple Calendar.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Ava reads and adds calendar events when you connect Apple Calendar.</string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Ava reads and adds reminders when you connect Apple Reminders.</string>
+	<key>NSRemindersUsageDescription</key>
+	<string>Ava reads and adds reminders when you connect Apple Reminders.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>LocalAILine listens when you talk to your assistant. Audio stays on this computer.</string>
 	<key>CFBundleDevelopmentRegion</key>

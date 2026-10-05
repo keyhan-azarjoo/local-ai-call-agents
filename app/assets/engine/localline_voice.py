@@ -140,6 +140,30 @@ class WhisperStreamingSTT(stt.STT):
         self._vad = vad or silero.VAD.load(min_silence_duration=0.25)
         self._http: aiohttp.ClientSession | None = None
         self.detected_language = "en" if language == "auto" else language
+        # Ava's own voice: what she is saying, whether she is speaking, and how loud the caller
+        # usually is, so her voice leaking back into the microphone is not taken for the caller.
+        self.agent_speaking = False
+        self.agent_until = 0.0
+        self.agent_said = ""
+        self.user_level = 0.0
+
+    def heard_agent(self, text: str) -> None:
+        self.agent_said = (self.agent_said + " " + text)[-800:]
+
+    def is_echo(self, pcm: np.ndarray, text: str) -> bool:
+        """True when this sound is Ava's own voice coming back (quiet, or the words she is saying)."""
+        if not (self.agent_speaking or time.monotonic() < self.agent_until):
+            return False
+        rms = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2))) if len(pcm) else 0.0
+        if rms < (self.user_level * 0.4 if self.user_level else 250.0):
+            return True
+        return bool(text) and _overlap(text, self.agent_said) >= 0.5
+
+    def learn_level(self, pcm: np.ndarray) -> None:
+        if self.agent_speaking or time.monotonic() < self.agent_until or not len(pcm):
+            return
+        rms = float(np.sqrt(np.mean(pcm.astype(np.float32) ** 2)))
+        self.user_level = rms if not self.user_level else 0.7 * self.user_level + 0.3 * rms
 
     @property
     def model(self) -> str:
@@ -222,6 +246,18 @@ class WhisperStreamingSTT(stt.STT):
             await self._http.close()
 
 
+def _grams(t: str) -> set[str]:
+    t = "".join(ch for ch in t.lower() if ch.isalnum() or ch == " ")
+    t = " ".join(t.split())
+    return {t[i : i + 3] for i in range(max(0, len(t) - 2))}
+
+
+def _overlap(text: str, ref: str) -> float:
+    """How much of `text` appears in `ref` (character 3-grams), 0..1."""
+    a = _grams(text)
+    return len(a & _grams(ref)) / len(a) if a else 0.0
+
+
 class _WhisperStream(stt.RecognizeStream):
     def __init__(self, *, stt_: WhisperStreamingSTT, conn_options: APIConnectOptions):
         super().__init__(stt=stt_, conn_options=conn_options, sample_rate=16000)
@@ -245,6 +281,8 @@ class _WhisperStream(stt.RecognizeStream):
                     text, lang = await self._s.transcribe(pcm, 16000)
                     if text:
                         last_cover = (len(pcm), time.monotonic())
+                    if speaking and text and self._s.is_echo(pcm, text):
+                        text = ""  # Ava hearing herself: not the caller
                     if speaking and text and text != last_text:
                         last_text = text
                         self._event_ch.send_nowait(stt.SpeechEvent(
@@ -285,6 +323,11 @@ class _WhisperStream(stt.RecognizeStream):
                             text, lang = await self._s.transcribe(pcm, 16000, final=True)
                         except Exception as e:  # noqa: BLE001
                             log.warning("final transcription failed: %s", e)
+                    if text and self._s.is_echo(pcm, text):
+                        log.info("ignored own voice: %s", text[:80])
+                        text = ""
+                    elif text:
+                        self._s.learn_level(pcm)
                     self._event_ch.send_nowait(stt.SpeechEvent(
                         type=stt.SpeechEventType.FINAL_TRANSCRIPT,
                         alternatives=[stt.SpeechData(language=lang, text=text)]))
@@ -410,6 +453,8 @@ class _PiperChunked(tts.ChunkedStream):
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
         text = EMOJI.sub("", self._input_text).replace("*", "").strip()
+        if self._p._stt:
+            self._p._stt.heard_agent(text)
         text = persian_speakable(text) if self._p.current_language() == "fa" else speakable(text)
 
         def work():
@@ -495,14 +540,25 @@ def persian_speakable(text: str) -> str:
 
 
 def clauses(text: str) -> list[str]:
-    """Short pieces to speak one after another: the first starts quickly, the rest flow on."""
+    """Short pieces to speak one after another: the first starts quickly ("Okay," alone),
+    the rest flow on while it plays."""
     out: list[str] = []
     for part in _CLAUSE.split(text):
-        if out and (len(out[-1]) < 14 or len(part) < 6):
+        if len(out) > 1 and (len(out[-1]) < 14 or len(part) < 6):
             out[-1] += " " + part
         else:
             out.append(part)
+    # A long first piece: start with its first few words.
+    if out and len(out[0].split()) > 7:
+        w = out[0].split()
+        out[:1] = [" ".join(w[:4]), " ".join(w[4:])]
     return [p for p in out if p.strip()]
+
+
+# Speech already made, by (voice, text): fillers and greetings come back instantly.
+_SPOKEN: dict[tuple[str, str], np.ndarray] = {}
+COMMON_PHRASES = ["Hmm,", "Okay,", "Sure,", "Right,", "let me see.", "Let me check that for you.", "one sec, let me look.",
+                  "let me sort that out.", "on it.", "let me do that.", "One moment,", "let me check that.", "Hmm, let me see."]
 
 
 class _KokoroChunked(tts.ChunkedStream):
@@ -518,6 +574,8 @@ class _KokoroChunked(tts.ChunkedStream):
         voice = self._p.kokoro_voice(lang) or "af_heart"
         output_emitter.initialize(request_id=utils.shortuuid(), sample_rate=24000, num_channels=1, mime_type="audio/pcm")
         text = speakable(EMOJI.sub("", self._input_text).replace("*", "")).strip()
+        if self._p._stt:
+            self._p._stt.heard_agent(self._input_text)
         if not text:
             output_emitter.flush()
             return
@@ -525,8 +583,13 @@ class _KokoroChunked(tts.ChunkedStream):
         k = await loop.run_in_executor(None, self._p.kokoro)
         code = KOKORO_LANG.get(voice[0], "en-us")
         for piece in clauses(text):
-            samples, _ = await loop.run_in_executor(None, lambda p=piece: k.create(p, voice=voice, speed=1.0, lang=code))
-            output_emitter.push((np.clip(samples, -1, 1) * 32767).astype(np.int16).tobytes())
+            pcm = _SPOKEN.get((voice, piece))
+            if pcm is None:
+                samples, _ = await loop.run_in_executor(None, lambda p=piece: k.create(p, voice=voice, speed=1.0, lang=code))
+                pcm = (np.clip(samples, -1, 1) * 32767).astype(np.int16)
+                if len(piece) < 40:
+                    _SPOKEN[(voice, piece)] = pcm
+            output_emitter.push(pcm.tobytes())
         output_emitter.flush()
 
 
@@ -567,7 +630,8 @@ def build_session(stt_: WhisperStreamingSTT, vad, model: str) -> AgentSession:
             # Think (and start speaking) before the turn is confirmed; dropped if the caller continues.
             "preemptive_generation": {"enabled": True, "preemptive_tts": True},
             # "vad" keeps barge-in local ("adaptive" calls LiveKit Cloud).
-            "interruption": {"enabled": True, "mode": "vad", "min_duration": 0.4, "resume_false_interruption": True},
+            # Interrupt only on the caller's real words: Ava's own voice is filtered out by the hearing.
+            "interruption": {"enabled": True, "mode": "vad", "min_duration": 0.4, "min_words": 1, "resume_false_interruption": True},
         },
     )
 
@@ -657,6 +721,28 @@ async def entrypoint(ctx: JobContext) -> None:
             sound["task"] = asyncio.create_task(start_sound_soon())
 
     session.on("agent_state_changed", sync_sound)
+
+    def track_own_voice(ev) -> None:  # noqa: ANN001
+        stt_.agent_speaking = ev.new_state == "speaking"
+        if ev.old_state == "speaking":
+            stt_.agent_until = time.monotonic() + 0.8  # the last words are still in the room
+    session.on("agent_state_changed", track_own_voice)
+
+    async def warm_phrases() -> None:
+        await asyncio.sleep(4)  # after the greeting
+        tts_ = session.tts
+        voice = tts_.kokoro_voice(lang) if isinstance(tts_, PiperTTS) else None
+        if not voice:
+            return
+        loop = asyncio.get_running_loop()
+        k = await loop.run_in_executor(None, tts_.kokoro)
+        code = KOKORO_LANG.get(voice[0], "en-us")
+        for p in COMMON_PHRASES:
+            if (voice, p) not in _SPOKEN:
+                samples, _ = await loop.run_in_executor(None, lambda p=p: k.create(p, voice=voice, speed=1.0, lang=code))
+                _SPOKEN[(voice, p)] = (np.clip(samples, -1, 1) * 32767).astype(np.int16)
+
+    asyncio.create_task(warm_phrases())
     session.on("user_state_changed", sync_sound)
     greeting = cfg.get("greeting") if mode == "caller" else f"Hi, it's {cfg.get('name', 'Ava')}. What can I do for you?"
     greeting = greeting or os.environ.get("LL_GREETING", "")

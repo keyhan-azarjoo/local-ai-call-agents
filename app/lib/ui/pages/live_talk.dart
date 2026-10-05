@@ -333,7 +333,7 @@ class _LiveTalkState extends State<LiveTalk> {
                     onChanged: live || busy ? null : (v) => s.setVoiceLanguage(v ?? 'auto'),
                   ),
                   if (live) Btn(muted ? 'Unmute' : 'Mute', small: true, kind: BtnKind.ghost, onPressed: _mute),
-                  if (live && agentState == 'speaking' && !s.voiceBargeIn) Btn('Interrupt', small: true, kind: BtnKind.amber, onPressed: _interrupt),
+                  if (live && agentState == 'speaking') Btn('Interrupt', small: true, kind: BtnKind.amber, onPressed: _interrupt),
                 ],
               ),
               const SizedBox(height: 4),
@@ -370,7 +370,7 @@ class _LiveTalkState extends State<LiveTalk> {
                 Transform.scale(
                   scale: .75,
                   child: Tooltip(
-                    message: 'Use with headphones. With speakers, ${widget.name} would hear herself and stop.',
+                    message: 'Interrupt ${widget.name} just by talking (she ignores her own voice). Turn off in a noisy room: then tap Interrupt.',
                     child: Switch(value: s.voiceBargeIn, onChanged: live || busy ? null : (v) => s.setVoiceSetting('bargeIn', v ? '1' : '0')),
                   ),
                 ),

@@ -36,10 +36,15 @@ async def main(files: list[str]) -> None:
     marks = {"spoke_end": 0.0}
     results = []
 
+    echo_level = float(os.environ.get("ECHO", "0"))  # play the agent back into our mic, like speakers
+    echo: list[np.ndarray] = []
+
     async def watch_agent_audio(track: rtc.Track) -> None:
-        stream = rtc.AudioStream(track)
+        stream = rtc.AudioStream(track, sample_rate=16000, num_channels=1)
         async for ev in stream:
             pcm = np.frombuffer(ev.frame.data, dtype=np.int16)
+            if echo_level:
+                echo.append((pcm.astype(np.float32) * echo_level).astype(np.int16))
             if marks["spoke_end"] and not first_audio.is_set() and np.abs(pcm).mean() > 250:
                 first_audio.set()
 
@@ -65,27 +70,50 @@ async def main(files: list[str]) -> None:
     track = rtc.LocalAudioTrack.create_audio_track("mic", source)
     await room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
 
+    def take_echo(n: int) -> np.ndarray:
+        out = np.zeros(n, np.int16)
+        got = 0
+        while echo and got < n:
+            e = echo[0]
+            k = min(n - got, len(e))
+            out[got : got + k] = e[:k]
+            got += k
+            if k == len(e):
+                echo.pop(0)
+            else:
+                echo[0] = e[k:]
+        return out
+
     async def silence(seconds: float) -> None:
-        frame = rtc.AudioFrame(b"\0" * 320 * 2, 16000, 1, 320)
         for _ in range(int(seconds * 50)):
-            await source.capture_frame(frame)
+            await source.capture_frame(rtc.AudioFrame(take_echo(320).tobytes(), 16000, 1, 320))
+
+    async def speak(path: str) -> None:
+        pcm, sr = read_wav(path)
+        for i in range(0, len(pcm), 320):
+            chunk = pcm[i : i + 320]
+            if len(chunk) < 320:
+                chunk = np.pad(chunk, (0, 320 - len(chunk)))
+            mixed = np.clip(chunk.astype(np.int32) + take_echo(320), -32768, 32767).astype(np.int16)
+            await source.capture_frame(rtc.AudioFrame(mixed.tobytes(), sr, 1, 320))
 
     await silence(6)  # agent joins, greets
     for f in files:
         pcm, sr = read_wav(f)
         first_audio.clear()
         marks["spoke_end"] = 0.0
-        for i in range(0, len(pcm), 320):
-            chunk = pcm[i : i + 320]
-            if len(chunk) < 320:
-                chunk = np.pad(chunk, (0, 320 - len(chunk)))
-            await source.capture_frame(rtc.AudioFrame(chunk.tobytes(), sr, 1, 320))
+        await speak(f)
         marks["spoke_end"] = time.monotonic()
         t0 = marks["spoke_end"]
         waiter = asyncio.create_task(first_audio.wait())
         while not waiter.done() and time.monotonic() - t0 < 25:
             await silence(0.1)
         latency = time.monotonic() - t0 if waiter.done() else None
+        if os.environ.get("BARGE_IN") and waiter.done() and f == files[0]:
+            # Talk over the agent, like a person cutting in.
+            await silence(float(os.environ.get("BARGE_AFTER", "2")))
+            print("BARGE-IN with", os.environ["BARGE_IN"])
+            await speak(os.environ["BARGE_IN"])
         if os.environ.get("INTERRUPT_AFTER") and waiter.done():
             # Like the app's Interrupt button: stop the agent mid-answer.
             await silence(float(os.environ["INTERRUPT_AFTER"]))

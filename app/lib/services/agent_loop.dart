@@ -121,7 +121,8 @@ class ToolLoop {
       'look them up with another tool or show the ID. '
       '2) Always present the data you received. If a note says some items did not fit, still list the ones shown, '
       'then say how many more exist. '
-      '3) If the user asks for a list, list every item (one line each), then add the totals. '
+      '3) If the user asks for a list, list every item on one short line each (for example "1. Name — Group"), '
+      'no blank lines or sub-bullets, then add the totals. '
       '4) For counts, use the "Totals" line from the result exactly; never count by yourself. '
       '5) Inputs: use ids from earlier results (never names where an id is asked); write dates as YYYY-MM-DD. '
       '6) If a tool returns an error, read it, fix the inputs and try once more; if it still fails, explain the problem simply.';
@@ -133,6 +134,7 @@ class ToolLoop {
     required Approver approve,
     required ToolRunner runTool,
     void Function(ToolEvent)? onEvent,
+    void Function(String textSoFar)? onText,
   }) async {
     final byName = {for (final t in tools) t.fnName: t};
 
@@ -295,7 +297,7 @@ class ToolLoop {
     }
 
     return switch (target) {
-      LocalTarget t => _ollama(t, messages, offered, exec, nudge),
+      LocalTarget t => _ollama(t, messages, offered, exec, nudge, onText),
       CloudTarget t => switch (t.config.provider) {
           CloudProvider.openai || CloudProvider.azure => _openai(t.config, messages, offered, exec, nudge),
           CloudProvider.anthropic => _anthropic(t.config, messages, offered, exec, nudge),
@@ -368,28 +370,33 @@ class ToolLoop {
 
   // ---------------- Ollama ----------------
   Future<String> _ollama(LocalTarget t, List<ChatMessage> messages, List<ToolBinding> tools,
-      Future<(String, bool)> Function(String, Map<String, dynamic>) exec, String? Function() nudge) async {
+      Future<(String, bool)> Function(String, Map<String, dynamic>) exec, String? Function() nudge,
+      void Function(String)? onText) async {
     final msgs = <Map<String, Object?>>[for (final m in messages) m.toJson()];
+    // One context size for the whole question: changing it makes Ollama reload
+    // the model and re-read everything (seconds each time).
+    final baseCtx = t.maxCtx < 16384 ? t.maxCtx : 16384;
     for (var round = 0; round < maxRounds; round++) {
       final fns = tools.map(_fn).toList();
-      final ctx = ctxFor([msgs, fns], t.maxCtx);
-      Map<String, dynamic> r;
+      final need = ctxFor([msgs, fns], t.maxCtx);
+      final ctx = need > baseCtx ? need : baseCtx;
+      Map<String, dynamic> m;
       try {
-        r = await _post('${t.base}/api/chat', {}, {
+        m = await _ollamaStream(t, {
           'model': t.model,
           'messages': msgs,
           if (fns.isNotEmpty) 'tools': fns,
-          'stream': false,
+          'stream': true,
           'keep_alive': -1,
           'think': ?(t.disableThinking ? false : null),
           'options': {'num_ctx': ctx, 'temperature': 0.4},
-        });
+        }, onText);
       } on CloudError catch (e) {
         if (!e.message.contains('context')) rethrow;
         throw CloudError('This is more than the model can hold at once. Start a new chat, or use a bigger model or a cloud AI.');
       }
-      final m = (r['message'] as Map).cast<String, dynamic>();
       final calls = (m['tool_calls'] as List?) ?? [];
+      if (calls.isNotEmpty) onText?.call(''); // text before a tool call isn't the answer
       if (calls.isEmpty) {
         final n = nudge();
         if (n == null) return _stripThink((m['content'] as String?) ?? '');
@@ -405,6 +412,39 @@ class ToolLoop {
       }
     }
     return 'I used several tools but couldn’t finish. Try asking more specifically.';
+  }
+
+  /// Streams one Ollama turn: shows the answer as it is written, and collects
+  /// any tool calls. Returns the full assistant message.
+  Future<Map<String, dynamic>> _ollamaStream(LocalTarget t, Map<String, Object?> body, void Function(String)? onText) async {
+    final req = http.Request('POST', Uri.parse('${t.base}/api/chat'))
+      ..headers['Content-Type'] = 'application/json'
+      ..body = jsonEncode(body);
+    final res = await _c.send(req).timeout(const Duration(minutes: 3));
+    if (res.statusCode != 200) {
+      final b = await res.stream.bytesToString();
+      var detail = b;
+      try {
+        detail = (jsonDecode(b)['error'] ?? b).toString();
+      } catch (_) {}
+      throw CloudError('Model error ${res.statusCode}: ${detail.length > 300 ? detail.substring(0, 300) : detail}');
+    }
+    final text = StringBuffer();
+    final calls = <Object?>[];
+    await for (final line in res.stream.transform(utf8.decoder).transform(const LineSplitter())) {
+      if (line.trim().isEmpty) continue;
+      final j = jsonDecode(line) as Map<String, dynamic>;
+      if (j['error'] != null) throw CloudError('Model error: ${j['error']}');
+      final msg = (j['message'] as Map?)?.cast<String, dynamic>();
+      if (msg == null) continue;
+      calls.addAll((msg['tool_calls'] as List?) ?? const []);
+      final piece = msg['content'] as String? ?? '';
+      if (piece.isNotEmpty) {
+        text.write(piece);
+        if (calls.isEmpty) onText?.call(_stripThink(text.toString()));
+      }
+    }
+    return {'role': 'assistant', 'content': text.toString(), if (calls.isNotEmpty) 'tool_calls': calls};
   }
 
   static String _stripThink(String s) => s.replaceAll(RegExp(r'<think>[\s\S]*?</think>'), '').trim();

@@ -149,7 +149,14 @@ class _ChatPageState extends State<ChatPage> {
       final history = [ChatMessage('system', system), ...messages.where((x) => x != reply && x.role != 'tool')];
       final tools = await s.toolsFor(_scopes);
       if (tools.isNotEmpty) {
-        reply.content = await s.agentReply(history, scopes: _scopes, approve: _approve, onEvent: (e) async {
+        reply.content = await s.agentReply(history, scopes: _scopes, approve: _approve, onText: (t) {
+          if (!mounted) return;
+          setState(() {
+            reply.content = t;
+            if (t.isNotEmpty) progress = 'Writing the answer…';
+          });
+          _scrollDown();
+        }, onEvent: (e) async {
           final note = ChatMessage('tool', jsonEncode({
             'server': e.binding.serverName,
             'tool': e.binding.tool.title ?? e.binding.tool.name,

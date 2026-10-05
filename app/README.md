@@ -11,10 +11,12 @@ Desktop host app for Windows, macOS and Linux. The Android and iOS builds become
 - Make a call: just ask, or fill in the form → call queue
 - Phone lines: Twilio, Telnyx, SIP, FXO landline. Twilio and Telnyx credentials are checked live with the provider.
 - Agents, Automations & loops, Contacts & rules, Knowledge, Tools (MCP), Skills (saved locally)
-- Simple mode by default; **Show all features** reveals everything
+- Cloud AI instead of local: OpenAI, Azure OpenAI, Google Gemini or Anthropic Claude. Pick the provider, paste the key, Test, Use.
+- Chat page: text chat with the AI, chats saved per user
+- The menu is always the same 8 items; **Show all features** adds tabs inside My assistant, Phone line and Settings
 
 ## Not yet (next milestones)
-Real phone calls (phone gateway + LiveKit agent worker), knowledge indexing, running MCP tools, automations, pairing the companion app, encrypting stored credentials.
+Real phone calls (phone gateway + LiveKit agent worker), knowledge indexing, running MCP tools, automations, pairing the companion app, encrypting stored credentials and API keys (they are in the local database today).
 
 ## Run
 

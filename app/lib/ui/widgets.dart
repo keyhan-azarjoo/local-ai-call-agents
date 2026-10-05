@@ -44,11 +44,12 @@ class Lamp extends StatefulWidget {
 }
 
 class _LampState extends State<Lamp> with SingleTickerProviderStateMixin {
-  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
+  late final AnimationController _c;
 
   @override
   void initState() {
     super.initState();
+    _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
     if (widget.state == LampState.ring) _c.repeat();
   }
 

@@ -160,9 +160,24 @@ void main() {
     // ---- All features ----
     await state.setAdvanced(true);
     await settle(t);
-    await tapText(t, 'Language models');
+    // The menu stays the same; extra features are tabs inside pages.
+    expect(find.text('Language models'), findsNothing);
+    await tapText(t, 'Settings');
+    // Cloud AI: choose provider → key → Test (no real key here, so expect the hint).
+    await tapText(t, 'Cloud AI · OpenAI, Azure, Google, Claude');
+    await waitFor(t, find.text('Connect a cloud AI'));
+    await tapText(t, 'Anthropic Claude');
+    await tapText(t, 'Test');
+    await waitFor(t, find.text('Paste your API key first.'));
+    await tapText(t, 'Cancel');
+    await waitFor(t, find.text('Choose the thinking model'));
+    expect(state.usingCloud, isFalse);
+    await tapText(t, 'Models');
     await waitFor(t, find.text('Loaded now'));
-    await tapText(t, 'Users & access');
+    await tapText(t, 'My assistant');
+    await waitFor(t, find.text('Automations'));
+    await tapText(t, 'Settings');
+    await tapText(t, 'Users');
     await tapText(t, 'Add user');
     final uf = find.descendant(of: find.byType(Dialog), matching: find.byType(TextField));
     await t.enterText(uf.at(0), 'Maya Rahimi');
@@ -170,7 +185,7 @@ void main() {
     await t.enterText(uf.at(2), 'maya-password-1');
     await tapText(t, 'Add user');
     await waitFor(t, find.text('Maya Rahimi'));
-    await tapText(t, 'Activity & logs');
+    await tapText(t, 'Activity');
     await waitFor(t, find.text('Added user maya as operator'));
 
     // ---- Sign out / in ----

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../data/db.dart';
 import '../services/auth.dart';
 import '../services/catalog.dart';
+import '../services/cloud_llm.dart';
 import '../services/hardware.dart';
 import '../services/ollama.dart';
 import '../services/speech.dart';
@@ -52,13 +54,39 @@ const simplePages = [
   PageId.settings,
 ];
 
-const advancedGroups = <String, List<PageId>>{
-  'Operate': [PageId.home, PageId.chat, PageId.talk, PageId.calls, PageId.outbound, PageId.contacts],
-  'Assistant': [PageId.assistant, PageId.agents, PageId.automations, PageId.knowledge, PageId.tools, PageId.skills],
-  'Engine': [PageId.models, PageId.speech, PageId.hardware],
-  'Connect': [PageId.lines, PageId.voiceServer, PageId.devices],
-  'Admin': [PageId.users, PageId.logs, PageId.settings],
+/// "Show all features" adds tabs inside these pages; the menu never grows.
+const hubTabs = <PageId, List<(PageId, String)>>{
+  PageId.assistant: [
+    (PageId.assistant, 'Ava'),
+    (PageId.agents, 'Agents'),
+    (PageId.skills, 'Skills'),
+    (PageId.knowledge, 'Knowledge'),
+    (PageId.tools, 'Tools'),
+    (PageId.automations, 'Automations'),
+  ],
+  PageId.lines: [
+    (PageId.lines, 'Lines'),
+    (PageId.contacts, 'Contacts & rules'),
+    (PageId.voiceServer, 'Voice server'),
+    (PageId.devices, 'Paired devices'),
+  ],
+  PageId.settings: [
+    (PageId.settings, 'General'),
+    (PageId.models, 'Models'),
+    (PageId.speech, 'Voice & hearing'),
+    (PageId.hardware, 'This computer'),
+    (PageId.users, 'Users'),
+    (PageId.logs, 'Activity'),
+  ],
 };
+
+/// The menu item a page lives under.
+PageId parentOf(PageId p) {
+  for (final e in hubTabs.entries) {
+    if (e.value.any((t) => t.$1 == p)) return e.key;
+  }
+  return p;
+}
 
 class AppState extends ChangeNotifier {
   AppState({this.dbPath});
@@ -118,14 +146,50 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- where the AI runs ----------
+  /// 'local' (this computer) or 'cloud' (a provider the user connected).
+  String llmSource = 'local';
+  CloudConfig? cloud;
+  final cloudLlm = CloudLlm();
+
+  bool get usingCloud => llmSource == 'cloud';
+
+  Future<void> setLlmSource(String v) async {
+    llmSource = v;
+    await db.setSetting('llm.source', v);
+    await log(v == 'cloud' ? 'Switched AI to ${cloud?.provider.label ?? 'cloud'}' : 'Switched AI to this computer');
+    notifyListeners();
+  }
+
+  Future<void> saveCloud(CloudConfig c) async {
+    cloud = c;
+    await db.setSetting('llm.cloud', jsonEncode(c.toJson()));
+    llmSource = 'cloud';
+    await db.setSetting('llm.source', 'cloud');
+    await log('Connected ${c.provider.label} (${c.model})');
+    notifyListeners();
+  }
+
+  Future<void> removeCloud() async {
+    cloud = null;
+    await db.setSetting('llm.cloud', '');
+    await setLlmSource('local');
+  }
+
+  /// What the AI is thinking with, for status lines.
+  String get llmLabel => usingCloud && cloud != null ? '${cloud!.provider.label} · ${cloud!.model}' : (llmModel ?? 'no model');
+
   /// Chat with the chosen (or given) model, using the right thinking setting.
   Stream<String> chat(List<ChatMessage> messages, {String? model}) {
+    if (usingCloud && cloud != null && model == null) return cloudLlm.chat(cloud!, messages);
     final m = model ?? llmModel!;
     final entry = catalog.llm.where((e) => e.id == m).firstOrNull;
     return ollama.chat(m, messages, disableThinking: entry?.think == 'off');
   }
 
-  bool get llmReady => ollamaVersion != null && llmModel != null && installedModels.any((m) => m.name == llmModel);
+  bool get llmReady => usingCloud ? (cloud != null && cloud!.model.isNotEmpty) : localReady;
+
+  bool get localReady => ollamaVersion != null && llmModel != null && installedModels.any((m) => m.name == llmModel);
 
   /// Chosen models.
   String? llmModel;
@@ -147,6 +211,10 @@ class AppState extends ChangeNotifier {
     llmModel = await db.setting('llm.model');
     sttModel = await db.setting('stt.model') ?? sttModel;
     ttsVoice = await db.setting('tts.voice') ?? ttsVoice;
+    llmSource = await db.setting('llm.source') ?? 'local';
+    final cj = await db.setting('llm.cloud');
+    cloud = cj == null || cj.isEmpty ? null : CloudConfig.fromJson(jsonDecode(cj) as Map<String, dynamic>);
+    if (cloud == null) llmSource = 'local';
     gate = await auth.hasOwner() ? Gate.signIn : Gate.setup;
     // Debug builds only, and only together with LOCALAILINE_DB: skip sign-in as this user.
     final devUser = kDebugMode && devDb != null ? Platform.environment['LOCALAILINE_DEV_USER'] : null;
@@ -180,7 +248,7 @@ class AppState extends ChangeNotifier {
 
   Future<void> setAdvanced(bool v) async {
     advanced = v;
-    if (!v && !simplePages.contains(page)) page = PageId.home;
+    if (!v) page = parentOf(page);
     await db.setSetting('ui.advanced', v ? '1' : '0');
     notifyListeners();
   }

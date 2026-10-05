@@ -95,7 +95,7 @@ class _TalkPageState extends State<TalkPage> {
     text = text.trim();
     if (text.isEmpty || thinking) return;
     if (!s.llmReady) {
-      s.toast('Set up a language model first (Settings → AI engine).');
+      s.toast('Set up the AI first (Settings).');
       return;
     }
     input.clear();
@@ -124,7 +124,7 @@ class _TalkPageState extends State<TalkPage> {
       history.add(ChatMessage('assistant', full));
       reply.text = _visible(full);
       reply.task = _task(full);
-      reply.meta = '${((first ?? Duration.zero).inMilliseconds / 1000).toStringAsFixed(2)} s to first word · ${s.llmModel}';
+      reply.meta = '${((first ?? Duration.zero).inMilliseconds / 1000).toStringAsFixed(2)} s to first word · ${s.llmLabel}';
       if (voiceOn) _say(reply.text);
     } catch (e) {
       reply.text = 'I couldn’t reply: $e';
@@ -263,7 +263,7 @@ class _TalkPageState extends State<TalkPage> {
                 child: Row(children: [
                   const Icon(Icons.info_outline, color: LL.amber),
                   const SizedBox(width: 12),
-                  const Expanded(child: Text('No language model is ready yet. Set one up to talk.')),
+                  const Expanded(child: Text('The AI isn’t set up yet. Choose a local model or connect a cloud AI.')),
                   Btn('Set up AI', kind: BtnKind.primary, small: true, onPressed: () => s.go(PageId.settings)),
                 ]),
               ),

@@ -74,7 +74,13 @@ class Shell extends StatelessWidget {
             key: PageStorageKey(s.page),
             padding: EdgeInsets.all(wide ? 28 : 16),
             child: Center(
-              child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 1180), child: pageFor(s.page)),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1180),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  if (s.advanced && hubTabs.containsKey(parentOf(s.page))) _HubTabs(hub: parentOf(s.page)),
+                  pageFor(s.page),
+                ]),
+              ),
             ),
           ),
         ),
@@ -94,7 +100,7 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
     Widget item(PageId p, {bool big = false}) {
-      final active = s.page == p;
+      final active = parentOf(s.page) == p;
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 1),
         child: Material(
@@ -127,16 +133,7 @@ class _Sidebar extends StatelessWidget {
         Padding(padding: const EdgeInsets.fromLTRB(10, 4, 10, 18), child: InkWell(onTap: () => s.go(PageId.home), child: const Brand())),
         Expanded(
           child: ListView(children: [
-            if (!s.advanced)
-              for (final p in simplePages) item(p, big: true)
-            else
-              for (final g in advancedGroups.entries) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 14, 10, 6),
-                  child: Text(g.key.toUpperCase(), style: const TextStyle(fontFamily: LL.mono, fontSize: 10.5, letterSpacing: 1.3, color: LL.navMuted)),
-                ),
-                for (final p in g.value) item(p),
-              ],
+            for (final p in simplePages) item(p, big: true),
             const SizedBox(height: 18),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -166,6 +163,41 @@ class _Sidebar extends StatelessWidget {
   }
 }
 
+/// Small tabs at the top of a page, shown only with "Show all features".
+class _HubTabs extends StatelessWidget {
+  const _HubTabs({required this.hub});
+  final PageId hub;
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
+    final c = context.c;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 22),
+      decoration: BoxDecoration(border: Border(bottom: BorderSide(color: c.line))),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (final (p, label) in hubTabs[hub]!)
+            InkWell(
+              onTap: () => s.go(p),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border(bottom: BorderSide(color: s.page == p ? LL.amber : Colors.transparent, width: 2)),
+                ),
+                child: Text(label,
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: s.page == p ? FontWeight.w600 : FontWeight.w400,
+                        color: s.page == p ? c.ink : c.muted)),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+}
+
 class _TopBar extends StatelessWidget {
   const _TopBar({required this.showMenu});
   final bool showMenu;
@@ -178,7 +210,7 @@ class _TopBar extends StatelessWidget {
       decoration: BoxDecoration(color: context.c.panel, border: Border(bottom: BorderSide(color: context.c.line))),
       child: Row(children: [
         if (showMenu) Builder(builder: (c) => IconButton(icon: const Icon(Icons.menu), onPressed: () => Scaffold.of(c).openDrawer())),
-        Text(s.page.title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        Text(parentOf(s.page).title, style: const TextStyle(fontWeight: FontWeight.w600)),
         const Spacer(),
         InkWell(
           onTap: () => s.setAnswering(!s.answering),

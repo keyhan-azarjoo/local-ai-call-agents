@@ -72,7 +72,7 @@ class HomePage extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(title, style: displayStyle(context, 30)),
                     const SizedBox(height: 6),
-                    Muted(s.llmReady ? 'Everything runs on this computer · thinking with ${s.llmModel}' : 'Ava needs a language model before she can talk.', size: 14),
+                    Muted(!s.llmReady ? 'Ava needs an AI before she can talk.' : s.usingCloud ? 'Thinking with ${s.llmLabel}' : 'Everything runs on this computer · thinking with ${s.llmModel}', size: 14),
                     if (lines.isEmpty && s.llmReady) ...[
                       const SizedBox(height: 14),
                       Btn('Connect a phone line', icon: Icons.add, kind: BtnKind.primary, onPressed: () => s.go(PageId.lines)),
@@ -273,7 +273,7 @@ class _OutboundPageState extends State<OutboundPage> {
   Future<void> _draftFromAsk() async {
     final s = context.read<AppState>();
     if (ask.text.trim().isEmpty) return;
-    if (!s.llmReady) return s.toast('Set up a language model first.');
+    if (!s.llmReady) return s.toast('Set up the AI first (Settings).');
     setState(() => drafting = true);
     try {
       final buf = StringBuffer();

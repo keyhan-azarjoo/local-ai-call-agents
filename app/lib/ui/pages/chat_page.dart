@@ -74,15 +74,15 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _send() async {
     final text = input.text.trim();
-    final m = model ?? s.llmModel;
+    final m = s.usingCloud ? null : (model ?? s.llmModel);
     if (text.isEmpty || busy) return;
-    if (m == null || !s.llmReady) return s.toast('Set up a language model first (Settings).');
+    if (!s.llmReady) return s.toast('Set up the AI first (Settings).');
     input.clear();
     final now = DateTime.now().millisecondsSinceEpoch;
     chatId ??= await s.db.insert('chats', {
       'user_id': s.user?.id,
       'title': text.length > 48 ? '${text.substring(0, 48)}…' : text,
-      'model': m,
+      'model': m ?? s.llmLabel,
       'updated_at': now,
     });
     final user = ChatMessage('user', text);
@@ -170,7 +170,9 @@ class _ChatPageState extends State<ChatPage> {
           child: Row(children: [
             Text('Chat with AI', style: displayStyle(context, 17)),
             const Spacer(),
-            if (models.isNotEmpty)
+            if (st.usingCloud)
+              Pill(st.llmLabel, tone: Tone.blue)
+            else if (models.isNotEmpty)
               SizedBox(
                 width: 220,
                 child: Dropdown(value: current ?? models.keys.first, items: models, onChanged: (v) => setState(() => model = v)),
@@ -187,7 +189,7 @@ class _ChatPageState extends State<ChatPage> {
                       const SizedBox(height: 10),
                       Text('Ask anything', style: displayStyle(context, 20)),
                       const SizedBox(height: 4),
-                      const Muted('Runs on your own computer. Nothing is sent anywhere.', size: 13.5),
+                      Muted(st.usingCloud ? 'Uses ${st.cloud!.provider.label}. Your messages go to them.' : 'Runs on your own computer. Nothing is sent anywhere.', size: 13.5),
                       const SizedBox(height: 16),
                       Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: [
                         for (final q in const [

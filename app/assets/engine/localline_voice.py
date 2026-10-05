@@ -128,6 +128,10 @@ def wav_bytes(pcm: np.ndarray, sr: int) -> bytes:
 
 # ----------------------------------------------------------------------------- hearing
 
+# Whisper's markers for non-speech ("[BLANK_AUDIO]", "[Music]", "(coughs)"): not words.
+_NOT_SPEECH = __import__("re").compile(r"\[[^\]]*\]|\([^)]*\)|♪+")
+
+
 class WhisperStreamingSTT(stt.STT):
     """Streaming speech-to-text on whisper.cpp's server: interim words while the
     caller speaks (re-transcribed every ~0.4 s, ~150 ms each on Apple GPU) and a
@@ -242,7 +246,7 @@ class WhisperStreamingSTT(stt.STT):
         form.add_field("temperature", "0")
         try:
             async with self.http().post(WHISPER_ACCURATE_URL.rstrip("/") + "/inference", data=form, timeout=aiohttp.ClientTimeout(total=8)) as r:
-                return ((await r.json(content_type=None)).get("text") or "").strip()
+                return _NOT_SPEECH.sub("", (await r.json(content_type=None)).get("text") or "").strip()
         except Exception as e:  # noqa: BLE001
             log.warning("accurate hearing failed, using the fast one: %s", e)
             return ""
@@ -254,7 +258,7 @@ class WhisperStreamingSTT(stt.STT):
             return text, self.detected_language if self._language == "auto" else self._language
         auto = self._language == "auto"
         j = await self._whisper(pcm, sr, "auto" if auto else self._language)
-        text = (j.get("text") or "").strip()
+        text = _NOT_SPEECH.sub("", j.get("text") or "").strip()
         if auto:
             lang = str(j.get("language") or "").lower()
             lang = WHISPER_LANGS.get(lang, lang)
@@ -267,7 +271,7 @@ class WhisperStreamingSTT(stt.STT):
                 # Not sure: hear it again in the language of the conversation.
                 if final and self.needs_accurate(pcm, sr) and (better := await self._accurate(pcm, sr)):
                     return better, self.detected_language
-                text = ((await self._whisper(pcm, sr, self.detected_language)).get("text") or "").strip()
+                text = _NOT_SPEECH.sub("", (await self._whisper(pcm, sr, self.detected_language)).get("text") or "").strip()
             # Just found out it's a harder language: hear it again with the larger model.
             if final and not tried and self.needs_accurate(pcm, sr) and (better := await self._accurate(pcm, sr)):
                 return better, self.detected_language
@@ -663,6 +667,76 @@ class AppLLM(openai.LLM):
         return super().chat(**kw)
 
 
+_SENTENCE_END = _re.compile(r"[.!?؟。…](?=\s)")
+
+
+class Ava(Agent):
+    """Speaks each sentence the moment it is complete. (LiveKit's sentence splitter waits for
+    the next sentence to begin, so "Let me check." would wait for the whole answer.)"""
+
+    # Set by the call: plays/stops the "thinking" sound while the rest of the answer is on its way.
+    waiting = None
+
+    async def tts_node(self, text, model_settings):  # noqa: ANN001, ANN201
+        tts_ = self.session.tts
+        spoke = False
+        queue: asyncio.Queue[str | None] = asyncio.Queue()
+
+        async def read() -> None:
+            async for t in text:
+                await queue.put(t)
+            await queue.put(None)
+
+        reader = asyncio.create_task(read())
+        buf, ended = "", False
+        try:
+            while not ended or buf.strip():
+                piece = None
+                m = None
+                for m in _SENTENCE_END.finditer(buf):
+                    pass
+                if m is not None:  # one or more whole sentences: say them now
+                    piece, buf = buf[: m.end()], buf[m.end() :]
+                elif ended:
+                    piece, buf = buf, ""
+                else:
+                    # A pause right after punctuation also ends what can be said now.
+                    wait = 0.12 if buf.rstrip()[-1:] in ".!?؟。…,:;" else None
+                    if wait is None and spoke and not buf.strip():
+                        wait = 1.2  # said "let me check…": if the answer takes a while, sound busy
+                    try:
+                        t = await asyncio.wait_for(queue.get(), timeout=wait)
+                    except asyncio.TimeoutError:
+                        if buf.strip():
+                            piece, buf = buf, ""
+                        else:
+                            if self.waiting:
+                                self.waiting(True)
+                            try:
+                                t = await queue.get()
+                            finally:
+                                if self.waiting:
+                                    self.waiting(False)
+                            if t is None:
+                                ended = True
+                            else:
+                                buf += t
+                            continue
+                    else:
+                        if t is None:
+                            ended = True
+                        else:
+                            buf += t
+                        continue
+                if piece and piece.strip():
+                    spoke = True
+                    async with tts_.synthesize(piece.strip()) as stream:
+                        async for ev in stream:
+                            yield ev.frame
+        finally:
+            reader.cancel()
+
+
 def build_session(stt_: WhisperStreamingSTT, vad, model: str) -> AgentSession:
     llm = (AppLLM if os.environ.get("LL_APP_URL") else openai.LLM)(
         base_url=os.environ.get("LL_LLM_BASE", "http://127.0.0.1:11434/v1"),
@@ -736,11 +810,9 @@ async def entrypoint(ctx: JobContext) -> None:
         elif kind == "TTSMetrics":
             log.info("TIMING tts_ttfb=%.0fms", m.ttfb * 1000)
 
-    await session.start(
-        agent=Agent(instructions=os.environ.get("LL_INSTRUCTIONS", "You are Ava, a warm, brief phone assistant.")
-                    + " This is a phone call: speak naturally in short sentences, no emojis, no lists or markdown."),
-        room=ctx.room,
-    )
+    ava = Ava(instructions=os.environ.get("LL_INSTRUCTIONS", "You are Ava, a warm, brief phone assistant.")
+              + " This is a phone call: speak naturally in short sentences, no emojis, no lists or markdown.")
+    await session.start(agent=ava, room=ctx.room)
     # The app's "Interrupt" button (its mic is off while Ava speaks, so she can't hear herself).
     async def _interrupt(_data) -> str:  # noqa: ANN001
         await session.interrupt(force=True)
@@ -784,6 +856,13 @@ async def entrypoint(ctx: JobContext) -> None:
         if ev.old_state == "speaking":
             stt_.agent_until = time.monotonic() + 0.8  # the last words are still in the room
     session.on("agent_state_changed", track_own_voice)
+
+    def waiting_sound(on: bool) -> None:
+        if on and thinking_clip and sound["handle"] is None:
+            sound["handle"] = background.play(AudioConfig(thinking_clip, volume=0.4), loop=True)
+        elif not on:
+            stop_sound()
+    ava.waiting = waiting_sound
 
     async def warm_phrases() -> None:
         await asyncio.sleep(4)  # after the greeting

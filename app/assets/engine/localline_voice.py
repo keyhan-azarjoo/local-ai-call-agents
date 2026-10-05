@@ -4,15 +4,18 @@ Everything is local:
   hearing  — whisper.cpp `whisper-server` (Metal GPU), streamed: interim words while you speak
   thinking — the LocalAILine app (OpenAI-compatible endpoint), so documents, skills and tools apply;
              or Ollama directly when run on its own
-  voice    — Piper kept in memory (~80 ms per sentence), Kokoro optional
+  voice    — Kokoro (natural, human-sounding; spoken clause by clause so it starts fast) for
+             English, Spanish, French, Italian, Portuguese, Chinese, Japanese, Hindi; Piper for the rest
   turns    — Silero VAD + LiveKit's multilingual end-of-turn model, preemptive generation,
              interruptions, a "thinking" sound and short spoken fillers
 
 Configuration comes from environment variables (set by the app):
   LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET
   LL_LLM_BASE (e.g. http://127.0.0.1:7420/v1), LL_LLM_KEY, LL_LLM_MODEL
-  LL_WHISPER_URL (http://127.0.0.1:8910), LL_LANGUAGE (auto | en | fa | …)
-  LL_VOICES_DIR (folder with Piper .onnx voices), LL_GREETING, LL_INSTRUCTIONS
+  LL_WHISPER_URL (http://127.0.0.1:8910), LL_WHISPER_ACCURATE_URL (optional larger model),
+  LL_LANGUAGE (auto | en | fa | …)
+  LL_VOICES_DIR (folder with Piper .onnx voices), LL_KOKORO_DIR (kokoro-v1.0.onnx + voices-v1.0.bin),
+  LL_GREETING, LL_INSTRUCTIONS
 """
 from __future__ import annotations
 
@@ -28,6 +31,7 @@ import wave
 from pathlib import Path
 
 import aiohttp
+import httpx
 import numpy as np
 from livekit import rtc
 from livekit.agents import (
@@ -42,6 +46,7 @@ from livekit.agents import (
     utils,
 )
 from livekit.agents.types import DEFAULT_API_CONNECT_OPTIONS, NOT_GIVEN, NotGivenOr
+from livekit.agents.voice.agent_session import SessionConnectOptions
 from livekit.agents.voice.background_audio import AudioConfig, BackgroundAudioPlayer, BuiltinAudioClip
 from livekit.plugins import openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -49,13 +54,28 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 log = logging.getLogger("localline.voice")
 
 WHISPER_URL = os.environ.get("LL_WHISPER_URL", "http://127.0.0.1:8910")
+# A larger hearing model for the final words in languages the fast one hears poorly (Persian, Arabic, …).
+WHISPER_ACCURATE_URL = os.environ.get("LL_WHISPER_ACCURATE_URL", "")
+EASY_LANGS = {"en", "es", "fr", "de", "it", "pt", "nl"}
 LANGUAGE = os.environ.get("LL_LANGUAGE", "auto")
 VOICES_DIR = Path(os.environ.get("LL_VOICES_DIR", Path.home() / "Library/Application Support/com.localailine.localailine/models/tts"))
+
+# Sounds the app can choose for "thinking" and for the background.
+SOUNDS = {
+    "none": None,
+    "keyboard": BuiltinAudioClip.KEYBOARD_TYPING,
+    "keyboard2": BuiltinAudioClip.KEYBOARD_TYPING2,
+    "office": BuiltinAudioClip.OFFICE_AMBIENCE,
+    "hold": BuiltinAudioClip.HOLD_MUSIC,
+    "city": BuiltinAudioClip.CITY_AMBIENCE,
+    "forest": BuiltinAudioClip.FOREST_AMBIENCE,
+    "room": BuiltinAudioClip.CROWDED_ROOM,
+}
 
 # Piper voices per language (downloaded on first use from the Piper voice library).
 PIPER_VOICES = {
     "en": "en_GB-alba-medium",
-    "fa": "fa_IR-amir-medium",
+    "fa": "fa_IR-gyro-medium",
     "es": "es_ES-davefx-medium",
     "fr": "fr_FR-siwis-medium",
     "de": "de_DE-thorsten-medium",
@@ -77,6 +97,21 @@ FILLERS = {
     "de": ["Einen Moment.", "Okay, ich schaue nach."],
 }
 
+
+KOKORO_DIR = Path(os.environ.get("LL_KOKORO_DIR", VOICES_DIR.parent / "kokoro"))
+# Natural voices (Kokoro) per language: default voice and Kokoro's language code.
+KOKORO_DEFAULT = {"en": "af_heart", "es": "ef_dora", "fr": "ff_siwis", "it": "if_sara", "pt": "pf_dora", "zh": "zf_xiaoxiao", "ja": "jf_alpha", "hi": "hf_alpha"}
+KOKORO_LANG = {"a": "en-us", "b": "en-gb", "e": "es", "f": "fr-fr", "i": "it", "p": "pt-br", "z": "cmn", "j": "ja", "h": "hi"}
+# Chosen in the app: language -> "kokoro:<voice>" or a Piper voice name.
+VOICE_CHOICE: dict[str, str] = {}
+
+# whisper.cpp reports languages by name; the rest of the engine uses codes.
+WHISPER_LANGS = {
+    "english": "en", "persian": "fa", "farsi": "fa", "arabic": "ar", "german": "de", "spanish": "es", "french": "fr",
+    "italian": "it", "dutch": "nl", "portuguese": "pt", "russian": "ru", "turkish": "tr", "chinese": "zh", "japanese": "ja",
+    "korean": "ko", "hindi": "hi", "urdu": "ur", "polish": "pl", "ukrainian": "uk", "swedish": "sv", "greek": "el",
+    "hebrew": "he", "indonesian": "id", "vietnamese": "vi", "thai": "th", "romanian": "ro", "czech": "cs",
+}
 
 EMOJI = __import__("re").compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F]")
 
@@ -119,26 +154,64 @@ class WhisperStreamingSTT(stt.STT):
             self._http = aiohttp.ClientSession()
         return self._http
 
-    async def transcribe(self, pcm: np.ndarray, sr: int) -> tuple[str, str]:
-        # Language detection on very short clips ("Hi there") is unreliable: reuse the last language.
-        auto = self._language == "auto" and len(pcm) >= sr * 1.5
+    def needs_accurate(self, pcm: np.ndarray, sr: int) -> bool:
+        lang = self._language if self._language != "auto" else self.detected_language
+        return bool(WHISPER_ACCURATE_URL) and lang not in EASY_LANGS and len(pcm) < sr * 14
+
+    async def _accurate(self, pcm: np.ndarray, sr: int) -> str:
+        """The larger model, told the language (no guessing). Empty if unavailable."""
+        lang = self._language if self._language != "auto" else self.detected_language
+        form = aiohttp.FormData()
+        form.add_field("file", wav_bytes(pcm, sr), filename="a.wav", content_type="audio/wav")
+        form.add_field("response_format", "json")
+        form.add_field("language", lang)
+        form.add_field("temperature", "0")
+        try:
+            async with self.http().post(WHISPER_ACCURATE_URL.rstrip("/") + "/inference", data=form, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                return ((await r.json(content_type=None)).get("text") or "").strip()
+        except Exception as e:  # noqa: BLE001
+            log.warning("accurate hearing failed, using the fast one: %s", e)
+            return ""
+
+    async def transcribe(self, pcm: np.ndarray, sr: int, *, final: bool = False) -> tuple[str, str]:
+        # Final words in a harder language (Persian, Arabic, …) come from the larger model.
+        tried = final and self.needs_accurate(pcm, sr)
+        if tried and (text := await self._accurate(pcm, sr)):
+            return text, self.detected_language if self._language == "auto" else self._language
+        auto = self._language == "auto"
+        j = await self._whisper(pcm, sr, "auto" if auto else self._language)
+        text = (j.get("text") or "").strip()
+        if auto:
+            lang = str(j.get("language") or "").lower()
+            lang = WHISPER_LANGS.get(lang, lang)
+            prob = float(j.get("detected_language_probability") or 0)
+            # Switch language only when Whisper is sure ("Hi there" can look Japanese).
+            sure = prob >= 0.8 or (prob >= 0.5 and len(pcm) >= sr * 1.5)
+            if lang and len(lang) <= 3 and sure:
+                self.detected_language = lang
+            elif lang != self.detected_language:
+                # Not sure: hear it again in the language of the conversation.
+                if final and self.needs_accurate(pcm, sr) and (better := await self._accurate(pcm, sr)):
+                    return better, self.detected_language
+                text = ((await self._whisper(pcm, sr, self.detected_language)).get("text") or "").strip()
+            # Just found out it's a harder language: hear it again with the larger model.
+            if final and not tried and self.needs_accurate(pcm, sr) and (better := await self._accurate(pcm, sr)):
+                return better, self.detected_language
+        return text, self.detected_language
+
+    async def _whisper(self, pcm: np.ndarray, sr: int, language: str) -> dict:
         form = aiohttp.FormData()
         form.add_field("file", wav_bytes(pcm, sr), filename="a.wav", content_type="audio/wav")
         form.add_field("response_format", "verbose_json")
-        form.add_field("language", "auto" if auto else (self._language if self._language != "auto" else self.detected_language))
+        form.add_field("language", language)
         form.add_field("temperature", "0")
         async with self.http().post(self._url, data=form, timeout=aiohttp.ClientTimeout(total=15)) as r:
-            j = await r.json(content_type=None)
-        text = (j.get("text") or "").strip()
-        lang = j.get("language") or self.detected_language
-        if auto and lang and len(lang) <= 3:
-            self.detected_language = lang
-        return text, self.detected_language
+            return await r.json(content_type=None)
 
     async def _recognize_impl(self, buffer, *, language: NotGivenOr[str] = NOT_GIVEN, conn_options: APIConnectOptions):
         frame = rtc.combine_audio_frames(buffer)
         pcm = np.frombuffer(frame.data, dtype=np.int16)
-        text, lang = await self.transcribe(pcm, frame.sample_rate)
+        text, lang = await self.transcribe(pcm, frame.sample_rate, final=True)
         return stt.SpeechEvent(type=stt.SpeechEventType.FINAL_TRANSCRIPT, alternatives=[stt.SpeechData(language=lang, text=text)])
 
     def stream(self, *, language: NotGivenOr[str] = NOT_GIVEN, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS):
@@ -205,11 +278,11 @@ class _WhisperStream(stt.RecognizeStream):
                     text, lang = ("", self._s.detected_language)
                     # Fast final: a live transcript covering ~all of the speech, made a moment ago, is reused.
                     covered, made = last_cover
-                    if last_text and covered >= len(pcm) - 16000 * 0.35 and time.monotonic() - made < 0.8:
+                    if last_text and covered >= len(pcm) - 16000 * 0.35 and time.monotonic() - made < 0.8 and not self._s.needs_accurate(pcm, 16000):
                         text = last_text
                     elif len(pcm) > 16000 * 0.2:
                         try:
-                            text, lang = await self._s.transcribe(pcm, 16000)
+                            text, lang = await self._s.transcribe(pcm, 16000, final=True)
                         except Exception as e:  # noqa: BLE001
                             log.warning("final transcription failed: %s", e)
                     self._event_ch.send_nowait(stt.SpeechEvent(
@@ -251,6 +324,8 @@ def ensure_piper_voice(lang: str) -> Path | None:
     parts = rest.split("-")
     region, speaker, quality = parts[0], parts[1], parts[2]
     base = f"https://huggingface.co/rhasspy/piper-voices/resolve/main/{loc}/{region}/{speaker}/{quality}/{name}.onnx"
+    if name == "fa_IR-mana-medium":  # a community Persian voice
+        base = "https://huggingface.co/MahtaFetrat/Mana-Persian-Piper/resolve/main/fa_IR-mana-medium.onnx"
     try:
         for url, path in [(base, onnx), (base + ".json", Path(str(onnx) + ".json"))]:
             urllib.request.urlretrieve(url, path)
@@ -272,7 +347,9 @@ class PiperTTS(tts.TTS):
         self._stt = stt_
         self._language = language
         self._voices: dict[str, object] = {}
-        self.voice_for("en" if language == "auto" else language)
+        lang = "en" if language == "auto" else language
+        if not self.kokoro_voice(lang):
+            self.voice_for(lang)
 
     @property
     def model(self) -> str:
@@ -284,6 +361,9 @@ class PiperTTS(tts.TTS):
 
     def voice_for(self, lang: str):
         lang = lang if lang in PIPER_VOICES else "en"
+        choice = VOICE_CHOICE.get(lang)
+        if choice and not choice.startswith("kokoro:"):
+            PIPER_VOICES[lang] = choice
         if lang not in self._voices:
             path = ensure_piper_voice(lang) or ensure_piper_voice("en")
             self._voices[lang] = self._PiperVoice.load(str(path))
@@ -294,7 +374,25 @@ class PiperTTS(tts.TTS):
             return self._language
         return self._stt.detected_language if self._stt else "en"
 
+    def kokoro_voice(self, lang: str) -> str | None:
+        """The natural (Kokoro) voice for this language, if there is one and it's chosen."""
+        choice = VOICE_CHOICE.get(lang)
+        if choice and not choice.startswith("kokoro:"):
+            return None  # a Piper voice was chosen
+        if not (KOKORO_DIR / "kokoro-v1.0.onnx").exists():
+            return None
+        return choice[7:] if choice else KOKORO_DEFAULT.get(lang)
+
+    def kokoro(self):
+        if not hasattr(self, "_kokoro"):
+            from kokoro_onnx import Kokoro  # noqa: PLC0415
+
+            self._kokoro = Kokoro(str(KOKORO_DIR / "kokoro-v1.0.onnx"), str(KOKORO_DIR / "voices-v1.0.bin"))
+        return self._kokoro
+
     def synthesize(self, text: str, *, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS):
+        if self.kokoro_voice(self.current_language()):
+            return _KokoroChunked(tts_=self, input_text=text, conn_options=conn_options)
         return _PiperChunked(tts_=self, input_text=text, conn_options=conn_options)
 
 
@@ -304,13 +402,15 @@ class _PiperChunked(tts.ChunkedStream):
         self._p = tts_
 
     async def _run(self, output_emitter: tts.AudioEmitter) -> None:
-        voice = self._p.voice_for(self._p.current_language())
+        # Loading (or, the first time, downloading) a voice must not block the call.
+        voice = await asyncio.get_running_loop().run_in_executor(None, self._p.voice_for, self._p.current_language())
         sr = voice.config.sample_rate
         output_emitter.initialize(request_id=utils.shortuuid(), sample_rate=sr, num_channels=1, mime_type="audio/pcm")
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
         text = EMOJI.sub("", self._input_text).replace("*", "").strip()
+        text = persian_speakable(text) if self._p.current_language() == "fa" else speakable(text)
 
         def work():
             if not text:
@@ -327,16 +427,136 @@ class _PiperChunked(tts.ChunkedStream):
         output_emitter.flush()
 
 
+_CLAUSE = __import__("re").compile(r"(?<=[,;:.!?…—])\s+")
+_MONEY = __import__("re").compile(r"([£$€])(\d+)(?:\.(\d{2}))?")
+_MONEY_NAMES = {"£": ("pounds", "p"), "$": ("dollars", "cents"), "€": ("euros", "cents")}
+
+
+def speakable(text: str) -> str:
+    """Prices and symbols the way a person says them ("£3.95" -> "3 pounds 95")."""
+    def money(m):  # noqa: ANN001, ANN202
+        unit, small = _MONEY_NAMES[m[1]]
+        if m[3] and m[3] != "00":
+            return f"{m[2]} {unit} {int(m[3])}" if m[1] == "£" else f"{m[2]} {unit} and {int(m[3])} {small}"
+        return f"{m[2]} {unit}"
+    text = _MONEY.sub(money, text).replace(" – ", ", ").replace(" — ", ", ")
+    return __import__("re").sub(r"\s*&\s*", " and ", text)
+
+
+_FA_ONES = ["صفر", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"]
+_FA_TEENS = ["ده", "یازده", "دوازده", "سیزده", "چهارده", "پانزده", "شانزده", "هفده", "هجده", "نوزده"]
+_FA_TENS = ["", "", "بیست", "سی", "چهل", "پنجاه", "شصت", "هفتاد", "هشتاد", "نود"]
+_FA_HUNDREDS = ["", "صد", "دویست", "سیصد", "چهارصد", "پانصد", "ششصد", "هفتصد", "هشتصد", "نهصد"]
+_FA_LETTERS = dict(zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "اِی بی سی دی ای اِف جی اِیچ آی جِی کِی اِل اِم اِن او پی کیو آر اِس تی یو وی دبلیو اِکس وای زِد".split()))
+_FA_DIGITS = str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")
+_FA_MONEY = {"£": ("پوند", "پنس"), "$": ("دلار", "سنت"), "€": ("یورو", "سنت")}
+_re = __import__("re")
+
+
+def fa_number(n: int) -> str:
+    """A number in Persian words (Persian voices garble digits)."""
+    if n < 10:
+        return _FA_ONES[n]
+    parts: list[str] = []
+    for size, name in ((10**9, "میلیارد"), (10**6, "میلیون"), (1000, "هزار")):
+        if n >= size:
+            parts.append(f"{fa_number(n // size)} {name}" if n // size > 1 or size > 1000 else name)
+            n %= size
+    if n >= 100:
+        parts.append(_FA_HUNDREDS[n // 100])
+        n %= 100
+    if 10 <= n < 20:
+        parts.append(_FA_TEENS[n - 10])
+    else:
+        if n >= 20:
+            parts.append(_FA_TENS[n // 10])
+        if n % 10:
+            parts.append(_FA_ONES[n % 10])
+    return " و ".join(parts)
+
+
+def persian_speakable(text: str) -> str:
+    """Persian text the voice can say: prices, numbers, times and Latin letters as Persian words."""
+    text = text.translate(_FA_DIGITS)
+
+    def money(m):  # noqa: ANN001, ANN202
+        big, small = _FA_MONEY[m[1]]
+        out = f"{fa_number(int(m[2]))} {big}"
+        return out + (f" و {fa_number(int(m[3]))} {small}" if m[3] and int(m[3]) else "")
+
+    text = _MONEY.sub(money, text)
+    # Codes like "RV3": letters by their names, then the number.
+    text = _re.sub(r"(?<![A-Za-z])([A-Z]{1,4})(?![a-z])", lambda m: " " + " ".join(_FA_LETTERS[c] for c in m[1]) + " ", text)
+    text = _re.sub(r"\b(\d{1,2}):(\d{2})\b", lambda m: fa_number(int(m[1])) + ("" if m[2] == "00" else f" و {fa_number(int(m[2]))} دقیقه"), text)
+    text = _re.sub(r"(\d+)\.(\d+)", lambda m: f"{fa_number(int(m[1]))} ممیز {fa_number(int(m[2]))}", text)
+    text = _re.sub(r"\d+", lambda m: fa_number(int(m[0])) if len(m[0]) <= 12 else " ".join(_FA_ONES[int(d)] for d in m[0]), text)
+    text = _re.sub(r"\s*&\s*", " و ", text).replace(" – ", "، ").replace(" — ", "، ")
+    return _re.sub(r" {2,}", " ", text).strip()
+
+
+def clauses(text: str) -> list[str]:
+    """Short pieces to speak one after another: the first starts quickly, the rest flow on."""
+    out: list[str] = []
+    for part in _CLAUSE.split(text):
+        if out and (len(out[-1]) < 14 or len(part) < 6):
+            out[-1] += " " + part
+        else:
+            out.append(part)
+    return [p for p in out if p.strip()]
+
+
+class _KokoroChunked(tts.ChunkedStream):
+    """Kokoro: natural, human-sounding speech. Each clause is synthesised while the
+    previous one plays (Kokoro runs ~4x faster than real time on Apple Silicon)."""
+
+    def __init__(self, *, tts_: PiperTTS, input_text: str, conn_options: APIConnectOptions):
+        super().__init__(tts=tts_, input_text=input_text, conn_options=conn_options)
+        self._p = tts_
+
+    async def _run(self, output_emitter: tts.AudioEmitter) -> None:
+        lang = self._p.current_language()
+        voice = self._p.kokoro_voice(lang) or "af_heart"
+        output_emitter.initialize(request_id=utils.shortuuid(), sample_rate=24000, num_channels=1, mime_type="audio/pcm")
+        text = speakable(EMOJI.sub("", self._input_text).replace("*", "")).strip()
+        if not text:
+            output_emitter.flush()
+            return
+        loop = asyncio.get_running_loop()
+        k = await loop.run_in_executor(None, self._p.kokoro)
+        code = KOKORO_LANG.get(voice[0], "en-us")
+        for piece in clauses(text):
+            samples, _ = await loop.run_in_executor(None, lambda p=piece: k.create(p, voice=voice, speed=1.0, lang=code))
+            output_emitter.push((np.clip(samples, -1, 1) * 32767).astype(np.int16).tobytes())
+        output_emitter.flush()
+
+
 # ----------------------------------------------------------------------------- the call
 
+class AppLLM(openai.LLM):
+    """The LocalAILine app as the brain. The model name carries the call mode and the
+    language the caller is speaking right now ("caller:fa"), so the app answers in it."""
+
+    def __init__(self, *, mode: str, stt_: WhisperStreamingSTT, **kw):  # noqa: ANN003
+        super().__init__(model=mode, **kw)
+        self._mode, self._stt = mode, stt_
+
+    def chat(self, **kw):  # noqa: ANN003, ANN201
+        self._opts.model = f"{self._mode}:{self._stt.detected_language}"
+        return super().chat(**kw)
+
+
 def build_session(stt_: WhisperStreamingSTT, vad, model: str) -> AgentSession:
-    llm = openai.LLM(
+    llm = (AppLLM if os.environ.get("LL_APP_URL") else openai.LLM)(
         base_url=os.environ.get("LL_LLM_BASE", "http://127.0.0.1:11434/v1"),
         api_key=os.environ.get("LL_LLM_KEY", "local"),
-        model=model,
+        **({"mode": model, "stt_": stt_} if os.environ.get("LL_APP_URL") else {"model": model}),
         temperature=0.5,
+        timeout=httpx.Timeout(120.0, connect=5.0),
+        max_retries=0,
     )
     return AgentSession(
+        # A retried turn would run its tools again: answer once, or say sorry.
+        conn_options=SessionConnectOptions(llm_conn_options=APIConnectOptions(max_retry=0, timeout=120.0)),
         stt=stt_,
         vad=vad,
         llm=llm,
@@ -374,9 +594,12 @@ async def entrypoint(ctx: JobContext) -> None:
     parts = ctx.room.name.split("-")
     mode = parts[1] if len(parts) > 2 and parts[0] == "talk" and parts[1] in ("caller", "owner") else "caller"
     cfg = await app_config(mode)
+    # Voices chosen in the app, per language.
+    VOICE_CHOICE.clear()
+    VOICE_CHOICE.update({k: v for k, v in (cfg.get("voices") or {}).items() if isinstance(v, str)})
     language = parts[2] if len(parts) > 3 and parts[0] == "talk" else cfg.get("language", LANGUAGE)
     vad = silero.VAD.load(min_silence_duration=0.35)
-    stt_ = WhisperStreamingSTT(vad=silero.VAD.load(min_silence_duration=0.25), language=language)
+    stt_ = WhisperStreamingSTT(vad=silero.VAD.load(min_silence_duration=0.4), language=language)
     model = mode if os.environ.get("LL_APP_URL") else os.environ.get("LL_LLM_MODEL", "qwen3:4b-instruct")
     session = build_session(stt_, vad, model)
     session.tts._language = language  # noqa: SLF001
@@ -399,8 +622,35 @@ async def entrypoint(ctx: JobContext) -> None:
                     + " This is a phone call: speak naturally in short sentences, no emojis, no lists or markdown."),
         room=ctx.room,
     )
-    background = BackgroundAudioPlayer(thinking_sound=[AudioConfig(BuiltinAudioClip.KEYBOARD_TYPING, volume=0.45)])
+    ambient = SOUNDS.get(cfg.get("ambient") or "none")
+    background = BackgroundAudioPlayer(ambient_sound=AudioConfig(ambient, volume=0.25) if ambient else None)
     await background.start(room=ctx.room, agent_session=session)
+    thinking_clip = SOUNDS.get(cfg.get("thinking") or "keyboard")
+    sound = {"handle": None, "task": None}
+
+    def stop_sound() -> None:
+        if sound["task"]:
+            sound["task"].cancel()
+            sound["task"] = None
+        if sound["handle"] and not sound["handle"].done():
+            sound["handle"].stop()
+        sound["handle"] = None
+
+    async def start_sound_soon() -> None:
+        # Only a real pause in the answer gets the sound (not quick replies, not while you talk).
+        await asyncio.sleep(0.6)
+        if session.agent_state == "thinking" and session.user_state != "speaking":
+            sound["handle"] = background.play(AudioConfig(thinking_clip, volume=0.4), loop=True)
+
+    def sync_sound(*_) -> None:  # noqa: ANN002
+        thinking = session.agent_state == "thinking" and session.user_state != "speaking"
+        if not thinking or not thinking_clip:
+            stop_sound()
+        elif sound["task"] is None and sound["handle"] is None:
+            sound["task"] = asyncio.create_task(start_sound_soon())
+
+    session.on("agent_state_changed", sync_sound)
+    session.on("user_state_changed", sync_sound)
     greeting = cfg.get("greeting") if mode == "caller" else f"Hi, it's {cfg.get('name', 'Ava')}. What can I do for you?"
     greeting = greeting or os.environ.get("LL_GREETING", "")
     if greeting:
@@ -408,8 +658,10 @@ async def entrypoint(ctx: JobContext) -> None:
 
 
 def prewarm(proc) -> None:  # noqa: ANN001
-    # Load models once per worker process (not per call).
+    # Load models and heavy imports once per worker process (not per call).
     proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.35)
+    import piper  # noqa: F401, PLC0415
+    import kokoro_onnx  # noqa: F401, PLC0415
 
 
 if __name__ == "__main__":

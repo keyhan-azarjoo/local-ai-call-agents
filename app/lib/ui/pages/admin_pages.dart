@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/auth.dart';
+import '../../services/mcp/mcp_manager.dart';
 import '../../services/speech.dart';
 import '../../services/system.dart';
 import '../../state/app_state.dart';
@@ -304,46 +305,263 @@ class KnowledgePage extends StatelessWidget {
 
 // ============================ Tools (MCP) ============================
 
-class ToolsPage extends StatelessWidget {
+class ToolsPage extends StatefulWidget {
   const ToolsPage({super.key});
+  @override
+  State<ToolsPage> createState() => _ToolsPageState();
+}
+
+class _ToolsPageState extends State<ToolsPage> {
+  final open = <int>{};
+
+  @override
+  void initState() {
+    super.initState();
+    // Reconnect quietly; never pop a browser without the user asking.
+    final s = context.read<AppState>();
+    s.mcp.servers().then((list) {
+      for (final srv in list) {
+        if (srv.enabled && s.mcp.status[srv.id] == null && srv.row['status'] != 'needs_sign_in') s.mcp.connect(srv.id);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      PageHead('Tools (MCP)', description: 'Connect MCP servers so Ava can check calendars, look up orders or send texts. Anything that changes data asks you first.', actions: [
-        Btn('Add MCP server', icon: Icons.add, kind: BtnKind.primary, onPressed: () => formDialog(context, 'Add MCP server', const [
-              FormSpec('name', 'Name'),
-              FormSpec('kind', 'Type', options: {'stdio': 'Local command', 'http': 'URL'}),
-              FormSpec('target', 'Command or URL', hint: 'e.g. npx -y @modelcontextprotocol/server-filesystem ~/Documents'),
-              FormSpec('scope', 'Who can use it', options: scopes, initial: 'me'),
-            ], 'Add', (v) async {
-              if (v['name']!.isEmpty || v['target']!.isEmpty) return 'Add a name and a command or URL.';
-              await s.db.insert('mcp_servers', {...v, 'enabled': 1});
-              await s.log('Added MCP server ${v['name']}');
-              s.refresh();
-              return null;
-            })),
-      ]),
-      Rows('mcp_servers', builder: (context, rows) => Section(title: 'Servers', children: [
-            if (rows.isEmpty) const EmptyState(icon: Icons.power_outlined, title: 'No tools connected', body: 'Ava can talk without tools. Add one when you want her to act.'),
-            for (final m in rows)
-              Tile(
-                last: m == rows.last,
-                leading: const LogoBox(child: Icon(Icons.power_outlined)),
-                title: Text(m['name'] as String),
-                subtitle: Muted('${m['kind']} · ${m['target']}', mono: true),
-                trailing: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  Pill(scopes[m['scope']] ?? ''),
-                  Switch(value: m['enabled'] == 1, onChanged: (v) async {
-                    await s.db.update('mcp_servers', m['id'] as int, {'enabled': v ? 1 : 0});
-                    s.refresh();
-                  }),
-                  _delete(s, 'mcp_servers', m['id'] as int, 'MCP server ${m['name']}'),
-                ]),
-              ),
-          ])),
+      PageHead('Tools (MCP)',
+          description: 'Connect MCP servers so Ava can look things up and act for you. Anything that changes data asks you first.',
+          actions: [Btn('Add MCP server', icon: Icons.add, kind: BtnKind.primary, onPressed: () => showMcpDialog(context))]),
+      FutureBuilder(
+        future: s.mcp.servers(),
+        builder: (context, snap) {
+          final list = snap.data ?? [];
+          if (snap.hasData && list.isEmpty) {
+            return Panel(
+                child: EmptyState(
+              icon: Icons.power_outlined,
+              title: 'No tools connected',
+              body: 'Add an MCP server by URL or local command. If it needs a login, you’ll sign in in your browser.',
+              action: Btn('Add MCP server', icon: Icons.add, kind: BtnKind.primary, onPressed: () => showMcpDialog(context)),
+            ));
+          }
+          return Column(children: [for (final srv in list) ...[_server(context, s, srv), const SizedBox(height: 12)]]);
+        },
+      ),
     ]);
   }
+
+  Widget _server(BuildContext context, AppState s, McpServer srv) {
+    final st = s.mcp.statusOf(srv);
+    final tools = srv.tools;
+    final err = s.mcp.errorOf(srv);
+    final (label, tone, lamp) = switch (st) {
+      McpStatus.connected => ('Connected · ${tools.length} tool${tools.length == 1 ? '' : 's'}', Tone.green, LampState.on),
+      McpStatus.connecting => ('Connecting…', Tone.amber, LampState.ring),
+      McpStatus.needsSignIn => ('Needs sign-in', Tone.amber, LampState.off),
+      McpStatus.error => ('Can’t connect', Tone.red, LampState.err),
+      McpStatus.unknown => (tools.isEmpty ? 'Not connected' : '${tools.length} tools · not connected yet', Tone.neutral, LampState.off),
+    };
+    return Panel(
+      padding: EdgeInsets.zero,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+          child: Row(children: [
+            const LogoBox(child: Icon(Icons.power_outlined)),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Flexible(child: Text(srv.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                  const SizedBox(width: 8),
+                  Pill(label, tone: tone, lamp: lamp),
+                ]),
+                const SizedBox(height: 2),
+                Muted('${srv.target} · ${switch (srv.authMode) { McpAuthMode.auto => 'signs in when asked', McpAuthMode.token => 'API key / token', McpAuthMode.none => 'no sign-in' }} · ${scopes[srv.scope] ?? ''}',
+                    mono: true, size: 11.5),
+                if (st == McpStatus.error && err != null) Padding(padding: const EdgeInsets.only(top: 4), child: Text(err, style: const TextStyle(color: LL.red, fontSize: 12.5))),
+                if (st == McpStatus.needsSignIn)
+                  const Padding(padding: EdgeInsets.only(top: 4), child: Muted('This server asks you to log in. Your browser will open its sign-in page.')),
+              ]),
+            ),
+            Wrap(spacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              if (st == McpStatus.needsSignIn)
+                Btn('Sign in', icon: Icons.login, kind: BtnKind.primary, small: true, onPressed: () => s.mcp.connect(srv.id, interactive: true))
+              else if (st != McpStatus.connecting)
+                Btn(st == McpStatus.connected ? 'Refresh' : 'Connect', small: true, onPressed: () => s.mcp.connect(srv.id, interactive: true)),
+              if (srv.authMode == McpAuthMode.auto && srv.secret['accessToken'] != null)
+                Btn('Sign out', small: true, kind: BtnKind.ghost, onPressed: () => s.mcp.signOut(srv.id)),
+              Btn('Edit', small: true, kind: BtnKind.ghost, onPressed: () => showMcpDialog(context, existing: srv)),
+              Switch(value: srv.enabled, onChanged: (v) async {
+                await s.db.update('mcp_servers', srv.id, {'enabled': v ? 1 : 0});
+                if (!v) await s.mcp.disconnect(srv.id);
+                s.refresh();
+              }),
+              IconButton(
+                tooltip: 'Remove',
+                icon: const Icon(Icons.delete_outline, size: 18),
+                onPressed: () async {
+                  await s.mcp.disconnect(srv.id);
+                  await s.db.delete('mcp_servers', srv.id);
+                  await s.log('Removed MCP server ${srv.name}');
+                  s.refresh();
+                },
+              ),
+            ]),
+          ]),
+        ),
+        if (tools.isNotEmpty) ...[
+          InkWell(
+            onTap: () => setState(() => open.contains(srv.id) ? open.remove(srv.id) : open.add(srv.id)),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: context.c.line))),
+              child: Row(children: [
+                Icon(open.contains(srv.id) ? Icons.expand_less : Icons.expand_more, size: 18),
+                const SizedBox(width: 6),
+                Text('${open.contains(srv.id) ? 'Hide' : 'Show'} ${tools.length} tools', style: const TextStyle(fontSize: 13)),
+                const Spacer(),
+                Muted('${tools.where((t) => t.readOnly).length} read-only · ${tools.where((t) => !t.readOnly).length} ask first'),
+              ]),
+            ),
+          ),
+          if (open.contains(srv.id))
+            for (final t in tools)
+              Tile(
+                last: t == tools.last,
+                title: Text(t.title ?? t.name, style: const TextStyle(fontFamily: LL.mono, fontSize: 12.5, fontWeight: FontWeight.w500)),
+                subtitle: Muted(t.description, size: 12.5),
+                trailing: Pill(t.readOnly ? 'Read only' : 'Asks first', tone: t.readOnly ? Tone.green : Tone.amber),
+              ),
+        ],
+      ]),
+    );
+  }
+}
+
+Future<void> showMcpDialog(BuildContext context, {McpServer? existing}) =>
+    showDialog(context: context, builder: (_) => _McpDialog(existing: existing));
+
+class _McpDialog extends StatefulWidget {
+  const _McpDialog({this.existing});
+  final McpServer? existing;
+  @override
+  State<_McpDialog> createState() => _McpDialogState();
+}
+
+class _McpDialogState extends State<_McpDialog> {
+  late final name = TextEditingController(text: widget.existing?.name ?? '');
+  late final target = TextEditingController(text: widget.existing?.target ?? '');
+  late final header = TextEditingController(text: (widget.existing?.secret['header'] as String?) ?? 'Authorization');
+  late final value = TextEditingController(text: (widget.existing?.secret['value'] as String?) ?? '');
+  late final env = TextEditingController(
+      text: ((widget.existing?.secret['env'] as Map?) ?? {}).entries.map((e) => '${e.key}=${e.value}').join('\n'));
+  late String kind = widget.existing?.kind ?? 'http';
+  late McpAuthMode auth = widget.existing?.authMode ?? McpAuthMode.auto;
+  late String scope = widget.existing?.scope ?? 'me';
+  String? error;
+
+  Future<void> _save() async {
+    final s = context.read<AppState>();
+    if (name.text.trim().isEmpty || target.text.trim().isEmpty) return setState(() => error = 'Add a name and a URL or command.');
+    if (kind == 'http' && !RegExp(r'^https?://').hasMatch(target.text.trim())) return setState(() => error = 'The URL must start with https://');
+    final secret = kind == 'stdio'
+        ? {
+            'env': {
+              for (final l in env.text.split('\n').where((l) => l.contains('=')))
+                l.substring(0, l.indexOf('=')).trim(): l.substring(l.indexOf('=') + 1).trim()
+            }
+          }
+        : auth == McpAuthMode.token
+            ? {'header': header.text.trim(), 'value': value.text.trim()}
+            : auth == McpAuthMode.auto && widget.existing?.authMode == McpAuthMode.auto && widget.existing?.target == target.text.trim()
+                ? widget.existing!.secret // keep the existing login
+                : <String, dynamic>{};
+    final row = {
+      'name': name.text.trim(),
+      'kind': kind,
+      'target': target.text.trim(),
+      'scope': scope,
+      'auth_mode': kind == 'stdio' ? 'none' : auth.name,
+      'secret': jsonEncode(secret),
+      'enabled': 1,
+    };
+    int id;
+    if (widget.existing != null) {
+      id = widget.existing!.id;
+      await s.db.update('mcp_servers', id, row);
+    } else {
+      id = await s.db.insert('mcp_servers', row);
+    }
+    await s.log('${widget.existing == null ? 'Added' : 'Updated'} MCP server ${name.text.trim()}');
+    if (mounted) Navigator.pop(context);
+    s.refresh();
+    // Connect now; if the server wants a login, the browser opens.
+    await s.mcp.connect(id, interactive: true);
+  }
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(widget.existing == null ? 'Add MCP server' : 'Edit MCP server', style: displayStyle(context, 22)),
+              const SizedBox(height: 16),
+              Field(label: 'Name', child: TextField(controller: name, decoration: const InputDecoration(hintText: 'e.g. Weighing system'))),
+              const SizedBox(height: 12),
+              Segmented(value: kind, options: const {'http': 'URL', 'stdio': 'Local command'}, onChanged: (v) => setState(() => kind = v)),
+              const SizedBox(height: 12),
+              Field(
+                label: kind == 'http' ? 'Server URL' : 'Command',
+                hint: kind == 'http' ? null : 'Runs on this computer, e.g. npx -y @modelcontextprotocol/server-filesystem ~/Documents',
+                child: TextField(controller: target, decoration: InputDecoration(hintText: kind == 'http' ? 'https://example.com/mcp' : 'npx -y …')),
+              ),
+              const SizedBox(height: 14),
+              if (kind == 'http') ...[
+                Field(
+                  label: 'Sign-in',
+                  child: Dropdown(value: auth, items: const {
+                    McpAuthMode.auto: 'Automatic — log in in my browser when the server asks',
+                    McpAuthMode.token: 'API key or token',
+                    McpAuthMode.none: 'None',
+                  }, onChanged: (v) => setState(() => auth = v)),
+                ),
+                if (auth == McpAuthMode.token) ...[
+                  const SizedBox(height: 12),
+                  Grid(cols: 2, children: [
+                    Field(label: 'Header', child: TextField(controller: header)),
+                    Field(
+                      label: 'Value',
+                      hint: header.text.trim().toLowerCase() == 'authorization' ? 'Usually “Bearer ” followed by the token' : null,
+                      child: TextField(controller: value, obscureText: true, decoration: const InputDecoration(hintText: 'Bearer abc123…')),
+                    ),
+                  ]),
+                ],
+              ] else
+                Field(
+                  label: 'Environment variables (optional)',
+                  hint: 'One per line, e.g. API_KEY=abc123',
+                  child: TextField(controller: env, maxLines: 3),
+                ),
+              const SizedBox(height: 12),
+              Field(label: 'Who can use it', child: Dropdown(value: scope, items: scopes, onChanged: (v) => setState(() => scope = v))),
+              const SizedBox(height: 6),
+              const Muted('“Only me” means Ava uses it when you chat or give instructions, never for callers.'),
+              if (error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(error!, style: const TextStyle(color: LL.red))),
+              const SizedBox(height: 18),
+              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                Btn('Cancel', onPressed: () => Navigator.pop(context)),
+                const SizedBox(width: 8),
+                Btn(widget.existing == null ? 'Add and connect' : 'Save and connect', kind: BtnKind.primary, onPressed: _save),
+              ]),
+            ]),
+          ),
+        ),
+      );
 }
 
 // ============================ Skills ============================

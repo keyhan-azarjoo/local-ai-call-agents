@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
 
+import '../../services/agent_loop.dart';
 import '../../services/ollama.dart';
 import '../../services/speech.dart';
 import '../../state/app_state.dart';
@@ -113,18 +114,33 @@ class _TalkPageState extends State<TalkPage> {
     Duration? first;
     final buf = StringBuffer();
     try {
-      await for (final piece in s.chat(history)) {
-        first ??= DateTime.now().difference(t0);
-        buf.write(piece);
-        reply.text = _visible(buf.toString());
-        setState(() {});
-        _scrollDown();
+      // Callers only get tools shared with "All callers"; the owner gets everything.
+      final scopes = mode == TalkMode.caller ? {'all'} : {'me', 'contacts', 'all'};
+      final tools = await s.toolsFor(scopes);
+      if (tools.isNotEmpty) {
+        final used = <String>[];
+        buf.write(await s.agentReply(history, scopes: scopes, approve: _approve, onEvent: (e) {
+          used.add('${e.denied ? 'declined ' : ''}${e.binding.serverName} › ${e.binding.tool.name}');
+        }));
+        first = DateTime.now().difference(t0);
+        if (used.isNotEmpty) reply.meta = 'used ${used.join(', ')}';
+      } else {
+        await for (final piece in s.chat(history)) {
+          first ??= DateTime.now().difference(t0);
+          buf.write(piece);
+          reply.text = _visible(buf.toString());
+          setState(() {});
+          _scrollDown();
+        }
       }
       final full = buf.toString();
       history.add(ChatMessage('assistant', full));
       reply.text = _visible(full);
       reply.task = _task(full);
-      reply.meta = '${((first ?? Duration.zero).inMilliseconds / 1000).toStringAsFixed(2)} s to first word · ${s.llmLabel}';
+      reply.meta = [
+        '${((first ?? Duration.zero).inMilliseconds / 1000).toStringAsFixed(2)} s to first word · ${s.llmLabel}',
+        ?reply.meta,
+      ].join(' · ');
       if (voiceOn) _say(reply.text);
     } catch (e) {
       reply.text = 'I couldn’t reply: $e';
@@ -137,6 +153,20 @@ class _TalkPageState extends State<TalkPage> {
       }
     }
   }
+
+  Future<bool> _approve(ToolBinding b, Map<String, dynamic> args) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text('Allow ${b.serverName} › ${b.tool.title ?? b.tool.name}?', style: displayStyle(c, 18)),
+          content: Text('${b.tool.description}\n\n${jsonEncode(args)}'),
+          actions: [
+            Btn('Don’t allow', onPressed: () => Navigator.pop(c, false)),
+            Btn('Allow', kind: BtnKind.primary, onPressed: () => Navigator.pop(c, true)),
+          ],
+        ),
+      ) ??
+      false;
 
   String _visible(String t) => t.split('\n').where((l) => !l.trim().startsWith('CALL_TASK')).join('\n').trim();
 

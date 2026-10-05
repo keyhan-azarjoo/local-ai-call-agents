@@ -161,6 +161,13 @@ class Db {
       at INTEGER NOT NULL
     )
     ''',
+    '''
+    ALTER TABLE mcp_servers ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'auto';
+    ALTER TABLE mcp_servers ADD COLUMN secret TEXT;
+    ALTER TABLE mcp_servers ADD COLUMN status TEXT;
+    ALTER TABLE mcp_servers ADD COLUMN tools TEXT;
+    ALTER TABLE mcp_servers ADD COLUMN error TEXT
+    ''',
   ];
 
   // ---------- settings ----------

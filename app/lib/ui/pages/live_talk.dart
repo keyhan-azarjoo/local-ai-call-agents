@@ -27,6 +27,35 @@ const voiceLanguages = {
   'zh': 'Chinese',
 };
 
+/// Voices per language (Piper, downloaded on first use). The first is the default.
+const voiceOptions = <String, Map<String, String>>{
+  'en': {
+    'kokoro:af_heart': 'Heart · natural, American, female',
+    'kokoro:af_bella': 'Bella · natural, American, female',
+    'kokoro:af_nicole': 'Nicole · natural, American, soft',
+    'kokoro:am_michael': 'Michael · natural, American, male',
+    'kokoro:am_fenrir': 'Fenrir · natural, American, male',
+    'kokoro:bf_emma': 'Emma · natural, British, female',
+    'kokoro:bf_isabella': 'Isabella · natural, British, female',
+    'kokoro:bm_george': 'George · natural, British, male',
+    'kokoro:bm_fable': 'Fable · natural, British, male',
+    'en_GB-alba-medium': 'Alba · standard, British, female',
+    'en_US-ryan-medium': 'Ryan · standard, American, male',
+  },
+  'es': {'kokoro:ef_dora': 'Dora · natural, female', 'kokoro:em_alex': 'Alex · natural, male', 'es_ES-davefx-medium': 'Dave · standard, male'},
+  'fr': {'kokoro:ff_siwis': 'Siwis · natural, female', 'fr_FR-tom-medium': 'Tom · standard, male'},
+  'it': {'kokoro:if_sara': 'Sara · natural, female', 'kokoro:im_nicola': 'Nicola · natural, male'},
+  'pt': {'kokoro:pf_dora': 'Dora · natural, female', 'kokoro:pm_alex': 'Alex · natural, male'},
+  'zh': {'kokoro:zf_xiaoxiao': 'Xiaoxiao · natural, female', 'kokoro:zm_yunxi': 'Yunxi · natural, male'},
+  'fa': {'fa_IR-gyro-medium': 'Gyro · clearest', 'fa_IR-ganji_adabi-medium': 'Ganji (literary)', 'fa_IR-mana-medium': 'Mana · female', 'fa_IR-reza_ibrahim-medium': 'Reza', 'fa_IR-amir-medium': 'Amir'},
+  'ar': {'ar_JO-kareem-medium': 'Kareem · male'},
+  'de': {'de_DE-thorsten-medium': 'Thorsten · male', 'de_DE-kerstin-low': 'Kerstin · female'},
+};
+
+const soundOptions = {'keyboard': 'Typing', 'keyboard2': 'Soft typing', 'office': 'Office', 'hold': 'Hold music', 'none': 'Silence'};
+
+const ambientOptions = {'none': 'None', 'office': 'Office', 'room': 'Busy room', 'city': 'City', 'forest': 'Forest'};
+
 class _Line {
   _Line(this.who, this.text);
   final String who; // ai | you
@@ -142,6 +171,29 @@ class _LiveTalkState extends State<LiveTalk> {
     setState(() {});
   }
 
+  /// The language whose voice is shown: the chosen one, or English when detecting.
+  String _voiceLang(AppState s) => voiceOptions.containsKey(s.voiceLanguage) ? s.voiceLanguage : 'en';
+
+  Map<String, String> _voiceItems(AppState s) {
+    final lang = _voiceLang(s);
+    return {for (final e in voiceOptions[lang]!.entries) e.key: s.voiceLanguage == 'auto' ? '${e.value} (English)' : e.value};
+  }
+
+  String _voiceValue(AppState s) {
+    final lang = _voiceLang(s);
+    final v = s.voiceChoice[lang];
+    return v != null && voiceOptions[lang]!.containsKey(v) ? v : voiceOptions[lang]!.keys.first;
+  }
+
+  Widget _menu(BuildContext context, String value, Map<String, String> items, ValueChanged<String>? onChanged) => DropdownButton<String>(
+    value: items.containsKey(value) ? value : items.keys.first,
+    isDense: true,
+    underline: const SizedBox(),
+    style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
+    items: [for (final e in items.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
+    onChanged: onChanged == null ? null : (v) => v == null ? null : onChanged(v),
+  );
+
   String get _status => switch ((phase, agentState)) {
     (null, _) => 'Tap to start a live conversation',
     ('live', 'speaking') => '${widget.name} is speaking — just talk to interrupt',
@@ -216,12 +268,39 @@ class _LiveTalkState extends State<LiveTalk> {
                   DropdownButton<String>(
                     value: voiceLanguages.containsKey(s.voiceLanguage) ? s.voiceLanguage : 'auto',
                     isDense: true,
-              style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
+                    style: TextStyle(fontSize: 14, color: Theme.of(context).colorScheme.onSurface),
                     underline: const SizedBox(),
                     items: [for (final e in voiceLanguages.entries) DropdownMenuItem(value: e.key, child: Text(e.value))],
                     onChanged: live || busy ? null : (v) => s.setVoiceLanguage(v ?? 'auto'),
                   ),
                   if (live) Btn(muted ? 'Unmute' : 'Mute', small: true, kind: BtnKind.ghost, onPressed: _mute),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  Muted('Voice'),
+                  _menu(
+                    context,
+                    _voiceValue(s),
+                    _voiceItems(s),
+                    live || busy
+                        ? null
+                        : (v) {
+                            final lang = voiceOptions.entries.firstWhere((e) => e.value.containsKey(v)).key;
+                            s.setVoiceSetting('voice.$lang', v);
+                          },
+                  ),
+                  const SizedBox(width: 6),
+                  Muted('While thinking'),
+                  _menu(context, s.thinkingSound, soundOptions, live || busy ? null : (v) => s.setVoiceSetting('thinking', v)),
+                  const SizedBox(width: 6),
+                  Muted('Background'),
+                  _menu(context, s.ambientSound, ambientOptions, live || busy ? null : (v) => s.setVoiceSetting('ambient', v)),
                 ],
               ),
               if (s.voice != null && s.voice!.problem != null && !live) Padding(padding: const EdgeInsets.only(top: 8), child: Muted(s.voice!.problem!, size: 12)),
@@ -322,7 +401,7 @@ class _VoiceEnginePanelState extends State<VoiceEnginePanel> {
       PartState.missing => 'not installed',
       PartState.stopped => 'off',
     };
-    const names = {EnginePart.livekit: 'Live audio (LiveKit)', EnginePart.whisper: 'Hearing (Whisper)', EnginePart.agent: 'Voice agent'};
+    const names = {EnginePart.livekit: 'Live audio (LiveKit)', EnginePart.whisper: 'Hearing (Whisper)', EnginePart.accurate: 'Hearing, more languages', EnginePart.agent: 'Voice agent'};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

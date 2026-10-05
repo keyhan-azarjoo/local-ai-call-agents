@@ -558,6 +558,8 @@ class ToolLoop {
                   runTool: runTool,
                   onEvent: (e) => onEvent?.call(ToolEvent(e.binding, {...e.args, '_agent': t['title']}, result: e.result, ok: e.ok, denied: e.denied)),
                 );
+              } on Cancelled {
+                rethrow;
               } catch (e) {
                 out = 'Failed: $e';
               }
@@ -622,6 +624,8 @@ class ToolLoop {
           ids.learn(r.text);
           recentResults.add('${b.tool.name}: ${ToolResults.compact(r.text, 1500).text}');
         }
+      } on Cancelled {
+        rethrow;
       } catch (e) {
         ev
           ..result = ToolErrors.friendly('$e')
@@ -1007,4 +1011,9 @@ class ToolLoop {
     }
     return out;
   }
+}
+
+/// Thrown (from a tool runner or text callback) to stop an answer nobody is waiting for any more.
+class Cancelled implements Exception {
+  const Cancelled();
 }

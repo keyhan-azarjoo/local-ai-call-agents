@@ -29,7 +29,7 @@ async def main(files: list[str]) -> None:
     token = (
         api.AccessToken(KEY, SECRET)
         .with_identity("test-caller")
-        .with_grants(api.VideoGrants(room_join=True, room=f"test-{int(time.time())}"))
+        .with_grants(api.VideoGrants(room_join=True, room=os.environ.get("ROOM", f"test-{int(time.time())}")))
         .to_jwt()
     )
     first_audio = asyncio.Event()
@@ -87,7 +87,7 @@ async def main(files: list[str]) -> None:
             await silence(0.1)
         latency = time.monotonic() - t0 if waiter.done() else None
         results.append((os.path.basename(f), latency))
-        await silence(7)  # let the agent finish speaking
+        await silence(float(os.environ.get("WAIT", "7")))  # let the agent finish speaking
     await room.disconnect()
     for line in transcripts:
         print("  " + line)

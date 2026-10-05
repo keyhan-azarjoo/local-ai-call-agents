@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-enum EnginePart { livekit, whisper, agent }
+enum EnginePart { livekit, whisper, accurate, agent }
 
 enum PartState { missing, stopped, starting, running, failed }
 
@@ -25,6 +25,7 @@ class VoiceEngine extends ChangeNotifier {
 
   static const livekitPort = 7880;
   static const whisperPort = 8910;
+  static const accuratePort = 8912;
   static const apiKey = 'localailine';
 
   /// A private secret for this computer (LiveKit's dev keys are public).
@@ -35,7 +36,8 @@ class VoiceEngine extends ChangeNotifier {
   String? problem;
 
   String get livekitUrl => 'ws://127.0.0.1:$livekitPort';
-  bool get ready => EnginePart.values.every((e) => state[e] == PartState.running);
+  /// Ready to talk (the larger hearing model is optional).
+  bool get ready => EnginePart.values.every((e) => e == EnginePart.accurate || state[e] == PartState.running);
 
   String _secret() {
     final f = File(p.join(dataDir, 'voice-engine.secret'));
@@ -75,6 +77,26 @@ class VoiceEngine extends ChangeNotifier {
     return null;
   }
 
+  /// The larger hearing model, for languages the fast one hears poorly (Persian, Arabic, …).
+  static const accurateModel = 'ggml-large-v3-turbo-q5_0.bin';
+  String? accurateModelPath() {
+    for (final f in [p.join(dataDir, 'models', 'stt', accurateModel), p.join(Platform.environment['HOME'] ?? '', '.whisper-models', accurateModel)]) {
+      if (File(f).existsSync()) return f;
+    }
+    return null;
+  }
+
+  Future<void> _downloadAccurate() async {
+    final f = File(p.join(dataDir, 'models', 'stt', accurateModel));
+    f.parent.createSync(recursive: true);
+    _log('Downloading the hearing model for more languages (550 MB)…');
+    final res = await http.Client().send(http.Request('GET', Uri.parse('https://huggingface.co/ggerganov/whisper.cpp/resolve/main/$accurateModel')));
+    if (res.statusCode != 200) throw Exception('download failed (${res.statusCode})');
+    final tmp = File('${f.path}.part');
+    await res.stream.pipe(tmp.openWrite());
+    await tmp.rename(f.path);
+  }
+
   /// What is missing before the engine can run (empty = all there).
   Future<List<String>> missing() async => [
         if (await which('livekit-server') == null) 'LiveKit server (brew install livekit)',
@@ -105,9 +127,37 @@ class VoiceEngine extends ChangeNotifier {
     }
 
     if (!File(python).existsSync()) await run([uv, 'venv', '--python', '3.12', '.venv']);
-    await run([uv, 'pip', 'install', '--python', python, 'livekit-agents[silero,turn-detector,openai]~=1.8', 'piper-tts', 'numpy']);
+    await run([uv, 'pip', 'install', '--python', python, 'livekit-agents[silero,turn-detector,openai]~=1.8', 'piper-tts', 'kokoro-onnx', 'numpy']);
     await run([python, script, 'download-files']);
+    await _naturalVoice();
     _log('Voice engine installed.');
+  }
+
+  String get kokoroDir => p.join(dataDir, 'models', 'kokoro');
+  bool get _hasKokoroPackage => Directory(p.join(engineDir, '.venv', 'lib')).existsSync() &&
+      Directory(p.join(engineDir, '.venv', 'lib')).listSync().any((d) => Directory(p.join(d.path, 'site-packages', 'kokoro_onnx')).existsSync());
+
+  /// The natural voice (Kokoro, ~340 MB): the package and its model files.
+  Future<void> _naturalVoice() async {
+    if (!_hasKokoroPackage) {
+      final uv = await which('uv');
+      if (uv != null) {
+        _log('Adding the natural voice…');
+        await Process.run(uv, ['pip', 'install', '--python', python, 'kokoro-onnx'], workingDirectory: engineDir);
+      }
+    }
+    Directory(kokoroDir).createSync(recursive: true);
+    const base = 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0';
+    for (final name in ['voices-v1.0.bin', 'kokoro-v1.0.onnx']) {
+      final f = File(p.join(kokoroDir, name));
+      if (f.existsSync() && f.lengthSync() > 1000000) continue;
+      _log('Downloading $name…');
+      final tmp = File('${f.path}.part');
+      final res = await http.Client().send(http.Request('GET', Uri.parse('$base/$name')));
+      if (res.statusCode != 200) throw Exception('Could not download $name (${res.statusCode})');
+      await res.stream.pipe(tmp.openWrite());
+      await tmp.rename(f.path);
+    }
   }
 
   Future<bool> _ok(String url) async {
@@ -125,7 +175,9 @@ class VoiceEngine extends ChangeNotifier {
     final pr = await Process.start(exe, args, environment: env, workingDirectory: dataDir);
     _procs[part] = pr;
     _savePids();
+    final file = File(p.join(dataDir, 'voice-engine.log')).openWrite(mode: part == EnginePart.livekit ? FileMode.write : FileMode.append);
     void out(String s) {
+      file.write(s.replaceAll(RegExp(r'^', multiLine: true), '[${part.name}] '));
       for (final l in const LineSplitter().convert(s)) {
         if (l.trim().isEmpty) continue;
         if (part == EnginePart.agent && l.contains('registered worker')) {
@@ -141,6 +193,7 @@ class VoiceEngine extends ChangeNotifier {
     pr.stdout.transform(utf8.decoder).listen(out);
     pr.stderr.transform(utf8.decoder).listen(out);
     unawaited(pr.exitCode.then((code) {
+      file.close();
       if (_procs[part] == pr) {
         _procs.remove(part);
         state[part] = code == 0 || code == -15 ? PartState.stopped : PartState.failed;
@@ -201,7 +254,26 @@ class VoiceEngine extends ChangeNotifier {
         healthy: () => _ok('http://127.0.0.1:$whisperPort'),
       );
     }
+    if (state[EnginePart.accurate] != PartState.running) {
+      try {
+        if (accurateModelPath() == null) await _downloadAccurate();
+        // A 15-second window keeps it fast (~0.8 s); longer turns use the fast model.
+        await _spawn(
+          EnginePart.accurate,
+          (await which('whisper-server'))!,
+          ['-m', accurateModelPath()!, '--host', '127.0.0.1', '--port', '$accuratePort', '-ac', '768', '-nf', '-bo', '1', '-bs', '1', '-t', '${max(2, Platform.numberOfProcessors ~/ 2)}'],
+          healthy: () => _ok('http://127.0.0.1:$accuratePort'),
+        );
+      } catch (e) {
+        _log('Hearing for more languages unavailable: $e');
+      }
+    }
     if (state[EnginePart.agent] != PartState.running) {
+      try {
+        await _naturalVoice();
+      } catch (e) {
+        _log('Natural voice unavailable ($e); using the standard voice.');
+      }
       await _spawn(
         EnginePart.agent,
         python,
@@ -214,7 +286,9 @@ class VoiceEngine extends ChangeNotifier {
           'LL_LLM_BASE': '$appUrl/v1',
           'LL_LLM_KEY': appKey,
           'LL_WHISPER_URL': 'http://127.0.0.1:$whisperPort',
+          if (state[EnginePart.accurate] == PartState.running) 'LL_WHISPER_ACCURATE_URL': 'http://127.0.0.1:$accuratePort',
           'LL_VOICES_DIR': p.join(dataDir, 'models', 'tts'),
+          'LL_KOKORO_DIR': kokoroDir,
         },
         healthy: () async => state[EnginePart.agent] == PartState.running,
       );
@@ -222,7 +296,7 @@ class VoiceEngine extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    for (final e in [EnginePart.agent, EnginePart.whisper, EnginePart.livekit]) {
+    for (final e in [EnginePart.agent, EnginePart.accurate, EnginePart.whisper, EnginePart.livekit]) {
       _procs.remove(e)?.kill();
       state[e] = PartState.stopped;
     }

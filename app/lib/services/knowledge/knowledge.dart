@@ -390,6 +390,26 @@ class KnowledgeService extends ChangeNotifier {
     _vecs = v;
   }
 
+  // ---------------- prices ----------------
+
+  /// Every line with a price in the given sources, de-duplicated, as written
+  /// in the document. Used to quote orders exactly.
+  Future<List<String>> priceLines(Set<int> sources) async {
+    if (sources.isEmpty) return [];
+    final rows = await db.raw.rawQuery(
+        "SELECT text FROM kn_chunks WHERE source_id IN (${sources.join(',')}) AND (text LIKE '%£%' OR text LIKE '%\$%' OR text LIKE '%€%') ORDER BY file_id, ord");
+    final out = <String>[];
+    final seen = <String>{};
+    for (final r in rows) {
+      for (var l in (r['text'] as String).split('\n')) {
+        l = l.replaceAll('|', ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+        if (l.length < 4 || l.length > 220 || !RegExp(r'[£\$€]\s?\d').hasMatch(l)) continue;
+        if (seen.add(l.toLowerCase())) out.add(l);
+      }
+    }
+    return out.take(200).toList();
+  }
+
   // ---------------- search ----------------
 
   int get chunkCount => _ids.length;

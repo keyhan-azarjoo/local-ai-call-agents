@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+
 import 'package:http/http.dart' as http;
 
 import 'cloud_llm.dart';
@@ -99,6 +100,100 @@ class Calc {
   static String format(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2);
 }
 
+/// Exact order totals. The app numbers every price line from the documents;
+/// the model only says which lines and how many (easy for it); the app reads
+/// the prices and adds them up (which small models get wrong).
+class OrderQuote {
+  static final _orderish = RegExp(
+      r"\b(order|get|have|want|like|take|i.ll|i.d|add|buy|deliver|delivery|collect|collection|one|two|three|four|five|six|a couple|\d+)\b",
+      caseSensitive: false);
+  static final _price = RegExp(r'[£\$€]\s?(\d+(?:\.[\s   ]?\d{1,2})?)');
+  static final _postcode = RegExp(r'\b([A-Z]{1,2}\d{1,2}[A-Z]?)(?:\s*\d[A-Z]{2})?\b');
+
+  static bool worthChecking(String question) => _orderish.hasMatch(question);
+
+  /// First price on a line ("Fish & chips … £16.00 …" → 16.0).
+  static double? priceOf(String line) => double.tryParse((_price.firstMatch(line)?.group(1) ?? '').replaceAll(RegExp(r'\s'), ''));
+
+  static Future<String?> quote(http.Client c, LocalTarget t, List<ChatMessage> conversation, List<String> priceLines) async {
+    if (priceLines.isEmpty) return null;
+    final numbered = [for (var i = 0; i < priceLines.length; i++) '${i + 1}. ${priceLines[i]}'].join('\n');
+    final talk = conversation
+        .where((m) => m.role == 'user' || m.role == 'assistant')
+        .toList()
+        .reversed
+        .take(6)
+        .toList()
+        .reversed
+        .map((m) => '${m.role == 'user' ? 'Customer' : 'Assistant'}: ${m.content.contains('\n\nQuestion: ') ? m.content.substring(m.content.lastIndexOf('\n\nQuestion: ') + 12) : m.content}')
+        .join('\n');
+    final r = await c
+        .post(Uri.parse('${t.base}/api/chat'),
+            body: jsonEncode({
+              'model': t.model,
+              'stream': false,
+              'keep_alive': -1,
+              'think': ?(t.disableThinking ? false : null),
+              'options': {'num_ctx': t.maxCtx < 16384 ? t.maxCtx : 16384, 'temperature': 0},
+              'format': {
+                'type': 'object',
+                'properties': {
+                  'is_order': {'type': 'boolean'},
+                  'lines': {
+                    'type': 'array',
+                    'items': {
+                      'type': 'object',
+                      'properties': {
+                        'line': {'type': 'integer'},
+                        'quantity': {'type': 'number'},
+                      },
+                      'required': ['line', 'quantity'],
+                    },
+                  },
+                },
+                'required': ['is_order', 'lines'],
+              },
+              'messages': [
+                {
+                  'role': 'system',
+                  'content': 'Match what the customer is ordering to the numbered price list. For each thing they order, give the line '
+                      'number and quantity. Include a delivery or other fee line only if it applies to them (for example their postcode is '
+                      'in that delivery zone). If they are not ordering, set is_order to false and lines to [].'
+                },
+                {'role': 'user', 'content': 'Price list:\n$numbered\n\nConversation:\n$talk'},
+              ],
+            }))
+        .timeout(const Duration(seconds: 30));
+    if (r.statusCode != 200) return null;
+    final j = jsonDecode((jsonDecode(r.body) as Map)['message']['content'] as String) as Map<String, dynamic>;
+    if (j['is_order'] != true) return null;
+    final picked = (j['lines'] as List? ?? []).cast<Map>().toList();
+    // Delivery: add the zone line that names the caller's postcode area, if the model missed it.
+    final said = conversation.where((m) => m.role == 'user').map((m) => m.content).join(' ');
+    if (RegExp(r'deliver', caseSensitive: false).hasMatch(said)) {
+      for (final pc in _postcode.allMatches(said.toUpperCase()).map((m) => m.group(1)!)) {
+        final i = priceLines.indexWhere((l) => RegExp('\\b$pc\\b').hasMatch(l.toUpperCase()) && RegExp(r'zone|deliver', caseSensitive: false).hasMatch(l));
+        if (i >= 0 && !picked.any((p) => p['line'] == i + 1)) picked.add({'line': i + 1, 'quantity': 1});
+      }
+    }
+    var total = 0.0;
+    final parts = <String>[];
+    for (final l in picked) {
+      final n = (l['line'] as num?)?.toInt() ?? 0;
+      final q = (l['quantity'] as num?)?.toDouble() ?? 0;
+      if (n < 1 || n > priceLines.length || q <= 0) continue;
+      final line = priceLines[n - 1];
+      final p = priceOf(line);
+      if (p == null) continue;
+      final name = line.substring(0, _price.firstMatch(line)!.start).trim();
+      total += q * p;
+      parts.add('${Calc.format(q)} × $name (£${p.toStringAsFixed(2)}) = £${(q * p).toStringAsFixed(2)}');
+    }
+    if (parts.isEmpty) return null;
+    return 'Exact order total worked out by the app (use these numbers, do not recalculate): ${parts.join('; ')}. TOTAL £${total.toStringAsFixed(2)}.';
+  }
+}
+
 /// What happened when the AI used a tool, for showing in the conversation.
 class ToolEvent {
   ToolEvent(this.binding, this.args, {this.result = '', this.ok = true, this.denied = false});
@@ -186,6 +281,7 @@ class CloudTarget extends ModelTarget {
 class ToolLoop {
   ToolLoop({http.Client? client}) : _c = client ?? http.Client();
   final http.Client _c;
+  http.Client get client => _c;
 
   static const maxRounds = 6;
 

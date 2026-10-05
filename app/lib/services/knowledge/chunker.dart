@@ -35,7 +35,7 @@ class Chunker {
       for (final para in _paragraphs(s.text)) {
         final line = para.trim();
         if (line.isEmpty) continue;
-        if (!line.contains('\n') && line.length < 90 && _heading.hasMatch(line)) {
+        if (!line.contains('\n') && line.length < 90 && _heading.hasMatch(line) && !RegExp(r'[£\$€]\s?\d').hasMatch(line)) {
           // A heading closes the current chunk once it has some body.
           if (buf.length > target ~/ 3) flush();
           heading = line.replaceFirst(RegExp(r'^#+\s*'), '').replaceAll(RegExp(r':$'), '');
@@ -98,7 +98,8 @@ class Chunker {
         }
         if (cur.isNotEmpty) yield cur.join('\n');
       } else {
-        yield lines.join(' ');
+        // Keep line breaks: table rows and price lines must stay separate.
+        yield lines.join('\n');
       }
     }
   }

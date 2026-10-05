@@ -9,6 +9,9 @@ class OllamaModel {
   final String name, params, quant;
   final int sizeBytes;
   double get sizeGb => sizeBytes / 1e9;
+
+  /// Search-only models (used for documents) can't chat.
+  bool get isEmbedding => RegExp(r'embed|bge|minilm|e5-|gte-', caseSensitive: false).hasMatch(name);
 }
 
 class LoadedModel {

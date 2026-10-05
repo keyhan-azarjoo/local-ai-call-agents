@@ -141,7 +141,7 @@ class AppState extends ChangeNotifier {
     ollamaVersion = await ollama.version();
     if (ollamaVersion != null) {
       try {
-        installedModels = await ollama.installed();
+        installedModels = (await ollama.installed()).where((m) => !m.isEmbedding).toList();
         loadedModels = await ollama.loaded();
       } catch (_) {}
       // Pick the best downloaded model when none is chosen, or the chosen one is gone.
@@ -260,6 +260,16 @@ class AppState extends ChangeNotifier {
         if (i < 0) ChatMessage('system', block),
         for (var j = 0; j < out.length; j++) j == i ? ChatMessage('system', '${out[j].content}\n\n$block') : out[j],
       ];
+    }
+    // Orders: exact totals from the document's price lines (local models add up badly).
+    if (!usingCloud && users.isNotEmpty && OrderQuote.worthChecking(users.last.content)) {
+      try {
+        final t = modelTarget;
+        if (t is LocalTarget) {
+          final quote = await OrderQuote.quote(toolLoop.client, t, messages, await knowledge.priceLines(sources));
+          if (quote != null) notes = notes == null ? quote : '$notes\n$quote';
+        }
+      } catch (_) {}
     }
     // …while the passages for this question ride along with the question itself.
     if (notes != null) {

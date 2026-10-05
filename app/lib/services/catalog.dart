@@ -99,9 +99,13 @@ class Catalog {
     if (installed.isEmpty) return null;
     final known = llm.where((m) => installed.contains(m.id) && !m.slow).toList();
     if (hw != null) {
-      final good = known.where((m) => m.fitFor(hw) == Fit.great || m.fitFor(hw) == Fit.fits).toList()
-        ..sort((a, b) => b.params.compareTo(a.params));
-      if (good.isNotEmpty) return good.first.id;
+      // The recommended model is chosen for speed on this machine; prefer it.
+      final rec = recommend(hw);
+      if (known.any((m) => m.id == rec.id)) return rec.id;
+      final great = known.where((m) => m.fitFor(hw) == Fit.great).toList()..sort((a, b) => b.params.compareTo(a.params));
+      if (great.isNotEmpty) return great.first.id;
+      final fits = known.where((m) => m.fitFor(hw) == Fit.fits).toList()..sort((a, b) => a.params.compareTo(b.params));
+      if (fits.isNotEmpty) return fits.first.id;
     }
     if (known.isNotEmpty) return known.first.id;
     // Only slow or unknown models downloaded: still better than nothing.

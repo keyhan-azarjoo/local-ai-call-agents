@@ -134,7 +134,7 @@ void main() {
       markTestSkipped('Ollama not running');
       return;
     }
-    final models = await o.installed();
+    final models = (await o.installed()).where((m) => !m.isEmbedding).toList();
     if (models.isEmpty) {
       markTestSkipped('No models installed');
       return;

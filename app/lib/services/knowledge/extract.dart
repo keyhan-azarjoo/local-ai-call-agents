@@ -41,6 +41,30 @@ class TextExtractor {
     }
   }
 
+  /// Repairs PDF text: "£16. 00" → "£16.00", drops headers/footers that repeat
+  /// on most pages and "Page 3" lines.
+  static List<Section> cleanPdfPages(List<(int, String)> pages) {
+    String norm(String l) => l.trim().replaceAll(RegExp(r'\d+'), '#');
+    final seen = <String, int>{};
+    for (final (_, text) in pages) {
+      for (final l in text.split('\n').map(norm).toSet()) {
+        if (l.isNotEmpty) seen[l] = (seen[l] ?? 0) + 1;
+      }
+    }
+    final repeated = pages.length < 3 ? <String>{} : {for (final e in seen.entries) if (e.value >= (pages.length * .6).ceil()) e.key};
+    return [
+      for (final (n, text) in pages)
+        Section(
+          text
+              .split('\n')
+              .where((l) => !repeated.contains(norm(l)) && !RegExp(r'^\s*page\s*\d+(\s*(of|/)\s*\d+)?\s*$', caseSensitive: false).hasMatch(l))
+              .join('\n')
+              .replaceAllMapped(RegExp(r'(\d)\. (\d)'), (m) => '${m[1]}.${m[2]}'),
+          page: n,
+        ),
+    ];
+  }
+
   static Future<String> _read(String path) async {
     final bytes = await File(path).readAsBytes();
     return utf8.decode(bytes, allowMalformed: true);
@@ -56,12 +80,12 @@ class TextExtractor {
     }
     final doc = await PdfDocument.openFile(path);
     try {
-      final out = <Section>[];
+      final pages = <(int, String)>[];
       for (final page in doc.pages) {
         final t = await page.loadStructuredText();
-        if (t.fullText.trim().isNotEmpty) out.add(Section(t.fullText, page: page.pageNumber));
+        if (t.fullText.trim().isNotEmpty) pages.add((page.pageNumber, t.fullText));
       }
-      return out;
+      return cleanPdfPages(pages);
     } finally {
       await doc.dispose();
     }

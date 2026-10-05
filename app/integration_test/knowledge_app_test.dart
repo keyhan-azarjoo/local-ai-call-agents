@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:localailine/services/agent_loop.dart';
 import 'package:localailine/services/auth.dart';
 import 'package:localailine/services/knowledge/extract.dart';
 import 'package:localailine/services/ollama.dart';
@@ -24,8 +25,9 @@ void main() {
     final u = await s.auth.createUser(name: 'Owner', username: 'owner', password: 'password-123', role: Role.owner);
     await s.completeSetup(u);
     await s.host?.stop();
-    await s.setLlmModel(const String.fromEnvironment('MODEL', defaultValue: 'qwen3:4b-instruct'));
+    await s.setLlmModel(const String.fromEnvironment('MODEL', defaultValue: 'qwen3:4b-instruct'), manual: true);
     await s.refreshEngine();
+    print('MODEL ${s.llmModel}');
 
     // Same steps as the "Add skill from a document" button.
     final sw = Stopwatch()..start();
@@ -44,10 +46,23 @@ void main() {
     expect(name, startsWith('Restaurant Assistant Skill'));
     expect((row['chunks'] as int) > 8, isTrue);
 
+    for (final r in await s.db.raw.rawQuery("SELECT text FROM kn_chunks WHERE text LIKE '%burger%' OR text LIKE '%Zone B%'")) {
+      print('CHUNK>>> ${(r['text'] as String).replaceAll('\n', ' ⏎ ')}');
+    }
+    if (const bool.fromEnvironment('CHUNKS_ONLY')) return;
+    if (const bool.fromEnvironment('QUOTE_ONLY')) {
+      final lines = await s.knowledge.priceLines({src});
+      print('PRICE LINES ${lines.length}:\n${lines.take(40).join('\n')}');
+      for (final q in ['Hi, can I order two fish and chips for delivery to RV3 4AB?', 'Can I get one burger and two cokes for collection?']) {
+        final quote = await OrderQuote.quote(s.toolLoop.client, s.modelTarget as LocalTarget, [ChatMessage('user', q)], lines);
+        print('QUOTE for "$q": $quote');
+      }
+      return;
+    }
     final agent = (await s.db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).first;
     final calls = {
       'Hi, can I order two fish and chips for delivery to RV3 4AB?': ['35.95'],
-      'Can I get one burger and two cokes for collection?': ['21.50'],
+      'Can I get one burger and two cokes for collection?': ['21.50', 'twenty-one pounds fifty'],
       'Do you have anything vegan?': ['tofu', 'risotto', 'hummus'],
       'Part of my order was missing yesterday, a side of fries. Can I get a refund?': ['refund', 'order', 'name', 'approve'],
       'Can I just read you my card number?': ['link'],

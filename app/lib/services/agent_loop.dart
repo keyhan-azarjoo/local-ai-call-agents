@@ -45,6 +45,69 @@ final calculator = ToolBinding(
   ),
 );
 
+/// Built-in: a visible plan (like Claude's task list). The app shows it live
+/// and keeps the loop going until every step is done.
+final planTool = ToolBinding(
+  serverId: -3,
+  serverName: 'LocalAILine',
+  fnName: 'update_plan',
+  tool: McpTool(
+    name: 'update_plan',
+    readOnly: true,
+    description: 'For requests with several steps: write or update your plan. Give every step with status todo, doing or done. '
+        'Call it first, then mark steps done as you go.',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'steps': {
+          'type': 'array',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'step': {'type': 'string'},
+              'status': {'type': 'string', 'enum': ['todo', 'doing', 'done']},
+            },
+            'required': ['step', 'status'],
+          },
+        },
+      },
+      'required': ['steps'],
+    },
+  ),
+);
+
+/// Built-in: short-lived helper agents for independent parts of a task.
+/// Each gets a clean context and only the tools it needs, runs in parallel,
+/// reports back, and is discarded.
+final delegateTool = ToolBinding(
+  serverId: -4,
+  serverName: 'LocalAILine',
+  fnName: 'delegate',
+  tool: McpTool(
+    name: 'delegate',
+    readOnly: true,
+    description: 'Hand independent parts of the task to helper agents that work in parallel and report back. '
+        'Use for 2–4 separate lookups or jobs (e.g. "count parts for team A" and "count parts for team B").',
+    inputSchema: {
+      'type': 'object',
+      'properties': {
+        'tasks': {
+          'type': 'array',
+          'items': {
+            'type': 'object',
+            'properties': {
+              'title': {'type': 'string'},
+              'instructions': {'type': 'string', 'description': 'Everything the helper needs to know to do it alone'},
+            },
+            'required': ['title', 'instructions'],
+          },
+        },
+      },
+      'required': ['tasks'],
+    },
+  ),
+);
+
 /// Small, safe arithmetic evaluator (no variables, no functions).
 class Calc {
   static double? eval(String input) {
@@ -283,7 +346,7 @@ class ToolLoop {
   final http.Client _c;
   http.Client get client => _c;
 
-  static const maxRounds = 6;
+  static const maxRounds = 12;
 
   /// Added to the system prompt whenever tools are offered.
   static const toolRules = 'Rules for tool results: '
@@ -297,7 +360,9 @@ class ToolLoop {
       '5) Inputs: use ids from earlier results (never names where an id is asked); write dates as YYYY-MM-DD. '
       '6) If a tool returns an error, read it, fix the inputs and try once more; if it still fails, explain the problem simply. '
       '7) For any prices, totals or other arithmetic, call calculate (e.g. "2*16 + 3.95"); never add up in your head. '
-      '8) Write money as digits with the currency sign (e.g. £21.50), never in words; the voice reads it naturally.';
+      '8) Write money as digits with the currency sign (e.g. £21.50), never in words; the voice reads it naturally. '
+      '9) For requests with several steps, call update_plan first and keep it updated; for independent parts, use delegate '
+      'so helper agents work in parallel.';
 
   Future<String> run({
     required ModelTarget target,
@@ -307,6 +372,8 @@ class ToolLoop {
     required ToolRunner runTool,
     void Function(ToolEvent)? onEvent,
     void Function(String textSoFar)? onText,
+    int depth = 0,
+    Set<String> knownIds = const {},
   }) async {
     final byName = {for (final t in tools) t.fnName: t};
 
@@ -364,15 +431,31 @@ class ToolLoop {
             ),
           )
         : null;
-    final offered = <ToolBinding>[...active, ?finder, calculator];
+    final offered = <ToolBinding>[
+      ...active,
+      ?finder,
+      calculator,
+      if (tools.isNotEmpty && depth == 0) ...[planTool, delegateTool],
+    ];
+    var plan = <Map<String, dynamic>>[];
+    var planNudges = 0;
     final idCache = <String, Map<String, String>>{};
-    final ids = IdMemory();
+    final ids = IdMemory()..seen.addAll(knownIds);
+    final recentResults = <String>[]; // shared with helper agents
     String? pendingRetry; // a tool refused for bad inputs, not yet retried
     var nudged = false;
     String? nudge() {
-      if (pendingRetry == null || nudged) return null;
-      nudged = true;
-      return 'You now have what you need. Call $pendingRetry again with the correct id or inputs, then answer my question.';
+      if (pendingRetry != null && !nudged) {
+        nudged = true;
+        return 'You now have what you need. Call $pendingRetry again with the correct id or inputs, then answer my question.';
+      }
+      // Loop until the goal: finish every step of the plan.
+      final open = plan.where((x) => x['status'] != 'done').map((x) => x['step']).toList();
+      if (open.isNotEmpty && planNudges < 3) {
+        planNudges++;
+        return 'Your plan still has open steps: ${open.join('; ')}. Continue with them now, mark them done with update_plan, then give the final answer.';
+      }
+      return null;
     }
     for (final m in messages) {
       ids.learn(m.content);
@@ -385,10 +468,61 @@ class ToolLoop {
         onEvent?.call(ToolEvent(calculator, args, result: v == null ? 'Could not calculate' : Calc.format(v), ok: v != null));
         return (v == null ? 'Could not calculate "$expr". Use numbers and + - * / ( ) only.' : '$expr = ${Calc.format(v)}', v == null);
       }
+      if (name == planTool.fnName) {
+        plan = [for (final x in (args['steps'] as List? ?? [])) (x as Map).cast<String, dynamic>()];
+        onEvent?.call(ToolEvent(planTool, {'steps': plan}, result: 'Plan updated', ok: true));
+        final open = plan.where((x) => x['status'] != 'done').map((x) => x['step']).toList();
+        return (open.isEmpty ? 'Plan complete.' : 'Plan saved. Next: ${open.first}', false);
+      }
+      if (name == delegateTool.fnName) {
+        final tasks = [
+          for (final x in (args['tasks'] as List? ?? []).take(4))
+            () {
+              final m = (x is Map ? x : {'instructions': '$x'}).cast<String, dynamic>();
+              final instr = '${m['instructions'] ?? m['task'] ?? m['description'] ?? m['title'] ?? ''}';
+              final words = instr.split(RegExp(r'\s+'));
+              m['instructions'] = instr;
+              m['title'] = '${m['title'] ?? m['name'] ?? (words.length > 7 ? '${words.take(7).join(' ')}…' : instr)}';
+              return m;
+            }()
+        ];
+        final shared = recentResults.isEmpty
+            ? ''
+            : '\n\nWhat the main agent already found (use these ids and facts):\n${recentResults.reversed.take(3).join('\n\n')}';
+        final results = await Future.wait([
+          for (final t in tasks)
+            () async {
+              final sw = Stopwatch()..start();
+              onEvent?.call(ToolEvent(delegateTool, {'agent': t['title'], 'state': 'working'}, result: '', ok: true));
+              String out;
+              try {
+                out = await run(
+                  target: target,
+                  depth: depth + 1,
+                  messages: [
+                    ChatMessage('system',
+                        'You are a helper agent. Do only this task, using tools where needed, then report the result in a few short lines with exact numbers and names.'),
+                    ChatMessage('user', '${t['instructions']}$shared'),
+                  ],
+                  knownIds: ids.seen,
+                  tools: tools,
+                  approve: approve,
+                  runTool: runTool,
+                  onEvent: (e) => onEvent?.call(ToolEvent(e.binding, {...e.args, '_agent': t['title']}, result: e.result, ok: e.ok, denied: e.denied)),
+                );
+              } catch (e) {
+                out = 'Failed: $e';
+              }
+              onEvent?.call(ToolEvent(delegateTool, {'agent': t['title'], 'state': 'done', 'ms': sw.elapsedMilliseconds}, result: out, ok: !out.startsWith('Failed')));
+              return '### ${t['title']}\n$out';
+            }(),
+        ]);
+        return ('Helper agents finished:\n\n${results.join('\n\n')}', false);
+      }
       if (name == 'find_tools') {
         final found = ToolSelector.rank('${args['query'] ?? ''}', tools, 8);
         for (final f in found) {
-          if (!offered.contains(f)) offered.insert(offered.length - 2, f);
+          if (!offered.contains(f)) offered.insert(offered.indexOf(finder!), f);
         }
         return (
           found.isEmpty
@@ -399,14 +533,14 @@ class ToolLoop {
       }
       final b = byName[name];
       if (b == null) return ('Unknown tool $name. Use find_tools to search.', true);
-      if (!offered.contains(b)) offered.insert(offered.length - (finder == null ? 1 : 2), b);
+      if (!offered.contains(b)) offered.insert(offered.indexOf(finder ?? calculator), b);
       // Check the model's inputs first; don't send the server something it will reject.
       bool hasLookup(String entity) => ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).isNotEmpty;
       final prepared = ToolArgs.prepare(b.tool.inputSchema, args,
           toolName: b.fnName,
           looksWrongId: (k, v) => ids.looksWrong(v, canLookUp: hasLookup(ToolArgs.entityOf(k))), lookupToolFor: (entity) {
         final t = ToolSelector.rank('list $entity', tools.where((t) => t.tool.readOnly).toList(), 1).firstOrNull;
-        if (t != null && !offered.contains(t)) offered.insert(offered.length - (finder == null ? 1 : 2), t);
+        if (t != null && !offered.contains(t)) offered.insert(offered.indexOf(finder ?? calculator), t);
         return t?.fnName;
       });
       if (prepared.problem != null) {
@@ -435,7 +569,10 @@ class ToolLoop {
                   ? 'The tool returned no data. If you passed an id, it may be wrong: get ids from a list tool first.'
                   : r.text
           ..ok = !failed;
-        if (!failed) ids.learn(r.text);
+        if (!failed) {
+          ids.learn(r.text);
+          recentResults.add('${b.tool.name}: ${ToolResults.compact(r.text, 1500).text}');
+        }
       } catch (e) {
         ev
           ..result = ToolErrors.friendly('$e')
@@ -590,7 +727,21 @@ class ToolLoop {
         msgs.add({'role': 'tool', 'content': text, 'tool_name': name});
       }
     }
-    return 'I used several tools but couldn’t finish. Try asking more specifically.';
+    // Out of rounds: answer from what was found instead of giving up.
+    msgs.add({
+      'role': 'user',
+      'content': 'Stop using tools now. Give the best answer you can from the results above, '
+          'and say briefly what you could not find.'
+    });
+    final last = await _ollamaStream(t, {
+      'model': t.model,
+      'messages': msgs,
+      'stream': true,
+      'keep_alive': -1,
+      'think': ?(t.disableThinking ? false : null),
+      'options': {'num_ctx': baseCtx, 'temperature': 0.4},
+    }, onText);
+    return _stripThink((last['content'] as String?) ?? '');
   }
 
   /// Streams one Ollama turn: shows the answer as it is written, and collects

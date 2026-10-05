@@ -1,7 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/agent_loop.dart';
 import '../../services/ollama.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
@@ -24,15 +27,51 @@ class _ChatPageState extends State<ChatPage> {
   final messages = <ChatMessage>[];
   String? model;
   bool busy = false;
+  int toolCount = 0;
 
   static const system = 'You are a helpful, concise assistant running privately on the user’s own computer inside LocalAILine. '
-      'Answer clearly. Use short paragraphs and simple lists when helpful.';
+      'Answer clearly. Use short paragraphs and simple lists when helpful. '
+      'When tools from the user’s connected services are available and the question is about their data, use the tools instead of guessing.';
+
+  static const _scopes = {'me', 'contacts', 'all'};
 
   @override
   void initState() {
     super.initState();
     _loadChats();
+    s.toolsFor(_scopes).then((t) => mounted ? setState(() => toolCount = t.length) : null);
   }
+
+  Future<bool> _approve(ToolBinding b, Map<String, dynamic> args) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text('Allow this action?', style: displayStyle(c, 20)),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('${b.serverName} › ${b.tool.title ?? b.tool.name}', style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Muted(b.tool.description),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: LL.navy, borderRadius: BorderRadius.circular(LL.rSm)),
+                child: SelectableText(const JsonEncoder.withIndent('  ').convert(args),
+                    style: const TextStyle(fontFamily: LL.mono, fontSize: 12, color: Color(0xFFCFE0F3))),
+              ),
+              const SizedBox(height: 8),
+              const Muted('This tool can change data. Ava only runs it if you allow.'),
+            ]),
+          ),
+          actions: [
+            Btn('Don’t allow', onPressed: () => Navigator.pop(c, false)),
+            Btn('Allow', kind: BtnKind.primary, onPressed: () => Navigator.pop(c, true)),
+          ],
+        ),
+      ) ??
+      false;
 
   @override
   void dispose() {
@@ -96,11 +135,29 @@ class _ChatPageState extends State<ChatPage> {
     await s.db.insert('chat_messages', {'chat_id': chatId, 'role': 'user', 'content': text, 'at': now});
     _scrollDown();
     try {
-      final history = [ChatMessage('system', system), ...messages.where((x) => x != reply)];
-      await for (final piece in s.chat(history, model: m)) {
-        reply.content += piece;
-        if (mounted) setState(() {});
-        _scrollDown();
+      final history = [ChatMessage('system', system), ...messages.where((x) => x != reply && x.role != 'tool')];
+      final tools = await s.toolsFor(_scopes);
+      if (tools.isNotEmpty) {
+        reply.content = await s.agentReply(history, scopes: _scopes, approve: _approve, onEvent: (e) async {
+          final note = ChatMessage('tool', jsonEncode({
+            'server': e.binding.serverName,
+            'tool': e.binding.tool.title ?? e.binding.tool.name,
+            'args': e.args,
+            'ok': e.ok,
+            'denied': e.denied,
+            'result': e.result.length > 600 ? '${e.result.substring(0, 600)}…' : e.result,
+          }));
+          setState(() => messages.insert(messages.indexOf(reply), note));
+          await s.db.insert('chat_messages', {'chat_id': chatId, 'role': 'tool', 'content': note.content, 'at': DateTime.now().millisecondsSinceEpoch});
+          _scrollDown();
+        });
+        if (reply.content.isEmpty) reply.content = '(No answer.)';
+      } else {
+        await for (final piece in s.chat(history, model: m)) {
+          reply.content += piece;
+          if (mounted) setState(() {});
+          _scrollDown();
+        }
       }
     } catch (e) {
       reply.content = reply.content.isEmpty ? 'Couldn’t reply: $e' : reply.content;
@@ -170,6 +227,10 @@ class _ChatPageState extends State<ChatPage> {
           child: Row(children: [
             Text('Chat with AI', style: displayStyle(context, 17)),
             const Spacer(),
+            if (toolCount > 0) ...[
+              Pill('$toolCount tools', tone: Tone.green),
+              const SizedBox(width: 8),
+            ],
             if (st.usingCloud)
               Pill(st.llmLabel, tone: Tone.blue)
             else if (models.isNotEmpty)
@@ -214,6 +275,7 @@ class _ChatPageState extends State<ChatPage> {
                   itemCount: messages.length,
                   itemBuilder: (_, i) {
                     final m = messages[i];
+                    if (m.role == 'tool') return _toolNote(context, m.content);
                     final mine = m.role == 'user';
                     return Align(
                       alignment: mine ? Alignment.centerRight : Alignment.centerLeft,
@@ -275,6 +337,41 @@ class _ChatPageState extends State<ChatPage> {
                 Expanded(child: conversation),
               ])
             : conversation,
+      ),
+    );
+  }
+
+  Widget _toolNote(BuildContext context, String content) {
+    Map<String, dynamic> j;
+    try {
+      j = jsonDecode(content) as Map<String, dynamic>;
+    } catch (_) {
+      return const SizedBox();
+    }
+    final ok = j['ok'] == true, denied = j['denied'] == true;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: Container(
+          decoration: BoxDecoration(color: context.c.blueSoft, borderRadius: BorderRadius.circular(10)),
+          child: ExpansionTile(
+            dense: true,
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+            childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            leading: Icon(denied ? Icons.block : ok ? Icons.check_circle_outline : Icons.error_outline,
+                size: 18, color: denied ? context.c.muted : ok ? LL.green : LL.red),
+            title: Text('${denied ? 'Not allowed' : 'Used'} ${j['server']} › ${j['tool']}',
+                style: const TextStyle(fontFamily: LL.mono, fontSize: 12.5)),
+            children: [
+              Align(
+                alignment: Alignment.centerLeft,
+                child: SelectableText('Input: ${jsonEncode(j['args'])}\n\nResult: ${j['result']}',
+                    style: const TextStyle(fontFamily: LL.mono, fontSize: 12)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

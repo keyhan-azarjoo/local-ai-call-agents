@@ -6,11 +6,14 @@ import 'package:flutter/material.dart';
 
 import '../data/db.dart';
 import '../services/auth.dart';
+import '../services/agent_loop.dart';
 import '../services/catalog.dart';
 import '../services/cloud_llm.dart';
 import '../services/hardware.dart';
 import '../services/ollama.dart';
+import '../services/mcp/mcp_manager.dart';
 import '../services/speech.dart';
+import '../services/system.dart';
 
 enum Gate { loading, setup, signIn, app }
 
@@ -96,6 +99,11 @@ class AppState extends ChangeNotifier {
   late AuthService auth;
   late Catalog catalog;
   late Speech speech;
+  late McpManager mcp;
+  final toolLoop = ToolLoop();
+
+  /// Opens sign-in pages. Tests replace this before [init].
+  Future<void> Function(String url) openBrowser = openExternal;
   final ollama = Ollama();
   Hardware? hardware;
 
@@ -187,6 +195,46 @@ class AppState extends ChangeNotifier {
     return ollama.chat(m, messages, disableThinking: entry?.think == 'off');
   }
 
+  ModelTarget get modelTarget {
+    if (usingCloud && cloud != null) return CloudTarget(cloud!);
+    final entry = catalog.llm.where((e) => e.id == llmModel).firstOrNull;
+    return LocalTarget(llmModel!, disableThinking: entry?.think == 'off');
+  }
+
+  /// Tools the AI may use. [scopes]: 'me' (owner), 'contacts', 'all' (any caller).
+  Future<List<ToolBinding>> toolsFor(Set<String> scopes) async {
+    final out = <ToolBinding>[];
+    for (final srv in await mcp.servers()) {
+      if (!srv.enabled || !scopes.contains(srv.scope)) continue;
+      for (final t in srv.tools) {
+        out.add(ToolBinding(serverId: srv.id, serverName: srv.name, tool: t, fnName: ToolBinding.safeName(srv.name, t.name)));
+      }
+    }
+    return out;
+  }
+
+  /// One AI reply that may use tools. Falls back to plain chat when there are none.
+  Future<String> agentReply(
+    List<ChatMessage> messages, {
+    required Set<String> scopes,
+    required Approver approve,
+    void Function(ToolEvent)? onEvent,
+  }) async {
+    final tools = await toolsFor(scopes);
+    final text = await toolLoop.run(
+      target: modelTarget,
+      messages: messages,
+      tools: tools,
+      approve: approve,
+      runTool: (b, args) => mcp.call(b.serverId, b.tool.name, args),
+      onEvent: (e) {
+        log('${e.denied ? 'Declined' : 'AI used'} ${e.binding.serverName} › ${e.binding.tool.name}');
+        onEvent?.call(e);
+      },
+    );
+    return text;
+  }
+
   bool get llmReady => usingCloud ? (cloud != null && cloud!.model.isNotEmpty) : localReady;
 
   bool get localReady => ollamaVersion != null && llmModel != null && installedModels.any((m) => m.name == llmModel);
@@ -205,6 +253,7 @@ class AppState extends ChangeNotifier {
     auth = AuthService(db);
     catalog = await Catalog.load();
     speech = await Speech.create();
+    mcp = McpManager(db, openBrowser: (u) => openBrowser(u))..addListener(notifyListeners);
     advanced = await db.setting('ui.advanced') == '1';
     themeMode = await db.setting('ui.theme') == 'dark' ? ThemeMode.dark : ThemeMode.light;
     answering = await db.setting('calls.answering') != '0';

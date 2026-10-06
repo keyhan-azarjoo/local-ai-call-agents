@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'auth_pages.dart' show Brand;
 import 'pages/admin_pages.dart';
+import 'pages/builder_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/engine_pages.dart';
 import 'pages/knowledge_page.dart';
@@ -19,6 +20,7 @@ const pageIcons = <PageId, IconData>{
   PageId.calls: Icons.call_outlined,
   PageId.outbound: Icons.phone_forwarded_outlined,
   PageId.assistant: Icons.smart_toy_outlined,
+  PageId.builder: Icons.auto_fix_high_outlined,
   PageId.lines: Icons.dns_outlined,
   PageId.settings: Icons.settings_outlined,
   PageId.agents: Icons.groups_outlined,
@@ -43,6 +45,7 @@ Widget pageFor(PageId p) => switch (p) {
       PageId.calls => const CallsPage(),
       PageId.outbound => const OutboundPage(),
       PageId.assistant => const AssistantPage(),
+      PageId.builder => const BuilderPage(),
       PageId.lines => const LinesPage(),
       PageId.settings => const SettingsPage(),
       PageId.agents => const AgentsPage(),

@@ -28,10 +28,15 @@ class PullProgress {
 }
 
 class ChatMessage {
-  ChatMessage(this.role, this.content);
+  ChatMessage(this.role, this.content, {this.images = const []});
   final String role; // system | user | assistant
   String content;
+
+  /// Pictures for models that can see (base64 PNG or JPEG).
+  final List<String> images;
   Map<String, String> toJson() => {'role': role, 'content': content};
+
+  static String mimeOf(String b64) => b64.startsWith('/9j/') ? 'image/jpeg' : (b64.startsWith('UklG') ? 'image/webp' : 'image/png');
 }
 
 /// Talks to a local Ollama server (default http://127.0.0.1:11434).
@@ -113,6 +118,17 @@ class Ollama {
     ];
   }
 
+  /// What a model can do, e.g. completion, tools, vision, thinking.
+  Future<List<String>> capabilities(String model) async {
+    try {
+      final r = await _c.post(_u('/api/show'), body: jsonEncode({'model': model})).timeout(const Duration(seconds: 5));
+      if (r.statusCode != 200) return const [];
+      return [for (final c in ((jsonDecode(r.body) as Map)['capabilities'] as List? ?? const [])) '$c'];
+    } catch (_) {
+      return const [];
+    }
+  }
+
   /// Loads a model into memory and keeps it there until [unload].
   Future<void> load(String model) async {
     final r = await _c.post(_u('/api/generate'), body: jsonEncode({'model': model, 'keep_alive': -1}));
@@ -142,13 +158,15 @@ class Ollama {
   }
 
   /// Streams the assistant's reply token by token.
-  Stream<String> chat(String model, List<ChatMessage> messages, {bool disableThinking = false, int numCtx = 16384}) async* {
+  /// With [json], the model can only answer with a JSON object.
+  Stream<String> chat(String model, List<ChatMessage> messages, {bool disableThinking = false, int numCtx = 16384, bool json = false, double temperature = 0.6}) async* {
     final body = <String, Object?>{
       'model': model,
-      'messages': messages.map((m) => m.toJson()).toList(),
+      'messages': [for (final m in messages) {...m.toJson(), if (m.images.isNotEmpty) 'images': m.images}],
       'stream': true,
       'keep_alive': -1,
-      'options': {'num_ctx': numCtx, 'temperature': 0.6},
+      'options': {'num_ctx': numCtx, 'temperature': temperature},
+      if (json) 'format': 'json',
     };
     // Only hybrid models honour think:false; thinking-only models would then
     // write their reasoning into the reply, so we leave them alone and

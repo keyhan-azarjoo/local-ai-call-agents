@@ -213,6 +213,28 @@ class Db {
     '''
     CREATE TABLE tool_vecs(text TEXT PRIMARY KEY, vec BLOB NOT NULL)
     ''',
+    '''
+    CREATE TABLE apps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      request TEXT NOT NULL,
+      spec TEXT NOT NULL,
+      port INTEGER NOT NULL,
+      pin TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'stopped',
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE app_rows(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      app_id INTEGER NOT NULL REFERENCES apps(id) ON DELETE CASCADE,
+      tbl TEXT NOT NULL,
+      data TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX app_rows_tbl ON app_rows(app_id, tbl)
+    ''',
   ];
 
   // ---------- settings ----------

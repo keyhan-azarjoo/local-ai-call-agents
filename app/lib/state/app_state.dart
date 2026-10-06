@@ -12,6 +12,7 @@ import 'package:http/http.dart' as http;
 import '../data/db.dart';
 import '../services/auth.dart';
 import '../services/agent_loop.dart';
+import '../services/apps/apps_manager.dart';
 import '../services/catalog.dart';
 import '../services/tool_results.dart';
 import '../services/cloud_llm.dart';
@@ -37,6 +38,7 @@ enum PageId {
   calls('Calls'),
   outbound('Make a call'),
   assistant('My assistant'),
+  builder('Build an app'),
   lines('Phone line'),
   settings('Settings'),
   // Shown with "Show all features":
@@ -58,7 +60,7 @@ enum PageId {
   final String title;
 }
 
-const simplePages = [PageId.home, PageId.chat, PageId.talk, PageId.calls, PageId.outbound, PageId.assistant, PageId.lines, PageId.settings];
+const simplePages = [PageId.home, PageId.chat, PageId.talk, PageId.calls, PageId.outbound, PageId.assistant, PageId.builder, PageId.lines, PageId.settings];
 
 /// "Show all features" adds tabs inside these pages; the menu never grows.
 const hubTabs = <PageId, List<(PageId, String)>>{
@@ -92,6 +94,7 @@ class AppState extends ChangeNotifier {
   late Speech speech;
   late McpManager mcp;
   late KnowledgeService knowledge;
+  late AppsManager apps;
   final toolLoop = ToolLoop();
 
   /// Opens sign-in pages. Tests replace this before [init].
@@ -180,13 +183,33 @@ class AppState extends ChangeNotifier {
   String get llmLabel => usingCloud && cloud != null ? '${cloud!.provider.label} · ${cloud!.model}' : (llmModel ?? 'no model');
 
   /// Chat with the chosen (or given) model, using the right thinking setting.
-  Stream<String> chat(List<ChatMessage> messages, {String? model}) {
-    if (usingCloud && cloud != null && model == null) return cloudLlm.chat(cloud!, messages);
+  /// With [json], local models can only answer with a JSON object.
+  Stream<String> chat(List<ChatMessage> messages, {String? model, bool json = false, double temperature = 0.6}) {
+    if (usingCloud && cloud != null && (model == null || model == 'cloud')) return cloudLlm.chat(cloud!, messages);
     final m = model ?? llmModel!;
     final entry = catalog.llm.where((e) => e.id == m).firstOrNull;
     final t = targetFor(model);
     final ctx = t is LocalTarget ? (t.maxCtx < 16384 ? t.maxCtx : 16384) : 16384;
-    return ollama.chat(m, messages, disableThinking: entry?.think == 'off', numCtx: ctx);
+    return ollama.chat(m, messages, disableThinking: entry?.think == 'off', numCtx: ctx, json: json, temperature: temperature);
+  }
+
+  /// The AI's whole reply at once (for building apps: careful, low temperature).
+  Future<String> askWhole(List<ChatMessage> messages, {bool json = false, String? model}) async {
+    final b = StringBuffer();
+    await for (final t in chat(messages, model: model, json: json, temperature: 0.2).timeout(const Duration(minutes: 3))) {
+      b.write(t);
+    }
+    return b.toString();
+  }
+
+  /// A model that can look at pictures: the main AI if it can, else a downloaded one
+  /// that can (e.g. Gemma 3). null = none yet.
+  Future<String?> visionModel() async {
+    if (usingCloud && cloud != null) return 'cloud';
+    for (final m in [?llmModel, ...installedModels.map((m) => m.name).where((n) => n != llmModel)]) {
+      if ((await ollama.capabilities(m)).contains('vision')) return m;
+    }
+    return null;
   }
 
   ModelTarget get modelTarget => targetFor(null);
@@ -832,7 +855,9 @@ class AppState extends ChangeNotifier {
     speech = await Speech.create();
     mcp = McpManager(db, openBrowser: (u) => openBrowser(u))..addListener(notifyListeners);
     knowledge = KnowledgeService(db)..addListener(notifyListeners);
+    apps = AppsManager(db, mcp, ask: askWhole, visionModel: visionModel, log: log)..addListener(notifyListeners);
     if (!isPhone) {
+      unawaited(apps.restore());
       unawaited(knowledge.start());
       // Embed tool descriptions in the background whenever servers change.
       Timer? warm;
@@ -1006,6 +1031,7 @@ class AppState extends ChangeNotifier {
     AppLifecycleListener(
       onExitRequested: () async {
         await voice?.stop();
+        await apps.stopAll();
         return AppExitResponse.exit;
       },
     );
@@ -1636,7 +1662,8 @@ class AppState extends ChangeNotifier {
   final pulls = <String, double?>{};
   final speechDownloads = <String, double>{};
 
-  Future<void> pullModel(String id) async {
+  /// Downloads a model. With [select], it becomes the main AI.
+  Future<void> pullModel(String id, {bool select = true}) async {
     if (pulls.containsKey(id)) return;
     pulls[id] = null;
     notifyListeners();
@@ -1647,9 +1674,9 @@ class AppState extends ChangeNotifier {
       }
       await log('Downloaded model $id');
       // The user just chose this model: use it for calls.
-      await setLlmModel(id, manual: true);
+      if (select) await setLlmModel(id, manual: true);
       await refreshEngine();
-      toast('$id downloaded and selected.');
+      toast(select ? '$id downloaded and selected.' : '$id downloaded.');
     } catch (e) {
       toast('Download of $id failed: $e');
     } finally {

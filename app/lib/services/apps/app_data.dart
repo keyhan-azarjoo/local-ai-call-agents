@@ -86,7 +86,19 @@ class AppData {
     final clean = await _clean(t, values, manager: manager, partial: false);
     // The same booking or order again within half an hour (asked twice, saved twice): keep one.
     final same = await _recentSame(t, clean);
-    if (same != null) return same;
+    if (same != null) {
+      // Same booking, another table ("table 5 instead"): move it, if that one is free.
+      final shape = BookingShape.of(spec, t);
+      final want = shape == null ? null : clean[shape.resourceField.id];
+      final old = await get(t.id, same, manager: true);
+      if (shape != null && want != null && old != null && old[shape.resourceField.id] != want) {
+        final a = await availability(shape, '${clean[shape.dateField.id]}', '${clean[shape.timeField.id]}',
+            guests: (clean[shape.guestsField?.id] as num?)?.toInt() ?? 0, ignore: same);
+        if (!a.free.any((r) => r['id'] == want)) throw AppDataError('That ${shape.resources.title.toLowerCase().replaceAll(RegExp(r's$'), '')} is not free then.');
+        await update(t.id, same, {shape.resourceField.id: want});
+      }
+      return same;
+    }
     if (via != null) clean['_via'] = via;
     final shape = BookingShape.of(spec, t);
     if (shape != null) await _holdResource(shape, clean);
@@ -96,7 +108,11 @@ class AppData {
 
   Future<int?> _recentSame(TableSpec t, Map<String, Object?> clean) async {
     final since = DateTime.now().subtract(const Duration(minutes: 30)).millisecondsSinceEpoch;
-    final keys = [for (final f in t.fields) if (!f.managerOnly && f.type != 'link' && clean[f.id] != null) f.id];
+    // The details that make it the same booking/order (not notes like "no special requests").
+    final keys = [
+      for (final f in t.fields)
+        if (!f.managerOnly && f.type != 'link' && f.type != 'longtext' && clean[f.id] != null && (f.required || const {'phone', 'email', 'date', 'time', 'datetime', 'links', 'number'}.contains(f.type))) f.id,
+    ];
     if (keys.length < 2) return null;
     final rows = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND created_at > ?', whereArgs: [appId, t.id, since]);
     for (final r in rows) {
@@ -112,10 +128,10 @@ class AppData {
   int get bookingMinutes => int.tryParse(spec.site['booking_minutes'] ?? '') ?? 120;
 
   /// Bookings that hold something on [date] ("YYYY-MM-DD"): which, from, to (minutes), and the record.
-  Future<List<({int resource, int from, int to, Map<String, Object?> row})>> busy(BookingShape b, String date) async {
+  Future<List<({int resource, int from, int to, Map<String, Object?> row})>> busy(BookingShape b, String date, {int? ignore}) async {
     final out = <({int resource, int from, int to, Map<String, Object?> row})>[];
     for (final r in await list(b.table.id, manager: true)) {
-      if ('${r[b.dateField.id] ?? ''}' != date || b.cancelled(r)) continue;
+      if ('${r[b.dateField.id] ?? ''}' != date || b.cancelled(r) || r['id'] == ignore) continue;
       final from = _minutes(r[b.timeField.id]);
       final res = r[b.resourceField.id];
       if (from == null || res is! int) continue;
@@ -125,9 +141,9 @@ class AppData {
   }
 
   /// What can be booked on [date] at [time] for [guests]: free ones first, smallest that fits first.
-  Future<({List<Map<String, Object?>> free, List<Map<String, Object?>> taken})> availability(BookingShape b, String date, String time, {int guests = 0}) async {
+  Future<({List<Map<String, Object?>> free, List<Map<String, Object?>> taken})> availability(BookingShape b, String date, String time, {int guests = 0, int? ignore}) async {
     final at = _minutes(time) ?? (throw AppDataError('Give the time as HH:MM.'));
-    final hold = await busy(b, date);
+    final hold = await busy(b, date, ignore: ignore);
     final all = await list(b.resources.id, manager: true);
     bool fits(Map<String, Object?> r) => guests <= 0 || b.seatsField == null || ((r[b.seatsField!.id] as num?) ?? 999) >= guests;
     bool takenAt(Map<String, Object?> r) => hold.any((h) => h.resource == r['id'] && at < h.to && at + bookingMinutes > h.from);

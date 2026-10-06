@@ -315,4 +315,39 @@ void main() {
     expect((mgr['busy'] as List).first['who'], 'Kei Han');
     await srv.stop();
   });
+
+  test('callers find and cancel only their own bookings', () async {
+    expect(samePhone('07700 900124', '07700 900124'), isTrue);
+    expect(samePhone('07700 900125', '07700 900124'), isFalse);
+    final tmp = Directory.systemTemp.createTempSync('mine');
+    final db = await Db.open(path: '${tmp.path}/t.db');
+    final t = appTemplates.firstWhere((t) => t.id == 'restaurant');
+    final spec = AppSpec.fromJson(t.spec.cast<String, dynamic>());
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final id = await db.insert('apps', {'name': 'x', 'request': 'x', 'spec': jsonEncode(spec.toJson()), 'port': 0, 'pin': '1234', 'created_at': now, 'updated_at': now});
+    final data = AppData(db, id, spec);
+    for (final r in t.rows['dining_tables']!) {
+      await data.add('dining_tables', r.cast<String, dynamic>(), manager: true);
+    }
+    final day = DateTime.now().add(const Duration(days: 1)).toIso8601String().substring(0, 10);
+    final mine = await data.add('reservations', {'name': 'Keyhan', 'phone': '07700 900124', 'date': day, 'time': '19:00', 'guests': 2});
+    await data.add('reservations', {'name': 'Other', 'phone': '07000 000000', 'date': day, 'time': '19:00', 'guests': 2});
+    final srv = AppServer(data: data, pin: '1234');
+    await srv.start(0);
+    final s = McpSession(HttpTransport('http://127.0.0.1:${srv.port}/mcp'));
+    await s.initialize();
+    final found = await s.callTool('find_my_reservations', {'phone': '07700 900124'});
+    expect(found.text, contains('Keyhan'));
+    expect(found.text, isNot(contains('Other')));
+    expect((await s.callTool('find_my_reservations', {'phone': '+441111111111'})).text, contains('No reservations found'));
+    final other = (await data.list('reservations', manager: true)).firstWhere((r) => r['name'] == 'Other')['id'];
+    final denied = await s.callTool('cancel_my_reservations', {'id': other, 'phone': '07700 900124'});
+    expect(denied.isError, isTrue);
+    expect(denied.text, contains('different phone number'));
+    final ok = await s.callTool('cancel_my_reservations', {'id': mine, 'phone': '07700 900124'});
+    expect(ok.isError, isFalse, reason: ok.text);
+    expect((await data.get('reservations', mine, manager: true))!['status'], 'Cancelled');
+    expect((await s.callTool('find_my_reservations', {'phone': '07700 900124'})).text, contains('No reservations found'));
+    await srv.stop();
+  });
 }

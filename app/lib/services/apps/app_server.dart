@@ -331,11 +331,22 @@ class AppServer {
       final shape = BookingShape.of(spec, t);
       if (shape != null && !manager && t.access.add) {
         final what = shape.resources.title.toLowerCase();
-        out.add(AppTool('check_${t.id}', 'Shows which $what of $app are free at a date and time (and which are booked). Use it before booking.', {
+        out.add(AppTool('check_${t.id}', 'For a NEW booking: shows which $what of $app are free at a date and time. Not for someone\'s existing booking (that is find_my_${t.id}).', {
           'date': {'type': 'string', 'description': 'YYYY-MM-DD'},
           'time': {'type': 'string', 'description': 'HH:MM'},
           if (shape.guestsField != null) 'guests': {'type': 'integer', 'description': 'How many people'},
         }, const ['date', 'time'], readOnly: true));
+      }
+      final phoneF = t.fields.where((f) => f.type == 'phone').firstOrNull;
+      if (!manager && t.access.add && !t.single && phoneF != null) {
+        out.add(AppTool('find_my_${t.id}', 'Looks up the caller\'s EXISTING $what in $app by phone number — for "when is my booking?", "what time is my table?", "cancel/change my booking". Use it before saying anything about their booking.', {
+          'phone': {'type': 'string', 'description': 'The caller\'s phone number'},
+          'name': {'type': 'string', 'description': 'Their name, if given'},
+        }, const ['phone'], readOnly: true));
+        out.add(AppTool('cancel_my_${t.id}', 'Cancels one of the caller\'s own $what in $app, after they confirmed which one. Only works for their phone number.', {
+          'id': {'type': 'integer', 'description': 'Its id, from find_my_${t.id} (leave out if they have only one)'},
+          'phone': {'type': 'string', 'description': 'The caller\'s phone number'},
+        }, const ['phone'], auto: true));
       }
       if (add && !t.single) {
         out.add(AppTool('add_${t.id}', manager ? 'Adds a record to the $what of $app.$about' : 'Adds a new record to the $what of $app (e.g. a customer order or booking).$about',
@@ -378,9 +389,55 @@ class AppServer {
     };
   }
 
+  /// A customer's own bookings/orders: found and cancelled only with their phone number.
+  Future<String> _mine(String name, Map<String, dynamic> args) async {
+    final cancel = name.startsWith('cancel_my_');
+    final t = spec.table(name.substring(cancel ? 10 : 8))!;
+    final phoneF = t.fields.firstWhere((f) => f.type == 'phone');
+    final phone = '${args['phone'] ?? ''}';
+    if (phone.replaceAll(RegExp(r'\D'), '').length < 6) throw AppDataError('Ask for their phone number first.');
+    final what = t.title.toLowerCase();
+    final shape = BookingShape.of(spec, t);
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final mine = [
+      for (final r in await data.list(t.id, manager: true))
+        if (samePhone(r[phoneF.id], phone) && !(shape?.cancelled(r) ?? false) && (shape == null || '${r[shape.dateField.id] ?? ''}'.compareTo(today) >= 0)) r,
+    ];
+    if (!cancel) {
+      if (mine.isEmpty) return 'No $what found for the phone number $phone. Tell the caller you can\'t find one under this number (they may have used another number).';
+      final named = '${args['name'] ?? ''}'.trim().toLowerCase();
+      final label = t.labelField;
+      return 'Found ${mine.length} for $phone${named.isEmpty || mine.any((r) => '${r[label]}'.toLowerCase().contains(named.split(' ').first)) ? '' : ' (under a different name — check with the caller)'}:\n'
+          '${await data.describe(t.id, [for (final r in mine) {for (final e in r.entries) if (e.key != 'created_at' && e.key != 'via') e.key: e.value}])}';
+    }
+    // Which one: the id given if it's theirs; else, when they have just one, that one.
+    final id = (args['id'] as num?)?.toInt() ?? int.tryParse('${args['id'] ?? ''}');
+    var r = id == null ? null : await data.get(t.id, id, manager: true);
+    if (r != null && !samePhone(r[phoneF.id], phone)) {
+      throw AppDataError('That $what is under a different phone number, so it can\'t be cancelled from this number. Tell the caller to call from the number they booked with.');
+    }
+    if (r == null || !mine.any((m) => m['id'] == r!['id'])) {
+      if (mine.isEmpty) throw AppDataError('No $what found for the phone number $phone, so there is nothing to cancel. Tell the caller.');
+      if (mine.length > 1) {
+        throw AppDataError('They have ${mine.length}: ask which one, then call again with its id.\n${await data.describe(t.id, mine)}');
+      }
+      r = mine.single;
+    }
+    final rid = r['id'] as int;
+    final status = shape?.statusField ?? t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+    final cancelled = status?.options.where((o) => RegExp(r'cancel', caseSensitive: false).hasMatch(o)).firstOrNull;
+    if (status != null && cancelled != null) {
+      await data.update(t.id, rid, {status.id: cancelled});
+    } else {
+      await data.delete(t.id, rid);
+    }
+    return 'Cancelled. ${await data.describe(t.id, [r])}';
+  }
+
   Future<String> callTool(String name, Map<String, dynamic> args, {required bool manager}) async {
     final tool = mcpTools(manager: manager).where((t) => t.name == name).firstOrNull;
     if (tool == null) throw AppDataError('Unknown tool $name.');
+    if (name.startsWith('find_my_') || name.startsWith('cancel_my_')) return _mine(name, args);
     final verb = name.substring(0, name.indexOf('_'));
     final t = spec.table(name.substring(verb.length + 1))!;
     switch (verb) {
@@ -421,6 +478,16 @@ class AppServer {
     }
     throw AppDataError('Unknown tool $name.');
   }
+}
+
+/// Same number, however it's written (07700 900124 = 07700 900124).
+bool samePhone(Object? a, Object? b) {
+  String d(Object? x) => '${x ?? ''}'.replaceAll(RegExp(r'\D'), '');
+  final x = d(a), y = d(b);
+  if (x.length < 6 || y.length < 6) return false;
+  final n = x.length < y.length ? x.length : y.length;
+  final k = n < 9 ? n : 9;
+  return x.substring(x.length - k) == y.substring(y.length - k);
 }
 
 class AppTool {

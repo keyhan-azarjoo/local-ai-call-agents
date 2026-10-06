@@ -766,6 +766,7 @@ class ToolLoop {
     // One context size for the whole question: changing it makes Ollama reload
     // the model and re-read everything (seconds each time).
     final baseCtx = t.maxCtx < 16384 ? t.maxCtx : 16384;
+    var brokenCalls = 0;
     for (var round = 0; round < maxRounds; round++) {
       final fns = tools.map(_fn).toList();
       final need = ctxFor([msgs, fns], t.maxCtx);
@@ -779,9 +780,16 @@ class ToolLoop {
           'stream': true,
           'keep_alive': -1,
           'think': ?(t.disableThinking ? false : null),
-          'options': {'num_ctx': ctx, 'temperature': 0.4},
+          // A cap, so a model stuck repeating itself stops in seconds instead of minutes.
+          'options': {'num_ctx': ctx, 'temperature': 0.4, 'num_predict': 1500},
         }, onText);
       } on CloudError catch (e) {
+        // A tool call the model never finished (it got stuck repeating): ask once more, simply.
+        final broken = RegExp(r'invalid tool call arguments for "([^"]+)"').firstMatch(e.message);
+        if (broken != null && brokenCalls++ < 2) {
+          msgs.add({'role': 'user', 'content': 'Your call to ${broken[1]} was cut off. Call it again now with short, plain values — only the fields you know, no long text.'});
+          continue;
+        }
         if (!e.message.contains('context')) rethrow;
         throw CloudError('This is more than the model can hold at once. Start a new chat, or use a bigger model or a cloud AI.');
       }
@@ -813,7 +821,7 @@ class ToolLoop {
       'stream': true,
       'keep_alive': -1,
       'think': ?(t.disableThinking ? false : null),
-      'options': {'num_ctx': baseCtx, 'temperature': 0.4},
+      'options': {'num_ctx': baseCtx, 'temperature': 0.4, 'num_predict': 1500},
     }, onText);
     return _stripThink((last['content'] as String?) ?? '');
   }

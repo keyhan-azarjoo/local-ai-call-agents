@@ -1,0 +1,403 @@
+/// What a user-built app is: its data (tables), its website pages, and who may do what.
+///
+/// The AI never writes server code. It fills in this small description one piece at a
+/// time, and [AppSpec.fromJson] repairs anything a small model gets wrong, so the app
+/// engine ([AppServer]) can always run it.
+library;
+
+const fieldTypes = <String, String>{
+  'text': 'short text',
+  'longtext': 'long text',
+  'number': 'number',
+  'money': 'price / amount',
+  'yesno': 'yes or no',
+  'date': 'date',
+  'time': 'time of day',
+  'datetime': 'date and time',
+  'choice': 'one of a few options',
+  'link': 'one record from another table',
+  'links': 'several records from another table',
+  'email': 'email address',
+  'phone': 'phone number',
+};
+
+/// Model words that mean one of our types.
+const _typeAliases = <String, String>{
+  'string': 'text', 'str': 'text', 'name': 'text', 'url': 'text', 'image': 'text', 'shorttext': 'text',
+  'textarea': 'longtext', 'description': 'longtext', 'long_text': 'longtext', 'notes': 'longtext',
+  'int': 'number', 'integer': 'number', 'float': 'number', 'decimal': 'number', 'double': 'number', 'quantity': 'number',
+  'price': 'money', 'currency': 'money', 'amount': 'money',
+  'bool': 'yesno', 'boolean': 'yesno', 'checkbox': 'yesno', 'yes_no': 'yesno',
+  'enum': 'choice', 'select': 'choice', 'status': 'choice', 'options': 'choice', 'dropdown': 'choice',
+  'reference': 'link', 'ref': 'link', 'relation': 'link', 'foreignkey': 'link', 'foreign_key': 'link',
+  'list': 'links', 'refs': 'links', 'references': 'links', 'many': 'links', 'multi': 'links',
+  'timestamp': 'datetime', 'date_time': 'datetime',
+  'tel': 'phone', 'mail': 'email',
+};
+
+/// `Menu Items!` → `menu_items`.
+String slug(Object? s, {String fallback = 'item'}) {
+  final v = '${s ?? ''}'.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_+|_+$'), '');
+  if (v.isEmpty) return fallback;
+  return RegExp(r'^[0-9]').hasMatch(v) ? 't_$v' : (v.length > 40 ? v.substring(0, 40) : v);
+}
+
+/// `menu_items` → `Menu items`.
+String titleOf(String id) {
+  final t = id.replaceAll('_', ' ').trim();
+  return t.isEmpty ? id : t[0].toUpperCase() + t.substring(1);
+}
+
+bool _bool(Object? v) => v == true || '$v'.toLowerCase() == 'true' || '$v' == '1' || '$v'.toLowerCase() == 'yes';
+
+String _str(Object? v) => v == null ? '' : '$v'.trim();
+
+class FieldSpec {
+  FieldSpec({required this.id, required this.label, required this.type, this.required = false, this.options = const [], this.link, this.managerOnly = false, this.qty = false});
+  final String id, label, type;
+  final bool required, managerOnly;
+
+  /// For `choice`.
+  final List<String> options;
+
+  /// For `link` / `links`: the other table's id.
+  final String? link;
+
+  /// For `links`: each picked record has a quantity (e.g. 2 × Pizza).
+  final bool qty;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'label': label,
+        'type': type,
+        if (required) 'required': true,
+        if (options.isNotEmpty) 'options': options,
+        'link': ?link,
+        if (managerOnly) 'manager_only': true,
+        if (qty) 'qty': true,
+      };
+
+  static FieldSpec? fromJson(Object? j) {
+    if (j is String) j = {'id': j};
+    if (j is! Map) return null;
+    final id = slug(j['id'] ?? j['name'] ?? j['label'], fallback: '');
+    if (id.isEmpty || id == 'id') return null;
+    var type = slug(j['type'], fallback: 'text').replaceAll('_', '');
+    type = fieldTypes.containsKey(type) ? type : (_typeAliases[slug(j['type'], fallback: 'text')] ?? _typeAliases[type] ?? 'text');
+    var options = <String>[];
+    final o = j['options'] ?? j['choices'] ?? j['values'];
+    if (o is List) options = [for (final x in o) _str(x is Map ? (x['label'] ?? x['value']) : x)]..removeWhere((x) => x.isEmpty);
+    if (o is String) options = o.split(RegExp(r'[,|/]')).map((x) => x.trim()).where((x) => x.isNotEmpty).toList();
+    if (type == 'choice' && options.isEmpty) type = 'text';
+    final link = j['link'] ?? j['table'] ?? j['ref'] ?? j['references'];
+    return FieldSpec(
+      id: id,
+      label: _str(j['label']).isEmpty ? titleOf(id) : _str(j['label']),
+      type: type,
+      required: _bool(j['required']),
+      options: options.toSet().take(30).toList(),
+      link: link == null || _str(link).isEmpty ? null : slug(link),
+      managerOnly: _bool(j['manager_only'] ?? j['managerOnly'] ?? j['admin_only']),
+      qty: _bool(j['qty'] ?? j['quantity']),
+    );
+  }
+
+  FieldSpec copyWith({String? type, String? link, bool clearLink = false, bool? qty}) => FieldSpec(
+      id: id, label: label, type: type ?? this.type, required: required, options: options, link: clearLink ? null : (link ?? this.link), managerOnly: managerOnly, qty: qty ?? this.qty);
+}
+
+/// Who, besides the manager, may use a table: website visitors and phone callers.
+class Access {
+  const Access({this.see = false, this.add = false});
+  final bool see, add;
+
+  String get label => see && add ? 'Customers can see and add' : (see ? 'Customers can see' : (add ? 'Customers can add (not see)' : 'Manager only'));
+
+  Object toJson() => [if (see) 'see', if (add) 'add'];
+
+  static Access fromJson(Object? j) {
+    final s = (j is List ? j.join(' ') : '$j').toLowerCase();
+    return Access(see: RegExp(r'see|read|view|list|public|all').hasMatch(s), add: RegExp(r'add|create|write|submit|order|book|all').hasMatch(s));
+  }
+}
+
+class TableSpec {
+  TableSpec({required this.id, required this.title, this.purpose = '', this.single = false, this.access = const Access(), this.fields = const []});
+  final String id, title, purpose;
+
+  /// One record only (e.g. opening hours, shop details), not a list.
+  final bool single;
+  final Access access;
+  final List<FieldSpec> fields;
+
+  /// The field that names a record (shown in lists and pickers).
+  /// The AI is told to put the name first; fall back to the first short text.
+  String get labelField {
+    final first = fields.firstOrNull;
+    if (first != null && !first.managerOnly && !const {'link', 'links', 'longtext', 'yesno'}.contains(first.type)) return first.id;
+    return (fields.where((f) => f.type == 'text' && !f.managerOnly).firstOrNull ?? fields.firstOrNull)?.id ?? 'id';
+  }
+
+  FieldSpec? field(String id) => fields.where((f) => f.id == id).firstOrNull;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'title': title,
+        if (purpose.isNotEmpty) 'purpose': purpose,
+        'kind': single ? 'single' : 'list',
+        'access': access.toJson(),
+        'fields': [for (final f in fields) f.toJson()],
+      };
+
+  static TableSpec? fromJson(Object? j) {
+    if (j is String) j = {'id': j};
+    if (j is! Map) return null;
+    final id = slug(j['id'] ?? j['name'] ?? j['title'], fallback: '');
+    if (id.isEmpty) return null;
+    final fields = <FieldSpec>[];
+    for (final f in (j['fields'] is List ? j['fields'] as List : const [])) {
+      final fs = FieldSpec.fromJson(f);
+      if (fs != null && !fields.any((x) => x.id == fs.id) && !const {'created_at', 'updated_at'}.contains(fs.id)) fields.add(fs);
+    }
+    return TableSpec(
+      id: id,
+      title: _str(j['title']).isEmpty ? titleOf(id) : _str(j['title']),
+      purpose: _str(j['purpose'] ?? j['description']),
+      single: RegExp(r'single|one|settings').hasMatch(_str(j['kind']).toLowerCase()),
+      access: Access.fromJson(j['access'] ?? j['public']),
+      fields: fields.take(25).toList(),
+    );
+  }
+
+  TableSpec copyWith({List<FieldSpec>? fields, Access? access, String? title, String? purpose}) =>
+      TableSpec(id: id, title: title ?? this.title, purpose: purpose ?? this.purpose, single: single, access: access ?? this.access, fields: fields ?? this.fields);
+}
+
+/// One piece of a page. Types: text, list, form, info.
+class Block {
+  Block(this.data);
+  final Map<String, Object?> data;
+  String get type => data['type'] as String;
+  String? get table => data['table'] as String?;
+
+  static Block? fromJson(Object? j) {
+    if (j is String) return Block({'type': 'text', 'text': j});
+    if (j is! Map) return null;
+    var type = slug(j['type'], fallback: 'text');
+    type = switch (type) {
+      'text' || 'heading' || 'paragraph' || 'markdown' || 'html' || 'intro' || 'hero' => 'text',
+      'list' || 'table' || 'grid' || 'cards' || 'search' || 'catalog' || 'menu' => 'list',
+      'form' || 'create' || 'add' || 'booking' || 'order' || 'input' => 'form',
+      'info' || 'details' || 'single' || 'record' || 'hours' => 'info',
+      _ => '',
+    };
+    if (type.isEmpty) return null;
+    final out = <String, Object?>{'type': type};
+    if (type == 'text') {
+      final text = _str(j['text'] ?? j['content'] ?? j['body'] ?? j['title']);
+      if (text.isEmpty) return null;
+      out['text'] = text.length > 2000 ? text.substring(0, 2000) : text;
+    } else {
+      final t = j['table'] ?? j['source'] ?? j['data'];
+      if (t == null) return null;
+      out['table'] = slug(t);
+      final title = _str(j['title'] ?? j['heading']);
+      if (title.isNotEmpty) out['title'] = title;
+      if (j['fields'] is List) out['fields'] = [for (final f in j['fields'] as List) slug(f is Map ? (f['id'] ?? f['name']) : f)];
+      if (type == 'list') out['search'] = j['search'] == null ? true : _bool(j['search']);
+      if (type == 'form') {
+        final submit = _str(j['submit'] ?? j['button']);
+        final thanks = _str(j['thanks'] ?? j['success'] ?? j['message']);
+        if (submit.isNotEmpty) out['submit'] = submit;
+        if (thanks.isNotEmpty) out['thanks'] = thanks;
+      }
+    }
+    return Block(out);
+  }
+}
+
+class PageSpec {
+  PageSpec({required this.id, required this.title, this.purpose = '', this.manager = false, this.blocks = const []});
+  final String id, title, purpose;
+
+  /// Only for the manager (needs the manager PIN).
+  final bool manager;
+  final List<Block> blocks;
+
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'title': title,
+        if (purpose.isNotEmpty) 'purpose': purpose,
+        if (manager) 'manager': true,
+        'blocks': [for (final b in blocks) b.data],
+      };
+
+  static PageSpec? fromJson(Object? j) {
+    if (j is String) j = {'id': j};
+    if (j is! Map) return null;
+    final id = slug(j['id'] ?? j['name'] ?? j['title'], fallback: '');
+    if (id.isEmpty) return null;
+    return PageSpec(
+      id: id,
+      title: _str(j['title']).isEmpty ? titleOf(id) : _str(j['title']),
+      purpose: _str(j['purpose'] ?? j['description']),
+      manager: _bool(j['manager'] ?? j['admin']),
+      blocks: [for (final b in (j['blocks'] is List ? j['blocks'] as List : const [])) ?Block.fromJson(b)].take(12).toList(),
+    );
+  }
+
+  PageSpec copyWith({List<Block>? blocks, String? title, String? purpose}) =>
+      PageSpec(id: id, title: title ?? this.title, purpose: purpose ?? this.purpose, manager: manager, blocks: blocks ?? this.blocks);
+}
+
+/// What the user asked for besides the data.
+class Features {
+  const Features({this.website = true, this.ava = true});
+  final bool website, ava;
+  Map<String, bool> toJson() => {'website': website, 'ava': ava};
+  static Features fromJson(Object? j) => j is Map ? Features(website: j['website'] != false, ava: j['ava'] != false) : const Features();
+}
+
+class AppSpec {
+  AppSpec({required this.name, this.summary = '', this.tables = const [], this.pages = const [], this.features = const Features(), this.theme = '#1F6FEB', this.dark = false, this.font = 'sans'});
+  final String name, summary, theme;
+
+  /// The look: dark background, and sans / serif / rounded letters.
+  final bool dark;
+  final String font;
+  final List<TableSpec> tables;
+  final List<PageSpec> pages;
+  final Features features;
+
+  TableSpec? table(String id) => tables.where((t) => t.id == id).firstOrNull;
+  PageSpec? page(String id) => pages.where((p) => p.id == id).firstOrNull;
+
+  Map<String, Object?> toJson() => {
+        'name': name,
+        if (summary.isNotEmpty) 'summary': summary,
+        'theme': theme,
+        'look': {'dark': dark, 'font': font},
+        'features': features.toJson(),
+        'tables': [for (final t in tables) t.toJson()],
+        'pages': [for (final p in pages) p.toJson()],
+      };
+
+  /// Reads (and repairs) a description from the AI or the database.
+  static AppSpec fromJson(Map<String, dynamic> j) {
+    final tables = <TableSpec>[];
+    for (final t in (j['tables'] is List ? j['tables'] as List : const [])) {
+      final ts = TableSpec.fromJson(t);
+      if (ts != null && !tables.any((x) => x.id == ts.id)) tables.add(ts);
+    }
+    final pages = <PageSpec>[];
+    for (final p in (j['pages'] is List ? j['pages'] as List : const [])) {
+      final ps = PageSpec.fromJson(p);
+      if (ps != null && !pages.any((x) => x.id == ps.id)) pages.add(ps);
+    }
+    final theme = _str(j['theme']);
+    final look = j['look'] is Map ? j['look'] as Map : const {};
+    return AppSpec(
+      dark: look['dark'] == true,
+      font: const {'serif', 'rounded'}.contains(look['font']) ? look['font'] as String : 'sans',
+      name: _str(j['name']).isEmpty ? 'My app' : _str(j['name']),
+      summary: _str(j['summary'] ?? j['description']),
+      theme: RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(theme) ? theme : '#1F6FEB',
+      features: Features.fromJson(j['features']),
+      tables: tables.take(12).toList(),
+      pages: pages.take(10).toList(),
+    ).repaired();
+  }
+
+  /// This app with [other]'s colours and font.
+  AppSpec withLook(AppSpec other) => AppSpec(
+      name: name, summary: summary, features: features, tables: tables, pages: pages, theme: other.theme, dark: other.dark, font: other.font);
+
+  AppSpec copyWith({String? name, String? summary, List<TableSpec>? tables, List<PageSpec>? pages, Features? features}) => AppSpec(
+      name: name ?? this.name,
+      summary: summary ?? this.summary,
+      theme: theme,
+      dark: dark,
+      font: font,
+      features: features ?? this.features,
+      tables: tables ?? this.tables,
+      pages: pages ?? this.pages);
+
+  /// Fixes what doesn't fit together: links to tables that don't exist, blocks that
+  /// show unknown tables or fields, forms for tables customers can't add to.
+  AppSpec repaired() {
+    final ids = {for (final t in tables) t.id};
+    String? resolve(String? id) {
+      if (id == null) return null;
+      if (ids.contains(id)) return id;
+      // "menu_item" → "menu_items", "items" → "menu_items"
+      return ids.where((t) => t == '${id}s' || '${t}s' == id || t.endsWith('_$id') || t.endsWith('_${id}s')).firstOrNull;
+    }
+
+    var fixedTables = [
+      for (final t in tables)
+        t.copyWith(fields: [
+          for (final f in t.fields)
+            if (f.type == 'link' || f.type == 'links')
+              (resolve(f.link) == null || resolve(f.link) == t.id && t.single) ? f.copyWith(type: 'text', clearLink: true) : f.copyWith(link: resolve(f.link))
+            else
+              f,
+        ]),
+    ];
+    // Customers who can add to a table must be able to pick the records it links to.
+    final mustSee = {
+      for (final t in fixedTables)
+        if (t.access.add)
+          for (final f in t.fields)
+            if (f.link != null && !f.managerOnly) f.link!,
+    };
+    fixedTables = [for (final t in fixedTables) mustSee.contains(t.id) && !t.access.see ? t.copyWith(access: Access(see: true, add: t.access.add)) : t];
+    final byId = {for (final t in fixedTables) t.id: t};
+
+    final fixedPages = <PageSpec>[];
+    for (final p in pages) {
+      final blocks = <Block>[];
+      for (final b in p.blocks) {
+        if (b.type == 'text') {
+          blocks.add(b);
+          continue;
+        }
+        final t = byId[resolve(b.table) ?? ''];
+        if (t == null) continue;
+        final d = Map<String, Object?>.of(b.data)..['table'] = t.id;
+        if (d['fields'] is List) {
+          final keep = [for (final f in d['fields'] as List) if (t.field('$f') != null) '$f'];
+          if (keep.isEmpty) {
+            d.remove('fields');
+          } else {
+            d['fields'] = keep;
+          }
+        }
+        final type = b.type == 'list' && t.single ? 'info' : (b.type == 'info' && !t.single ? 'list' : b.type);
+        d['type'] = type;
+        if (type != 'list') d.remove('search');
+        // Public pages only show what customers may use.
+        if (!p.manager && (type == 'list' || type == 'info') && !t.access.see) continue;
+        if (!p.manager && type == 'form' && !t.access.add) continue;
+        blocks.add(Block(d));
+      }
+      fixedPages.add(p.copyWith(blocks: blocks));
+    }
+    return copyWith(tables: fixedTables, pages: fixedPages);
+  }
+
+  /// A short readable outline, given to the AI so it knows the whole app.
+  String outline({bool fields = true}) {
+    final b = StringBuffer('App: $name — $summary\nTables:\n');
+    for (final t in tables) {
+      b.writeln('- ${t.id} (${t.single ? 'one record' : 'list'}; ${t.access.label}): ${t.purpose}');
+      if (fields && t.fields.isNotEmpty) {
+        b.writeln('    fields: ${t.fields.map((f) => '${f.id}:${f.type}${f.link != null ? '→${f.link}' : ''}${f.options.isNotEmpty ? '[${f.options.join('|')}]' : ''}${f.managerOnly ? '(manager only)' : ''}').join(', ')}');
+      }
+    }
+    b.writeln('Pages:');
+    for (final p in pages) {
+      b.writeln('- ${p.id}${p.manager ? ' (manager only)' : ''}: ${p.purpose}');
+    }
+    return b.toString();
+  }
+}

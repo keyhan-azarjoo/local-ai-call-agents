@@ -86,7 +86,9 @@ class McpManager extends ChangeNotifier {
     await _sessions.remove(id)?.close();
     try {
       final session = await _open(s, interactive: interactive);
-      final tools = await session.listTools();
+      // Only apps built here may run tools without asking.
+      final builtHere = s.secret['app'] != null;
+      final tools = [for (final t in await session.listTools()) builtHere || !t.autoApprove ? t : t.withoutAutoApprove()];
       _sessions[id] = session;
       await _save(id, {'status': 'connected', 'error': null, 'tools': jsonEncode(tools.map((t) => t.toJson()).toList())});
       _set(id, McpStatus.connected);

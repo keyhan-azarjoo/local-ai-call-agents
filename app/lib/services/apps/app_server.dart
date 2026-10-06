@@ -1,0 +1,282 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'app_data.dart';
+import 'app_spec.dart';
+import 'app_web.dart';
+
+/// Runs one user-built app on this computer: its website (customers at `/`,
+/// the manager at `/manage`), a small JSON API, and two MCP endpoints so Ava can
+/// use it in chats and on calls:
+/// - `/mcp`: what customers may do (callers can use it without approval)
+/// - `/mcp/manager`: the rest, for the owner (needs the manager PIN)
+class AppServer {
+  AppServer({required this.data, required this.pin});
+  final AppData data;
+  String pin;
+  HttpServer? _http;
+  bool paused = false;
+
+  AppSpec get spec => data.spec;
+  bool get running => _http != null;
+  int? get port => _http?.port;
+
+  Future<void> start(int port) async {
+    if (_http != null) return;
+    _http = await HttpServer.bind(InternetAddress.anyIPv4, port);
+    _http!.listen((req) => unawaited(_handle(req)));
+  }
+
+  Future<void> stop() async {
+    await _http?.close(force: true);
+    _http = null;
+  }
+
+  bool _isManager(HttpRequest req) => pin.isNotEmpty && req.headers.value('x-key') == pin;
+
+  Future<void> _handle(HttpRequest req) async {
+    final path = req.uri.path;
+    try {
+      if (path == '/app.css') return _send(req, 200, appCss, 'text/css');
+      if (path == '/app.js') return _send(req, 200, appJs, 'application/javascript');
+      if (path.startsWith('/mcp')) return await _mcp(req, manager: path == '/mcp/manager');
+      if (paused) {
+        if (path.startsWith('/api/')) return _json(req, 503, {'error': 'This app is paused right now.'});
+        return _send(req, 503, pausedHtml(spec.name), 'text/html');
+      }
+      if (path.startsWith('/api/')) return await _api(req, path.substring(5));
+      if (path == '/' || path.startsWith('/p/') || path == '/manage') return _send(req, 200, appHtml(spec.name, spec.theme, dark: spec.dark, font: spec.font), 'text/html');
+      return _send(req, 404, 'Not found', 'text/plain');
+    } on AppDataError catch (e) {
+      return _json(req, 400, {'error': e.message});
+    } catch (e) {
+      return _json(req, 500, {'error': '$e'});
+    }
+  }
+
+  Future<void> _send(HttpRequest req, int code, String body, String type) async {
+    req.response
+      ..statusCode = code
+      ..headers.set('Content-Type', '$type; charset=utf-8')
+      ..headers.set('Cache-Control', 'no-store')
+      ..write(body);
+    await req.response.close();
+  }
+
+  Future<void> _json(HttpRequest req, int code, Object? body) => _send(req, code, jsonEncode(body), 'application/json');
+
+  Future<Map<String, dynamic>> _body(HttpRequest req) async {
+    final s = await utf8.decoder.bind(req).join();
+    if (s.trim().isEmpty) return {};
+    final j = jsonDecode(s);
+    return j is Map ? j.cast<String, dynamic>() : {};
+  }
+
+  /// What a visitor may see of the description: no manager-only parts unless signed in.
+  Map<String, Object?> publicSpec(bool manager) {
+    final j = spec.toJson();
+    return {
+      ...j,
+      'manager': manager,
+      'tables': [
+        for (final t in spec.tables)
+          if (manager || t.access.see || t.access.add)
+            {...t.toJson(), 'fields': [for (final f in t.fields) if (manager || !f.managerOnly) f.toJson()]},
+      ],
+      'pages': [for (final p in spec.pages) if (manager || !p.manager) p.toJson()],
+    };
+  }
+
+  Future<void> _api(HttpRequest req, String rest) async {
+    final manager = _isManager(req);
+    if (rest == '_spec') return _json(req, 200, publicSpec(manager));
+    if (rest == '_login' && req.method == 'POST') {
+      final b = await _body(req);
+      if ('${b['pin']}'.trim() == pin) return _json(req, 200, {'ok': true});
+      await Future.delayed(const Duration(milliseconds: 600)); // slows down guessing
+      return _json(req, 403, {'error': 'Wrong PIN.'});
+    }
+    final parts = rest.split('/');
+    if (parts.length < 2 || parts.first != 't') return _json(req, 404, {'error': 'Not found'});
+    final t = spec.table(parts[1]);
+    if (t == null) return _json(req, 404, {'error': 'No such table.'});
+    final id = parts.length > 2 ? int.tryParse(parts[2]) : null;
+    Future<void> deny() => _json(req, 403, {'error': 'Only the manager can do that.'});
+
+    switch (req.method) {
+      case 'GET':
+        if (!manager && !t.access.see) return deny();
+        if (id != null) {
+          final r = await data.get(t.id, id, manager: manager);
+          return r == null ? _json(req, 404, {'error': 'Not found'}) : _json(req, 200, r);
+        }
+        return _json(req, 200, await data.list(t.id, search: req.uri.queryParameters['q'], manager: manager));
+      case 'POST':
+        if (!manager && !t.access.add) return deny();
+        return _json(req, 200, {'id': await data.add(t.id, await _body(req), manager: manager)});
+      case 'PUT':
+        if (!manager) return deny();
+        if (t.single) return _json(req, 200, {'id': await data.setSingle(t.id, await _body(req))});
+        if (id == null) return _json(req, 400, {'error': 'Which record?'});
+        await data.update(t.id, id, await _body(req));
+        return _json(req, 200, {'ok': true});
+      case 'DELETE':
+        if (!manager) return deny();
+        if (id == null) return _json(req, 400, {'error': 'Which record?'});
+        await data.delete(t.id, id);
+        return _json(req, 200, {'ok': true});
+    }
+    return _json(req, 405, {'error': 'Not allowed'});
+  }
+
+  // ---------------- MCP ----------------
+
+  Future<void> _mcp(HttpRequest req, {required bool manager}) async {
+    if (req.method != 'POST') return _json(req, 405, {'error': 'Use POST'});
+    if (manager && !_isManager(req)) return _json(req, 401, {'error': 'The manager PIN is needed.'});
+    final msg = await _body(req);
+    final id = msg['id'];
+    final method = msg['method'] as String? ?? '';
+    req.response.headers.set('Mcp-Session-Id', 'app');
+    if (id == null) {
+      req.response.statusCode = 202;
+      return req.response.close();
+    }
+    Object? result;
+    Map<String, Object?>? error;
+    switch (method) {
+      case 'initialize':
+        result = {
+          'protocolVersion': (msg['params']?['protocolVersion'] as String?) ?? '2025-06-18',
+          'capabilities': {'tools': {}},
+          'serverInfo': {'name': manager ? '${spec.name} (manager)' : spec.name, 'version': '1'},
+          'instructions': spec.summary,
+        };
+      case 'ping':
+        result = {};
+      case 'tools/list':
+        result = {'tools': [for (final t in mcpTools(manager: manager)) t.toJson()]};
+      case 'tools/call':
+        final p = (msg['params'] as Map?)?.cast<String, dynamic>() ?? {};
+        final args = (p['arguments'] as Map?)?.cast<String, dynamic>() ?? {};
+        try {
+          if (paused) throw AppDataError('${spec.name} is paused right now.');
+          result = {'content': [{'type': 'text', 'text': await callTool('${p['name']}', args, manager: manager)}]};
+        } on AppDataError catch (e) {
+          result = {'content': [{'type': 'text', 'text': e.message}], 'isError': true};
+        }
+      default:
+        error = {'code': -32601, 'message': 'Unknown method $method'};
+    }
+    return _json(req, 200, {'jsonrpc': '2.0', 'id': id, 'result': ?result, 'error': ?error});
+  }
+
+  /// The tools each endpoint offers. Customers' tools and the manager's don't overlap,
+  /// so the owner (who gets both) sees each tool once.
+  List<AppTool> mcpTools({required bool manager}) {
+    final out = <AppTool>[];
+    final app = spec.name;
+    for (final t in spec.tables) {
+      final what = t.title.toLowerCase();
+      final see = manager ? !t.access.see : t.access.see;
+      final add = manager ? !t.access.add : t.access.add;
+      final fields = [for (final f in t.fields) if (manager || !f.managerOnly) f];
+      final about = t.purpose.isEmpty ? '' : ' ${t.purpose}';
+      if (see) {
+        if (t.single) {
+          out.add(AppTool('get_${t.id}', 'Shows the $what of $app.$about', {}, const [], readOnly: true));
+        } else {
+          out.add(AppTool('list_${t.id}', 'Lists or searches the $what of $app.$about Fields: ${fields.map((f) => f.label).join(', ')}.',
+              {'search': {'type': 'string', 'description': 'Words to look for (optional)'}}, const [], readOnly: true));
+        }
+      }
+      if (add && !t.single) {
+        out.add(AppTool('add_${t.id}', manager ? 'Adds a record to the $what of $app.$about' : 'Adds a new record to the $what of $app (e.g. a customer order or booking).$about',
+            {for (final f in fields) f.id: _schema(f)}, [for (final f in fields) if (f.required) f.id], auto: !manager));
+      }
+      if (manager) {
+        if (t.single) {
+          out.add(AppTool('set_${t.id}', 'Changes the $what of $app. Give only the fields to change.', {for (final f in fields) f.id: _schema(f)}, const []));
+        } else {
+          out.add(AppTool('update_${t.id}', 'Changes a record in the $what of $app. Give its id and only the fields to change.',
+              {'id': {'type': 'integer', 'description': 'Record id (from list_${t.id})'}, for (final f in fields) f.id: _schema(f)}, const ['id']));
+          out.add(AppTool('delete_${t.id}', 'Deletes a record from the $what of $app.', {'id': {'type': 'integer', 'description': 'Record id (from list_${t.id})'}}, const ['id']));
+        }
+      }
+    }
+    return out;
+  }
+
+  Map<String, Object?> _schema(FieldSpec f) {
+    final target = f.link == null ? null : spec.table(f.link!)?.title.toLowerCase();
+    return switch (f.type) {
+      'number' || 'money' => {'type': 'number', 'description': f.label},
+      'yesno' => {'type': 'boolean', 'description': f.label},
+      'choice' => {'type': 'string', 'enum': f.options, 'description': f.label},
+      'date' => {'type': 'string', 'description': '${f.label} (YYYY-MM-DD)'},
+      'time' => {'type': 'string', 'description': '${f.label} (HH:MM)'},
+      'datetime' => {'type': 'string', 'description': '${f.label} (YYYY-MM-DD HH:MM)'},
+      'link' => {'type': 'string', 'description': '${f.label}: the name or id of one of the $target'},
+      'links' when f.qty => {
+          'type': 'array',
+          'description': '${f.label}: items from the $target, each with a quantity',
+          'items': {
+            'type': 'object',
+            'properties': {'item': {'type': 'string', 'description': 'Name or id'}, 'qty': {'type': 'integer'}},
+            'required': ['item'],
+          },
+        },
+      'links' => {'type': 'array', 'description': '${f.label}: names or ids of $target', 'items': {'type': 'string'}},
+      _ => {'type': 'string', 'description': f.label},
+    };
+  }
+
+  Future<String> callTool(String name, Map<String, dynamic> args, {required bool manager}) async {
+    final tool = mcpTools(manager: manager).where((t) => t.name == name).firstOrNull;
+    if (tool == null) throw AppDataError('Unknown tool $name.');
+    final verb = name.substring(0, name.indexOf('_'));
+    final t = spec.table(name.substring(verb.length + 1))!;
+    switch (verb) {
+      case 'list':
+        final rows = await data.list(t.id, search: args['search'] as String?, manager: manager);
+        return data.describe(t.id, rows.take(100).toList());
+      case 'get':
+        final r = await data.single(t.id, manager: manager);
+        return r.isEmpty ? 'Not set yet.' : data.describe(t.id, [r]);
+      case 'add':
+        final id = await data.add(t.id, args, manager: manager);
+        return 'Done. Added to ${t.title.toLowerCase()} with id $id:\n${await data.describe(t.id, [(await data.get(t.id, id, manager: manager))!])}';
+      case 'set':
+        await data.setSingle(t.id, args);
+        return 'Saved:\n${await data.describe(t.id, [await data.single(t.id, manager: true)])}';
+      case 'update':
+        final id = (args['id'] as num?)?.toInt() ?? (throw AppDataError('Give the record id.'));
+        await data.update(t.id, id, Map.of(args)..remove('id'));
+        return 'Saved:\n${await data.describe(t.id, [(await data.get(t.id, id, manager: true))!])}';
+      case 'delete':
+        final id = (args['id'] as num?)?.toInt() ?? (throw AppDataError('Give the record id.'));
+        await data.delete(t.id, id);
+        return 'Deleted record $id from ${t.title.toLowerCase()}.';
+    }
+    throw AppDataError('Unknown tool $name.');
+  }
+}
+
+class AppTool {
+  AppTool(this.name, this.description, this.properties, this.required, {this.readOnly = false, this.auto = false});
+  final String name, description;
+  final Map<String, Object?> properties;
+  final List<String> required;
+  final bool readOnly;
+
+  /// Safe for customers: Ava may run it on a call without asking the owner.
+  final bool auto;
+
+  Map<String, Object?> toJson() => {
+        'name': name,
+        'description': description,
+        'inputSchema': {'type': 'object', 'properties': properties, if (required.isNotEmpty) 'required': required},
+        'annotations': {'readOnlyHint': readOnly, if (auto) 'localailineAutoApprove': true},
+      };
+}

@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 
 /// A tool offered by an MCP server.
 class McpTool {
-  McpTool({required this.name, required this.description, required this.inputSchema, required this.readOnly, this.title, this.hint});
+  McpTool({required this.name, required this.description, required this.inputSchema, required this.readOnly, this.title, this.hint, this.autoApprove = false});
 
   /// The server's own readOnlyHint, if it gave one.
   final bool? hint;
@@ -17,12 +17,18 @@ class McpTool {
   /// From the server's `readOnlyHint`. Anything else asks before running.
   final bool readOnly;
 
+  /// Runs without asking (e.g. a customer placing an order in an app built here).
+  /// Only kept for apps built in LocalAILine; see [McpManager].
+  final bool autoApprove;
+
+  McpTool withoutAutoApprove() => McpTool(name: name, description: description, inputSchema: inputSchema, readOnly: readOnly, title: title, hint: hint);
+
   Map<String, Object?> toJson() => {
         'name': name,
         'description': description,
         'inputSchema': inputSchema,
         'title': title,
-        if (hint != null) 'annotations': {'readOnlyHint': hint},
+        if (hint != null || autoApprove) 'annotations': {'readOnlyHint': ?hint, if (autoApprove) 'localailineAutoApprove': true},
       };
 
   static McpTool fromJson(Map<String, dynamic> j) {
@@ -35,6 +41,7 @@ class McpTool {
       inputSchema: (j['inputSchema'] as Map?)?.cast<String, dynamic>() ?? {'type': 'object', 'properties': {}},
       hint: hint is bool ? hint : null,
       readOnly: hint is bool ? hint : inferReadOnly(j['name'] as String, description),
+      autoApprove: j['annotations']?['localailineAutoApprove'] == true,
     );
   }
 

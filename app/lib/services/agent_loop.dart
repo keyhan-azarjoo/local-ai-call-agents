@@ -603,7 +603,7 @@ class ToolLoop {
       args = prepared.args;
       onToolStart?.call(b);
       final ev = ToolEvent(b, args);
-      if (!b.tool.readOnly && !await approve(b, args)) {
+      if (!b.tool.readOnly && !b.tool.autoApprove && !await approve(b, args)) {
         ev
           ..denied = true
           ..ok = false
@@ -726,7 +726,7 @@ class ToolLoop {
   }
 
   static String _describe(ToolBinding b) =>
-      '${b.tool.description.isEmpty ? b.tool.name : _short(b.tool.description, 160)} (from ${b.serverName}${b.tool.readOnly ? '' : '; changes data, the user must approve'})';
+      '${b.tool.description.isEmpty ? b.tool.name : _short(b.tool.description, 160)} (from ${b.serverName}${b.tool.readOnly || b.tool.autoApprove ? '' : '; changes data, the user must approve'})';
 
   /// Same schema, with long property descriptions shortened and noise removed.
   static Object? compactSchema(Object? s) {

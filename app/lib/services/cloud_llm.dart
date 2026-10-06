@@ -148,7 +148,16 @@ class CloudLlm {
             'stream': true,
             'messages': [
               if (system.isNotEmpty) {'role': 'system', 'content': system},
-              for (final m in turns) m.toJson(),
+              for (final m in turns)
+                m.images.isEmpty
+                    ? m.toJson()
+                    : {
+                        'role': m.role,
+                        'content': [
+                          {'type': 'text', 'text': m.content},
+                          for (final i in m.images) {'type': 'image_url', 'image_url': {'url': 'data:${ChatMessage.mimeOf(i)};base64,$i'}},
+                        ],
+                      },
             ],
           });
       case CloudProvider.anthropic:
@@ -162,7 +171,18 @@ class CloudLlm {
             if (c.model.startsWith('claude-opus-5') || c.model.startsWith('claude-sonnet-5') || c.model.startsWith('claude-fable'))
               'output_config': {'effort': 'low'},
             if (system.isNotEmpty) 'system': system,
-            'messages': [for (final m in turns) m.toJson()],
+            'messages': [
+              for (final m in turns)
+                m.images.isEmpty
+                    ? m.toJson()
+                    : {
+                        'role': m.role,
+                        'content': [
+                          for (final i in m.images) {'type': 'image', 'source': {'type': 'base64', 'media_type': ChatMessage.mimeOf(i), 'data': i}},
+                          {'type': 'text', 'text': m.content},
+                        ],
+                      },
+            ],
           });
       case CloudProvider.google:
         req = http.Request('POST',
@@ -174,7 +194,10 @@ class CloudLlm {
               for (final m in turns)
                 {
                   'role': m.role == 'assistant' ? 'model' : 'user',
-                  'parts': [{'text': m.content}]
+                  'parts': [
+                    for (final i in m.images) {'inlineData': {'mimeType': ChatMessage.mimeOf(i), 'data': i}},
+                    {'text': m.content},
+                  ]
                 }
             ],
           });

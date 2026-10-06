@@ -60,17 +60,23 @@ class BuildJob {
   /// The website's look (see [siteStyles]); null = suggested from the request.
   String? style;
 
+  /// The business's own name, used for the app and its texts.
+  String businessName = '';
+
   List<PictureNotes> get notes => [for (final p in pictures) ?p.$2];
 }
 
 /// Runs the apps built in LocalAILine and builds new ones with the AI.
 class AppsManager extends ChangeNotifier {
-  AppsManager(this.db, this.mcp, {required this.ask, required this.visionModel, required this.log});
+  AppsManager(this.db, this.mcp, {required this.ask, required this.visionModel, required this.log, this.forgetServer});
   final Db db;
   final McpManager mcp;
   final AskModel ask;
   final Future<String?> Function() visionModel;
   final Future<void> Function(String) log;
+
+  /// Removes what Ava saved from a tool server (its searchable copy of the data).
+  final Future<void> Function(String serverName)? forgetServer;
   final _servers = <int, AppServer>{};
 
   /// What the AI is changing in an app right now (app id → message).
@@ -161,12 +167,16 @@ class AppsManager extends ChangeNotifier {
     await log('Stopped app ${(await app(id))?.name}');
   }
 
+  /// Deletes an app completely: stops it, and removes its data, pictures,
+  /// Ava's tools for it and anything Ava saved from it.
   Future<void> delete(int id) async {
     final name = (await app(id))?.name;
+    if (job?.appId == id) job = null;
     await _servers.remove(id)?.stop();
     for (final r in await _avaRows(id)) {
       await mcp.disconnect(r.id);
       await db.delete('mcp_servers', r.id);
+      await forgetServer?.call(r.name);
     }
     await db.raw.delete('app_rows', where: 'app_id = ?', whereArgs: [id]);
     await db.delete('apps', id);
@@ -262,7 +272,8 @@ class AppsManager extends ChangeNotifier {
   // ---------------- ready-made apps ----------------
 
   /// Makes an app from a template, with its example data, and starts it.
-  Future<int> createFromTemplate(AppTemplate t, {bool ava = true}) async {
+  /// [name], [phone] and [address] replace the template's made-up ones.
+  Future<int> createFromTemplate(AppTemplate t, {bool ava = true, String name = '', String phone = '', String address = ''}) async {
     final pics = <String, String?>{};
     final dir = Directory('${File(db.path).parent.path}/apps/_new_${DateTime.now().microsecondsSinceEpoch}')..createSync(recursive: true);
     // Sample photos, saved into the app (skipped without internet: tidy placeholders instead).
@@ -293,7 +304,15 @@ class AppsManager extends ChangeNotifier {
           ];
         }(),
     ]);
-    final spec = AppSpec.fromJson({...t.spec, 'site': site, 'features': {'website': true, 'ava': ava}});
+    if (phone.trim().isNotEmpty) site['phone'] = phone.trim();
+    if (address.trim().isNotEmpty) site['address'] = address.trim();
+    var raw = <String, dynamic>{...t.spec, 'site': site, 'features': {'website': true, 'ava': ava}};
+    // Their own name everywhere the sample name was (title, texts, footer).
+    final sample = t.spec['name'] as String;
+    if (name.trim().isNotEmpty && name.trim() != sample) {
+      raw = jsonDecode(jsonEncode(raw).replaceAll(sample, name.trim().replaceAll('"', "'"))) as Map<String, dynamic>;
+    }
+    final spec = AppSpec.fromJson(raw);
     final now = DateTime.now().millisecondsSinceEpoch;
     final id = await db.insert('apps', {
       'name': spec.name,
@@ -375,14 +394,14 @@ class AppsManager extends ChangeNotifier {
   }
 
   Future<void> askQuestions(BuildJob j) async {
-    if (await _busy(j, 'Reading what you want…', () async => j.questions = await builder.questions(j.request, j.notes))) {
+    if (await _busy(j, 'Reading what you want…', () async => j.questions = await builder.questions(j.businessName.isEmpty ? j.request : '${j.request}\n(The business is called ${j.businessName}.)', j.notes))) {
       j.stage = 'questions'; // also where the options are, even with no questions
       notifyListeners();
     }
   }
 
   Future<void> makePlan(BuildJob j) async {
-    if (await _busy(j, 'Making a plan…', () async => j.plan = await builder.plan(j.request, j.answers, j.features, j.notes, style: j.style ?? suggestStyle(j.request)))) {
+    if (await _busy(j, 'Making a plan…', () async => j.plan = await builder.plan(j.request, j.answers, j.features, j.notes, style: j.style ?? suggestStyle(j.request), name: j.businessName))) {
       j.stage = 'plan';
       notifyListeners();
     }

@@ -81,11 +81,13 @@ class _BuilderPageState extends State<BuilderPage> {
   String? creating;
 
   Future<void> _use(AppState s, AppTemplate t) async {
+    final d = await _askBusiness(context, t);
+    if (d == null) return;
     setState(() => creating = t.id);
     try {
-      final id = await s.apps.createFromTemplate(t);
+      final id = await s.apps.createFromTemplate(t, name: d.name, phone: d.phone, address: d.address);
       if (mounted) setState(() => openId = id);
-      s.toast('${t.name} is ready and running.');
+      s.toast('${d.name.isEmpty ? t.name : d.name} is ready and running.');
     } catch (e) {
       s.toast('Could not create it: $e');
     } finally {
@@ -122,6 +124,7 @@ class _BuilderPageState extends State<BuilderPage> {
         _RunControls(app: a),
         const SizedBox(width: 6),
         Btn('Open', small: true, kind: BtnKind.primary, onPressed: () => setState(() => openId = a.id)),
+        IconButton(tooltip: 'Delete this app', icon: const Icon(Icons.delete_outline, size: 19), onPressed: () => _deleteApp(context, s, a)),
       ]),
     );
   }
@@ -313,6 +316,7 @@ class _Wizard extends StatefulWidget {
 
 class _WizardState extends State<_Wizard> {
   late final request = TextEditingController(text: widget.job.request);
+  late final business = TextEditingController(text: widget.job.businessName);
   final change = TextEditingController();
   final answerCtrls = <String, TextEditingController>{};
 
@@ -367,6 +371,11 @@ class _WizardState extends State<_Wizard> {
   // ---- 1. describe ----
   Widget _describe(AppState s) => Panel(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Field(
+            label: 'Name of your business',
+            child: TextField(controller: business, decoration: const InputDecoration(hintText: 'e.g. Trattoria Bella'), onChanged: (v) => j.businessName = v.trim()),
+          ),
+          const SizedBox(height: 18),
           Text('What do you want?', style: displayStyle(context, 19)),
           const SizedBox(height: 4),
           const Muted('Say it in your own words: who uses it, what they can do, and what you, the manager, need to set.'),
@@ -807,6 +816,9 @@ class _AppDetailState extends State<_AppDetail> {
               const SizedBox(width: 6),
             ],
             _RunControls(app: a),
+            IconButton(tooltip: 'Delete this app', icon: const Icon(Icons.delete_outline), onPressed: () async {
+              if (await _deleteApp(context, s, a)) widget.onBack();
+            }),
           ]),
           const SizedBox(height: 16),
           _ChangeBox(app: a, busy: busy != null, onRun: (f) => _run(s, f)),
@@ -922,10 +934,8 @@ class _AppDetailState extends State<_AppDetail> {
           Row(children: [
             Muted('Your request: “${a.request.length > 140 ? '${a.request.substring(0, 140)}…' : a.request}”', size: 12),
             const Spacer(),
-            Btn('Delete app', kind: BtnKind.danger, small: true, onPressed: () async {
-              if (!await _confirm(context, 'Delete ${a.name} and all its data? This can’t be undone.')) return;
-              await s.apps.delete(a.id);
-              widget.onBack();
+            Btn('Delete app', kind: BtnKind.danger, small: true, icon: Icons.delete_forever_outlined, onPressed: () async {
+              if (await _deleteApp(context, s, a)) widget.onBack();
             }),
           ]),
         ]);
@@ -1018,6 +1028,64 @@ class _ChangeBoxState extends State<_ChangeBox> {
       ]),
     );
   }
+}
+
+/// Your business's name and contact details, put into a ready-made app.
+Future<({String name, String phone, String address})?> _askBusiness(BuildContext context, AppTemplate t) {
+  final site = (t.spec['site'] as Map?) ?? const {};
+  final name = TextEditingController(), phone = TextEditingController(), address = TextEditingController();
+  String? error;
+  return showDialog(
+    context: context,
+    builder: (d) => StatefulBuilder(
+      builder: (d, set) => AlertDialog(
+        title: Text('About your business', style: displayStyle(d, 20)),
+        content: SizedBox(
+          width: 460,
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Muted('Your ${t.name.toLowerCase()} app will use these everywhere — the website, the manager page and Ava. You can change them later.'),
+            const SizedBox(height: 14),
+            Field(label: 'Name of your business', child: TextField(controller: name, autofocus: true, decoration: InputDecoration(hintText: 'e.g. ${t.spec['name']}'))),
+            const SizedBox(height: 10),
+            Field(label: 'Phone (optional)', child: TextField(controller: phone, decoration: InputDecoration(hintText: '${site['phone'] ?? ''}'))),
+            const SizedBox(height: 10),
+            Field(label: 'Address (optional)', child: TextField(controller: address, decoration: InputDecoration(hintText: '${site['address'] ?? ''}'))),
+            if (error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error!, style: const TextStyle(color: LL.red, fontSize: 13))),
+          ]),
+        ),
+        actions: [
+          Btn('Cancel', onPressed: () => Navigator.pop(d)),
+          Btn('Create my app', kind: BtnKind.primary, onPressed: () {
+            if (name.text.trim().isEmpty) return set(() => error = 'Type the name of your business.');
+            Navigator.pop(d, (name: name.text.trim(), phone: phone.text.trim(), address: address.text.trim()));
+          }),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Asks clearly, then deletes the app and everything that belongs to it.
+Future<bool> _deleteApp(BuildContext context, AppState s, BuiltApp a) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (d) => AlertDialog(
+      title: Text('Delete ${a.name}?', style: displayStyle(d, 20)),
+      content: const SizedBox(
+        width: 440,
+        child: Text('This removes it completely: the website and manager page, all its records (orders, bookings…), '
+            'its uploaded pictures, and Ava’s tools for it. This can’t be undone.'),
+      ),
+      actions: [
+        Btn('Cancel', onPressed: () => Navigator.pop(d, false)),
+        Btn('Delete for good', kind: BtnKind.danger, icon: Icons.delete_forever_outlined, onPressed: () => Navigator.pop(d, true)),
+      ],
+    ),
+  );
+  if (ok != true) return false;
+  await s.apps.delete(a.id);
+  s.toast('${a.name} was deleted.');
+  return true;
 }
 
 Future<String?> _prompt(BuildContext context, String title, {String initial = '', String? hint}) {

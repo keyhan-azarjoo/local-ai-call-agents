@@ -8,6 +8,9 @@ import 'package:localailine/services/apps/app_builder.dart';
 import 'package:localailine/services/apps/app_data.dart';
 import 'package:localailine/services/apps/app_server.dart';
 import 'package:localailine/services/apps/app_spec.dart';
+import 'package:localailine/services/apps/app_templates.dart';
+import 'package:localailine/services/apps/apps_manager.dart';
+import 'package:localailine/services/mcp/mcp_manager.dart';
 import 'package:localailine/services/mcp/mcp_client.dart';
 import 'package:localailine/services/ollama.dart';
 
@@ -213,5 +216,33 @@ void main() {
     final m = ChatMessage('user', 'hi', images: ['iVBOR']);
     expect(ChatMessage.mimeOf(m.images.first), 'image/png');
     expect(ChatMessage.mimeOf('/9j/4AAQ'), 'image/jpeg');
+  });
+
+  test('template uses the business name; delete removes everything', () async {
+    final tmp = Directory.systemTemp.createTempSync('tpl_del');
+    final db = await Db.open(path: '${tmp.path}/t.db');
+    final forgotten = <String>[];
+    final apps = AppsManager(db, McpManager(db, openBrowser: (_) async {}), ask: (m, {json = false, model}) async => '{}', visionModel: () async => null, log: (_) async {}, forgetServer: (n) async => forgotten.add(n));
+    final t = AppTemplate('x', 'Restaurant', 'test', {...restaurant, 'name': 'Sample Diner', 'site': {'tagline': 'Welcome to Sample Diner', 'phone': '000'}}, {
+      'menu_items': [{'name': 'Soup', 'price': 5}],
+    });
+    final id = await apps.createFromTemplate(t, name: 'Luigi’s Place', phone: '0123 456');
+    final a = (await apps.app(id))!;
+    expect(a.name, 'Luigi’s Place');
+    expect(a.spec.site['tagline'], 'Welcome to Luigi’s Place');
+    expect(a.spec.site['phone'], '0123 456');
+    expect(await AppData(db, id, a.spec).count('menu_items'), 1);
+    expect((await http.get(Uri.parse('http://127.0.0.1:${a.port}/'))).statusCode, 200);
+    File('${apps.filesDir(id)}/x.jpg')..createSync(recursive: true)..writeAsStringSync('x');
+    expect((await db.all('mcp_servers')).length, 2);
+
+    await apps.delete(id);
+    expect(await apps.app(id), isNull);
+    expect(await db.count('app_rows', where: 'app_id = ?', args: [id]), 0);
+    expect(await db.count('mcp_servers'), 0);
+    expect(Directory(apps.filesDir(id)).parent.existsSync(), isFalse);
+    expect(forgotten, ['Luigi’s Place', 'Luigi’s Place (manager)']);
+    await expectLater(http.get(Uri.parse('http://127.0.0.1:${a.port}/')), throwsA(anything), reason: 'the website is gone');
+    await db.raw.close();
   });
 }

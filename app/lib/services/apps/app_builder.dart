@@ -156,15 +156,16 @@ class AppBuilder {
     return null;
   }
 
-  Future<AppSpec> plan(String request, Map<String, String> answers, Features features, List<PictureNotes> pics, {String style = 'modern'}) async {
+  Future<AppSpec> plan(String request, Map<String, String> answers, Features features, List<PictureNotes> pics, {String style = 'modern', String name = ''}) async {
     final qa = answers.entries.where((e) => e.value.trim().isNotEmpty).map((e) => 'Q: ${e.key}\nA: ${e.value}').join('\n');
     final j = await askJson(
-      'The user wants this app:\n"$request"\n${qa.isEmpty ? '' : '\nTheir answers:\n$qa\n'}${_pictures(pics)}\n'
+      'The user wants this app:\n"$request"\n${name.isEmpty ? '' : 'The business is called "$name": use that as the app name.\n'}${qa.isEmpty ? '' : '\nTheir answers:\n$qa\n'}${_pictures(pics)}\n'
       '${features.website ? '' : 'They don\'t want a website: make no pages ("pages":[]).\n'}'
       'Make a small plan. JSON:\n$_planFormat\n$_planRules',
       check: (j) => _checkPlan(j, features.website, '$request\n$qa'),
     );
-    return _fromPlan(j, features, pics, style: style);
+    final spec = _fromPlan(j, features, pics, style: style);
+    return name.isEmpty ? spec : spec.copyWith(name: name);
   }
 
   /// The plan again, changed the way the user asked.
@@ -270,7 +271,7 @@ class AppBuilder {
     final j = await askJson(
       'App plan:\n${spec.outline()}\n'
       'Now design the customer page "${p.id}" (${p.purpose}). JSON:\n${_blockFormat(spec)}\n'
-      'Rules: 2 to 5 blocks. Start with a "hero" block. Pages: ${spec.pages.map((x) => x.id).join(', ')}. Write warm, professional texts for customers, in the language the user wrote in.'
+      'Rules: 2 to 5 blocks. Start with a "hero" block. The business is called "${spec.name}". Pages: ${spec.pages.map((x) => x.id).join(', ')}. Write warm, professional texts for customers, in the language the user wrote in.'
       '${needForm ? ' This page must have a "form" block for ${adds.map((t) => '"${t.id}"').join(' or ')}.' : ''}',
       check: (j) {
         final base = _checkBlocks(j);

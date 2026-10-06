@@ -380,6 +380,15 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Removes the searchable copy of a server's lists (made by [snapshotMcp]).
+  Future<void> forgetMcpData(String serverName) async {
+    final dir = Directory('${File(db.path).parent.path}/mcp/${serverName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-')}');
+    for (final k in await db.all('knowledge', where: 'path = ?', args: [dir.path])) {
+      await knowledge.removeSource(k['id'] as int);
+    }
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  }
+
   /// Chats from before this feature: save them into memory once.
   Future<void> backfillMemory() async {
     final dir = await memoryDir();
@@ -855,7 +864,7 @@ class AppState extends ChangeNotifier {
     speech = await Speech.create();
     mcp = McpManager(db, openBrowser: (u) => openBrowser(u))..addListener(notifyListeners);
     knowledge = KnowledgeService(db)..addListener(notifyListeners);
-    apps = AppsManager(db, mcp, ask: askWhole, visionModel: visionModel, log: log)..addListener(notifyListeners);
+    apps = AppsManager(db, mcp, ask: askWhole, visionModel: visionModel, log: log, forgetServer: forgetMcpData)..addListener(notifyListeners);
     if (!isPhone) {
       unawaited(apps.restore());
       unawaited(knowledge.start());

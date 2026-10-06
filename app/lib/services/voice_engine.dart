@@ -311,12 +311,28 @@ class VoiceEngine extends ChangeNotifier {
       }
       _pidFile.deleteSync();
     }
-    // Any voice agent of ours still running (e.g. the app was force-quit): it would keep
-    // old code and hold the agent's port, so the new one couldn't start.
-    if (!Platform.isWindows) Process.runSync('pkill', ['-f', script]);
+    // Any engine part of ours still running (e.g. the app was force-quit): it would keep old
+    // code, hold ports and memory, and the new one couldn't start.
+    if (!Platform.isWindows) {
+      for (final pattern in [
+        script,
+        'whisper-server .*--port $whisperPort',
+        'whisper-server .*--port $accuratePort',
+        'livekit-server --config ${p.join(dataDir, 'livekit.yaml')}',
+        'redis-server .*:$redisPort',
+        p.join(dataDir, 'bin', 'livekit-sip'),
+        bridgeBinary,
+      ]) {
+        Process.runSync('pkill', ['-f', pattern]);
+      }
+    }
   }
 
-  Future<void> start() async {
+  /// One start at a time (live voice and incoming calls may both ask for it).
+  Future<void>? _starting;
+  Future<void> start() => _starting ??= _start().whenComplete(() => _starting = null);
+
+  Future<void> _start() async {
     problem = null;
     _killStale();
     if (_procs.isEmpty) {

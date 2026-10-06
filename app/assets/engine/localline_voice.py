@@ -465,15 +465,24 @@ class PiperTTS(tts.TTS):
     def provider(self) -> str:
         return "local"
 
+    # The voice of the agent on the call now (set when the call is passed to a teammate).
+    voice_override: str | None = None
+
+    def _override_for(self, lang: str) -> str | None:
+        v = self.voice_override
+        return v if v and voice_language(v) == lang else None
+
     def voice_for(self, lang: str):
         lang = lang if lang in PIPER_VOICES else "en"
-        choice = VOICE_CHOICE.get(lang)
-        if choice and not choice.startswith("kokoro:"):
-            PIPER_VOICES[lang] = choice
-        if lang not in self._voices:
+        choice = self._override_for(lang) or VOICE_CHOICE.get(lang)
+        name = choice if choice and not choice.startswith("kokoro:") else PIPER_VOICES[lang]
+        if name not in self._voices:
+            saved = PIPER_VOICES[lang]
+            PIPER_VOICES[lang] = name
             path = ensure_piper_voice(lang) or ensure_piper_voice("en")
-            self._voices[lang] = self._PiperVoice.load(str(path))
-        return self._voices[lang]
+            PIPER_VOICES[lang] = saved
+            self._voices[name] = self._PiperVoice.load(str(path))
+        return self._voices[name]
 
     def current_language(self) -> str:
         if self._language != "auto":
@@ -482,7 +491,7 @@ class PiperTTS(tts.TTS):
 
     def kokoro_voice(self, lang: str) -> str | None:
         """The natural (Kokoro) voice for this language, if there is one and it's chosen."""
-        choice = VOICE_CHOICE.get(lang)
+        choice = self._override_for(lang) or VOICE_CHOICE.get(lang)
         if choice and not choice.startswith("kokoro:"):
             return None  # a Piper voice was chosen
         if not (KOKORO_DIR / "kokoro-v1.0.onnx").exists():
@@ -662,20 +671,31 @@ class _KokoroChunked(tts.ChunkedStream):
 
 # ----------------------------------------------------------------------------- the call
 
+def voice_language(v: str) -> str:
+    """The language a voice speaks ("kokoro:bf_emma" → en, "fa_IR-gyro-medium" → fa)."""
+    if v.startswith("kokoro:"):
+        return {"a": "en", "b": "en", "e": "es", "f": "fr", "i": "it", "p": "pt", "z": "zh", "j": "ja", "h": "hi"}.get(v[7:8], "en")
+    return v.split("_")[0]
+
+
 class AppLLM(openai.LLM):
     """The LocalAILine app as the brain. The model name carries the call mode and the
     language the caller is speaking right now ("caller:fa"), so the app answers in it."""
 
-    def __init__(self, *, mode: str, stt_: WhisperStreamingSTT, **kw):  # noqa: ANN003
+    def __init__(self, *, mode: str, stt_: WhisperStreamingSTT, room: str = "", **kw):  # noqa: ANN003
         super().__init__(model=mode, **kw)
-        self._mode, self._stt = mode, stt_
+        self._mode, self._stt, self._room = mode, stt_, room
 
     def chat(self, **kw):  # noqa: ANN003, ANN201
-        self._opts.model = f"{self._mode}:{self._stt.detected_language}"
+        # mode:language:room — the room tells the app which call (and which agent is on it).
+        self._opts.model = f"{self._mode}:{self._stt.detected_language}:{self._room}"
         return super().chat(**kw)
 
 
 _HANGUP = _re.compile(r"\s*\[hangup\]\s*", _re.IGNORECASE)
+_FAREWELL = _re.compile(r"\b(bye|goodbye|good-bye|take care|have a (great|good|nice|lovely)|see you|thanks for calling|thank you for calling)\b|خداحافظ|با تشکر از تماس|وداعا|adiós|au revoir|tschüss|auf wiedersehen|ciao", _re.IGNORECASE)
+_CONNECT = _re.compile(r"\s*\[connect:([^\]]*)\]\s*", _re.IGNORECASE)
+_VOICE = _re.compile(r"\s*\[voice:([^\]]*)\]\s*", _re.IGNORECASE)
 _SENTENCE_END = _re.compile(r"[.!?؟。…](?=\s)")
 
 
@@ -687,11 +707,24 @@ class Ava(Agent):
     waiting = None
     # The model ends its last reply with [hangup] when the call is over.
     hangup_requested = False
+    # Set when the call is being passed to a real person (agent id).
+    connect_requested: str | None = None
 
     def _strip_hangup(self, t: str) -> str:
         if "[hangup]" in t.lower():
-            self.hangup_requested = True
-            return _HANGUP.sub("", t)
+            # Only a real goodbye ends the call (the model sometimes adds the marker too early).
+            self.hangup_requested = bool(_FAREWELL.search(t))
+            t = _HANGUP.sub("", t)
+        c = _CONNECT.search(t)
+        if c:
+            self.connect_requested = c.group(1)
+            t = _CONNECT.sub(" ", t)
+        m = _VOICE.search(t)
+        if m:
+            # The call was passed to a teammate: their voice from here on.
+            v = m.group(1).strip()
+            self.session.tts.voice_override = None if v in ("", "default", "null") else v
+            t = _VOICE.sub(" ", t)
         return t
 
     async def transcription_node(self, text, model_settings):  # noqa: ANN001, ANN201
@@ -759,11 +792,11 @@ class Ava(Agent):
             reader.cancel()
 
 
-def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool = False) -> AgentSession:
+def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool = False, room: str = "") -> AgentSession:
     llm = (AppLLM if os.environ.get("LL_APP_URL") else openai.LLM)(
         base_url=os.environ.get("LL_LLM_BASE", "http://127.0.0.1:11434/v1"),
         api_key=os.environ.get("LL_LLM_KEY", "local"),
-        **({"mode": model, "stt_": stt_} if os.environ.get("LL_APP_URL") else {"model": model}),
+        **({"mode": model, "stt_": stt_, "room": room} if os.environ.get("LL_APP_URL") else {"model": model}),
         temperature=0.5,
         timeout=httpx.Timeout(120.0, connect=5.0),
         max_retries=0,
@@ -826,7 +859,9 @@ async def entrypoint(ctx: JobContext) -> None:
     # On a phone call the far end cancels its own echo; Ava's voice isn't in the room.
     stt_.echo_check = not phone_call
     model = mode if os.environ.get("LL_APP_URL") else os.environ.get("LL_LLM_MODEL", "qwen3:4b-instruct")
-    session = build_session(stt_, vad, model, phone_call=ctx.room.name.startswith("pstn"))
+    session = build_session(stt_, vad, model, phone_call=ctx.room.name.startswith("pstn"), room=ctx.room.name)
+    if cfg.get("agentVoice"):
+        session.tts.voice_override = cfg["agentVoice"]
     session.tts._language = language  # noqa: SLF001
     lang = language if language != "auto" else "en"
 
@@ -958,6 +993,50 @@ async def entrypoint(ctx: JobContext) -> None:
             asyncio.create_task(hang_up())
 
     session.on("agent_state_changed", maybe_hang_up)
+
+    async def connect_person() -> None:
+        """Hold music while a person is rung into this call; brief them, then step out."""
+        hold = background.play(AudioConfig(BuiltinAudioClip.HOLD_MUSIC, volume=0.5), loop=True)
+        try:
+            async with aiohttp.ClientSession() as h:
+                async with h.get(f"{os.environ['LL_APP_URL']}/api/connect", params={"room": ctx.room.name},
+                                 headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=90)) as r:
+                    res = await r.json(content_type=None)
+        except Exception as e:  # noqa: BLE001
+            res = {"ok": False}
+            log.warning("connecting a person failed: %s", e)
+        hold.stop()
+        if res.get("ok"):
+            await session.say(res.get("say") or "Connecting you now.", allow_interruptions=False)
+            log.info("person connected; leaving the call to them")
+            session.input.set_audio_enabled(False)
+            await asyncio.sleep(0.5)
+            ctx.shutdown("passed to a person")  # the caller and the person stay connected
+        else:
+            who = res.get("name") or "they"
+            session.say(f"Sorry, {who} isn't available right now. Can I take a message, or help with anything else?", allow_interruptions=True)
+
+    def maybe_connect(ev) -> None:  # noqa: ANN001
+        if phone_call and ava.connect_requested and ev.old_state == "speaking" and ev.new_state != "speaking":
+            ava.connect_requested = None
+            asyncio.create_task(connect_person())
+
+    session.on("agent_state_changed", maybe_connect)
+
+    # Several calls at once, up to the limit set in the app; beyond it, callers hear "busy".
+    if phone_call and os.environ.get("LL_APP_URL"):
+        try:
+            async with aiohttp.ClientSession() as h:
+                async with h.get(f"{os.environ['LL_APP_URL']}/api/call-slot", params={"room": ctx.room.name},
+                                 headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                    slot = await r.json(content_type=None)
+            if not slot.get("ok", True):
+                await session.say("Sorry, all our lines are busy right now. Please call back in a few minutes. Goodbye.", allow_interruptions=False)
+                await asyncio.sleep(0.5)
+                await hang_up()
+                return
+        except Exception as e:  # noqa: BLE001
+            log.warning("call slot check failed: %s", e)
 
     if mode.startswith("outbound#"):
         # Wait until they pick up (the phone is still ringing until then).

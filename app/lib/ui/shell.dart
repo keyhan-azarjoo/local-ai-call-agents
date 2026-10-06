@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import '../theme/tokens.dart';
 import 'auth_pages.dart' show Brand;
 import 'pages/admin_pages.dart';
+import 'pages/call_flow_page.dart';
 import 'pages/builder_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/engine_pages.dart';
@@ -48,7 +49,7 @@ Widget pageFor(PageId p) => switch (p) {
       PageId.builder => const BuilderPage(),
       PageId.lines => const LinesPage(),
       PageId.settings => const SettingsPage(),
-      PageId.agents => const AgentsPage(),
+      PageId.agents => const CallFlowPage(),
       PageId.automations => const AutomationsPage(),
       PageId.contacts => const ContactsPage(),
       PageId.knowledge => const KnowledgePage(),

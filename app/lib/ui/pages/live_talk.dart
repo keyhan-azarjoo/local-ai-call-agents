@@ -484,7 +484,7 @@ class _VoiceEnginePanelState extends State<VoiceEnginePanel> {
       PartState.missing => 'not installed',
       PartState.stopped => 'off',
     };
-    const names = {EnginePart.redis: 'Phone link (Redis)', EnginePart.sip: 'Phone calls (SIP)', EnginePart.livekit: 'Live audio (LiveKit)', EnginePart.whisper: 'Hearing (Whisper)', EnginePart.accurate: 'Hearing, more languages', EnginePart.agent: 'Voice agent'};
+    const names = {EnginePart.redis: 'Phone link (Redis)', EnginePart.sip: 'Phone calls (SIP)', EnginePart.bridge: 'Incoming calls (Twilio sign-in)', EnginePart.livekit: 'Live audio (LiveKit)', EnginePart.whisper: 'Hearing (Whisper)', EnginePart.accurate: 'Hearing, more languages', EnginePart.agent: 'Voice agent'};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

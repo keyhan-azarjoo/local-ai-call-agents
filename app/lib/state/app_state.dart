@@ -632,24 +632,34 @@ class AppState extends ChangeNotifier {
     try {
       if (on) {
         cfg = await phone!.ensureTwilioTrunk(cfg) ?? cfg;
-        final ip = await Phone.publicIp();
-        if (ip == null) return 'Couldn’t find this network’s public address. Check the internet connection.';
-        cfg = await phone!.enableInbound(cfg, publicIp: ip);
+        if (!File(voice!.bridgeBinary).existsSync()) await _installBridge();
+        cfg = await phone!.enableInbound(cfg);
         await db.update('lines', lineId, {'config': jsonEncode(cfg)});
         if (!voice!.phoneReady) await startVoice();
-        if (voice!.phoneReady) await phone!.ensureInbound(cfg);
+        await _restoreInbound();
         await log('Calls to ${cfg['number']} now come to this computer');
         refresh();
-        return 'Calls to ${cfg['number']} now come here. If this computer can’t be reached, they still go to the previous setup.';
+        return voice!.state[EnginePart.bridge] == PartState.running
+            ? 'Calls to ${cfg['number']} now come to Ava on this computer.'
+            : 'Calls to ${cfg['number']} are set to come here, but this computer couldn’t sign in to Twilio yet. See Settings → Voice.';
       }
       cfg = await phone!.disableInbound(cfg);
       await db.update('lines', lineId, {'config': jsonEncode(cfg)});
+      await voice!.stopBridge();
       await log('Calls to ${cfg['number']} go back to the previous setup');
       refresh();
       return 'Calls to ${cfg['number']} go to the previous setup again.';
     } catch (e) {
       return '$e';
     }
+  }
+
+  Future<void> _installBridge() async {
+    final files = <String, String>{};
+    for (final f in ['main.go', 'go.mod', 'go.sum']) {
+      files[f] = await rootBundle.loadString('assets/engine/sipreg/$f');
+    }
+    await voice!.installBridge(files: files);
   }
 
   /// After the engine starts: lines that answer here get their LiveKit side again.
@@ -660,11 +670,7 @@ class AppState extends ChangeNotifier {
       if (cfg['inbound'] == true) {
         try {
           await phone!.ensureInbound(cfg);
-          // The public address can change (new router, ISP): keep Twilio pointing here.
-          final ip = await Phone.publicIp();
-          if (ip != null && ip != cfg['publicIp']) {
-            await db.update('lines', l['id'] as int, {'config': jsonEncode(await phone!.enableInbound(cfg, publicIp: ip))});
-          }
+          await voice!.startBridge(Phone.bridgeEnv(cfg));
         } catch (e) {
           await log('Couldn’t set up incoming calls for ${cfg['number']}: $e');
         }
@@ -995,7 +1001,7 @@ class AppState extends ChangeNotifier {
     // Lines that answer calls here need the voice engine running from the start.
     unawaited(() async {
       final lines = await db.all('lines', where: "provider = 'twilio'", orderBy: 'id');
-      if (lines.any((l) => '${l['config']}'.contains('"inbound":true'))) await startVoice();
+      if (lines.any((l) => RegExp(r'"inbound":\s*true').hasMatch('${l['config']}'))) await startVoice();
     }());
     AppLifecycleListener(
       onExitRequested: () async {

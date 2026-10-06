@@ -436,7 +436,7 @@ class VoiceEnginePanel extends StatefulWidget {
 
 class _VoiceEnginePanelState extends State<VoiceEnginePanel> {
   List<String>? missing;
-  bool installing = false;
+  bool installing = false, phoneMissing = false;
 
   @override
   void initState() {
@@ -448,7 +448,13 @@ class _VoiceEnginePanelState extends State<VoiceEnginePanel> {
     final v = context.read<AppState>().voice;
     if (v == null) return;
     final m = await v.missing();
-    if (mounted) setState(() => missing = m);
+    final noPhone = await v.sipBinary() == null;
+    if (mounted) {
+      setState(() {
+        missing = m;
+        phoneMissing = noPhone;
+      });
+    }
   }
 
   Future<void> _install() async {
@@ -477,7 +483,7 @@ class _VoiceEnginePanelState extends State<VoiceEnginePanel> {
       PartState.missing => 'not installed',
       PartState.stopped => 'off',
     };
-    const names = {EnginePart.livekit: 'Live audio (LiveKit)', EnginePart.whisper: 'Hearing (Whisper)', EnginePart.accurate: 'Hearing, more languages', EnginePart.agent: 'Voice agent'};
+    const names = {EnginePart.redis: 'Phone link (Redis)', EnginePart.sip: 'Phone calls (SIP)', EnginePart.livekit: 'Live audio (LiveKit)', EnginePart.whisper: 'Hearing (Whisper)', EnginePart.accurate: 'Hearing, more languages', EnginePart.agent: 'Voice agent'};
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -508,6 +514,20 @@ class _VoiceEnginePanelState extends State<VoiceEnginePanel> {
           children: [
             if (missing != null && missing!.any((m) => m.startsWith('the voice engine')))
               Btn(installing ? 'Installing…' : 'Install live voice', kind: BtnKind.primary, small: true, onPressed: installing ? null : _install),
+            if (phoneMissing)
+              Btn(installing ? 'Installing…' : 'Install phone calling', small: true, onPressed: installing ? null : () async {
+                final app = context.read<AppState>();
+                setState(() => installing = true);
+                try {
+                  await v.installPhone();
+                  app.toast('Phone calling is installed. Restart live voice to use it.');
+                } catch (e) {
+                  app.toast('$e');
+                } finally {
+                  if (mounted) setState(() => installing = false);
+                  _check();
+                }
+              }),
             if (v.ready) Btn('Stop', small: true, onPressed: v.stop) else Btn('Start', small: true, onPressed: missing?.isEmpty == true ? s.startVoice : null),
           ],
         ),

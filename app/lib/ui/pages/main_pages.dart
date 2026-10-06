@@ -301,10 +301,11 @@ class _OutboundPageState extends State<OutboundPage> {
     }
   }
 
-  Future<void> _save(String status) async {
+  Future<int?> _save(String status) async {
     final s = context.read<AppState>();
     if (number.text.trim().isEmpty || goal.text.trim().isEmpty) {
-      return s.toast('Add a phone number and a goal.');
+      s.toast('Add a phone number and a goal.');
+      return null;
     }
     final row = {
       'to_name': who.text.trim(),
@@ -317,10 +318,12 @@ class _OutboundPageState extends State<OutboundPage> {
       'status': status,
       'created_at': DateTime.now().millisecondsSinceEpoch,
     };
+    final int id;
     if (editingId != null) {
-      await s.db.update('call_tasks', editingId!, row);
+      id = editingId!;
+      await s.db.update('call_tasks', id, row);
     } else {
-      await s.db.insert('call_tasks', row);
+      id = await s.db.insert('call_tasks', row);
     }
     await s.log('${status == 'queued' ? 'Queued' : 'Saved'} a call to ${who.text.isEmpty ? number.text : who.text}');
     setState(() {
@@ -330,17 +333,19 @@ class _OutboundPageState extends State<OutboundPage> {
       }
     });
     s.refresh();
+    return id;
   }
 
   Future<void> _start() async {
     final s = context.read<AppState>();
-    final lines = await s.db.count('lines', where: "status = 'connected'");
+    // Calls go out on a Twilio line (other line types can't dial out yet).
+    final lines = await s.db.count('lines', where: "provider = 'twilio'");
     if (lines == 0 && mounted) {
       final go = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
           title: Text('Connect a phone line to call', style: displayStyle(c, 20)),
-          content: const Text('Ava calls from your own number. Add a phone line first. Your call will wait in the queue and start once a line is connected.'),
+          content: const Text('Ava calls from your own number. Add a Twilio phone line first. Your call will wait in the queue until then.'),
           actions: [
             Btn('Keep in queue', onPressed: () => Navigator.pop(c, false)),
             Btn('Connect a line', kind: BtnKind.primary, onPressed: () => Navigator.pop(c, true)),
@@ -351,8 +356,10 @@ class _OutboundPageState extends State<OutboundPage> {
       if (go == true) s.go(PageId.lines);
       return;
     }
-    await _save('queued');
-    s.toast('Call queued.');
+    final id = await _save('queued');
+    if (id == null) return;
+    s.toast('Calling…');
+    await s.placeCall(id);
   }
 
   @override
@@ -427,9 +434,34 @@ class _OutboundPageState extends State<OutboundPage> {
                 last: t == tasks.last,
                 leading: const LogoBox(child: Icon(Icons.phone_forwarded_outlined)),
                 title: Text((t['to_name'] as String?)?.isNotEmpty == true ? t['to_name'] as String : t['number'] as String),
-                subtitle: Muted('${t['number']} · ${(t['goal'] as String).split('\n').first}'),
+                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Muted('${t['number']} · ${(t['goal'] as String).split('\n').first}'),
+                  if ('${t['result'] ?? ''}'.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('${t['result']}', style: TextStyle(fontSize: 13, color: t['status'] == 'failed' ? LL.red : null)),
+                    ),
+                ]),
                 trailing: Wrap(spacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  Pill(t['status'] == 'queued' ? 'Waiting for phone line' : 'Saved', tone: t['status'] == 'queued' ? Tone.amber : Tone.neutral),
+                  Pill(
+                    switch (t['status']) {
+                      'calling' => 'Calling…',
+                      'done' => 'Done',
+                      'no_answer' => 'No answer',
+                      'failed' => 'Didn’t go through',
+                      'queued' => 'Waiting',
+                      _ => 'Saved',
+                    },
+                    tone: switch (t['status']) {
+                      'calling' => Tone.amber,
+                      'done' => Tone.green,
+                      'failed' => Tone.red,
+                      _ => Tone.neutral,
+                    },
+                  ),
+                  if (t['status'] != 'calling')
+                    Btn(t['status'] == 'done' ? 'Call again' : (t['status'] == 'failed' || t['status'] == 'no_answer' ? 'Try again' : 'Call now'),
+                        small: true, icon: Icons.call, onPressed: () => s.placeCall(t['id'] as int)),
                   Btn('', icon: Icons.delete_outline, small: true, kind: BtnKind.ghost, onPressed: () async {
                     await s.db.delete('call_tasks', t['id'] as int);
                     s.refresh();

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:localailine/services/phone.dart';
 import 'package:localailine/services/voice_engine.dart';
 import 'package:localailine/state/app_state.dart';
 
@@ -39,5 +40,12 @@ void main() {
       }
     }
     expect(said.toString().trim(), 'Our dishes without nuts are: Tomato soup. Halloumi fries. Hummus. That’s all.');
+  });
+
+  test('phone numbers in international form', () {
+    expect(Phone.e164('07700 900124'), '07700 900124');
+    expect(Phone.e164('07700 900124', lineNumber: '+441234988088'), '07700 900124');
+    expect(Phone.e164('(415) 555-0100', lineNumber: '+16065432628'), '+14155550100');
+    expect(Phone.e164('07700 900124'), '07700 900124');
   });
 }

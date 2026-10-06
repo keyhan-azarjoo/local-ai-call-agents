@@ -42,7 +42,7 @@ enum PageId {
   lines('Phone line'),
   settings('Settings'),
   // Shown with "Show all features":
-  agents('Agents'),
+  agents('Call flow'),
   automations('Automations & loops'),
   contacts('Contacts & rules'),
   knowledge('Knowledge'),
@@ -64,7 +64,7 @@ const simplePages = [PageId.home, PageId.chat, PageId.talk, PageId.calls, PageId
 
 /// "Show all features" adds tabs inside these pages; the menu never grows.
 const hubTabs = <PageId, List<(PageId, String)>>{
-  PageId.assistant: [(PageId.assistant, 'Ava'), (PageId.agents, 'Agents'), (PageId.skills, 'Skills'), (PageId.knowledge, 'Knowledge'), (PageId.tools, 'Tools'), (PageId.automations, 'Automations')],
+  PageId.assistant: [(PageId.assistant, 'Ava'), (PageId.agents, 'Call flow'), (PageId.skills, 'Skills'), (PageId.knowledge, 'Knowledge'), (PageId.tools, 'Tools'), (PageId.automations, 'Automations')],
   PageId.lines: [(PageId.lines, 'Lines'), (PageId.contacts, 'Contacts & rules'), (PageId.voiceServer, 'Voice server'), (PageId.devices, 'Paired devices')],
   PageId.settings: [
     (PageId.settings, 'General'),
@@ -402,10 +402,11 @@ class AppState extends ChangeNotifier {
   }
 
   /// Tools the AI may use. [scopes]: 'me' (owner), 'contacts', 'all' (any caller).
-  Future<List<ToolBinding>> toolsFor(Set<String> scopes) async {
+  Future<List<ToolBinding>> toolsFor(Set<String> scopes, {AgentAccess? access}) async {
     final out = <ToolBinding>[];
     for (final srv in await mcp.servers()) {
       if (!srv.enabled || !scopes.contains(srv.scope)) continue;
+      if (access?.tools != null && !access!.tools!.contains(srv.id)) continue;
       for (final t in srv.tools) {
         out.add(ToolBinding(serverId: srv.id, serverName: srv.name, tool: t, fnName: ToolBinding.safeName(srv.name, t.name)));
       }
@@ -437,19 +438,31 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<ChatMessage>> prepare(List<ChatMessage> messages, {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile, String? model}) async {
+  Future<List<ChatMessage>> prepare(List<ChatMessage> messages, {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile, String? model, AgentAccess? access}) async {
     final extra = <String>[];
-    final skills = await db.all('skills', where: "enabled = 1 AND instructions IS NOT NULL AND instructions != ''", orderBy: 'id');
+    final skills = [
+      for (final k in await db.all('skills', where: "enabled = 1 AND instructions IS NOT NULL AND instructions != ''", orderBy: 'id'))
+        if (access?.skills == null || access!.skills!.contains(k['id'])) k,
+    ];
     if (skills.isNotEmpty) {
       extra.add('Skills you have (follow them when relevant):\n${skills.map((k) => '## ${k['name']}\n${k['instructions']}').join('\n\n')}');
     }
-    final disabledSkillSources = {for (final k in await db.all('skills', where: 'enabled = 0 AND source_id IS NOT NULL')) k['source_id'] as int};
+    final disabledSkillSources = {
+      for (final k in await db.all('skills', where: 'source_id IS NOT NULL'))
+        if (k['enabled'] == 0 || (access?.skills != null && !access!.skills!.contains(k['id']))) k['source_id'] as int,
+    };
+    // An agent limited to some connected systems only sees those systems' data snapshots.
+    final allowedSnapshots = access?.tools == null ? null : {for (final m in await db.all('mcp_servers', orderBy: 'id')) if (access!.tools!.contains(m['id'])) 'MCP: ${m['name']}'};
     final users = messages.where((m) => m.role == 'user').toList();
     // Past conversations only when the question is about the past; data questions use live tools.
     final recall = users.isNotEmpty && RegExp(r'\b(before|earlier|last time|previous|remember|we (talked|discussed|said|found)|you (said|told))\b', caseSensitive: false).hasMatch(users.last.content);
     final sources = {
       for (final k in await db.all('knowledge'))
-        if (scopes.contains(k['scope']) && !disabledSkillSources.contains(k['id']) && (recall || k['name'] != 'Past conversations')) k['id'] as int,
+        if (scopes.contains(k['scope']) &&
+            !disabledSkillSources.contains(k['id']) &&
+            (recall || k['name'] != 'Past conversations') &&
+            ('${k['name']}'.startsWith('MCP: ') ? (allowedSnapshots == null || allowedSnapshots.contains(k['name'])) : (access?.docs == null || access!.docs!.contains(k['id']) || access.skillDocs.contains(k['id']))))
+          k['id'] as int,
     };
     String? notes;
     if (sources.isNotEmpty && users.isNotEmpty) {
@@ -544,14 +557,15 @@ class AppState extends ChangeNotifier {
     bool Function()? cancelled,
     ModelTarget? target,
     bool useTools = true,
+    AgentAccess? access,
   }) async {
     void check() {
       if (cancelled?.call() ?? false) throw const Cancelled();
     }
 
     // Some models (e.g. the multilingual one) can't use tools well: they answer from documents and data snapshots.
-    final tools = useTools ? await toolsFor(scopes) : <ToolBinding>[];
-    messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile, model: target is LocalTarget ? target.model : null);
+    final tools = useTools ? await toolsFor(scopes, access: access) : <ToolBinding>[];
+    messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile, model: target is LocalTarget ? target.model : null, access: access);
     // Find tools by meaning too (typos, other words), using the local embedding model.
     var preferred = <ToolBinding>[];
     final question = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
@@ -710,9 +724,29 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Calls going on right now (room → started), for the "how many at once" limit.
+  final _activeCalls = <String, DateTime>{};
+  int get activeCalls => _activeCalls.length;
+
+  /// A sensible default for how many calls this computer handles at once: each call needs its
+  /// own share of memory (voice, hearing) and the AI answers them in turn.
+  int get defaultMaxCalls {
+    final ram = hardware?.ramGb ?? 8;
+    return ((ram - 8) / 4).floor().clamp(1, 16);
+  }
+
+  Future<int> maxCalls() async => int.tryParse(await db.setting('calls.max') ?? '') ?? defaultMaxCalls;
+
+  Future<void> setMaxCalls(int n) async {
+    await db.setSetting('calls.max', '${n.clamp(1, 200)}');
+    notifyListeners();
+  }
+
   /// The voice agent reports a finished phone call: keep it in Calls and report back on the task.
   Future<void> _callEnded(Map<String, dynamic> b) async {
     final room = '${b['room'] ?? ''}';
+    _activeCalls.remove(room);
+    _onCall.remove(room);
     final turns = [for (final t in (b['transcript'] as List? ?? []).cast<Map>()) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': '${t['text']}'}];
     final answered = turns.any((t) => t['who'] == 'them');
     final pickedUp = b['answered'] == true;
@@ -1080,14 +1114,103 @@ class AppState extends ChangeNotifier {
   /// "caller" = someone calling in; "owner" = you giving instructions.
   Set<String> _voiceScopes(String mode) => mode == 'owner' ? {'me', 'contacts', 'all'} : {'all'};
 
+  // ---------------- Call flow: several agents, passing the call with a brief ----------------
+
+  /// Who is on each call now (room → agent id) and what they were told when it was passed over.
+  final _onCall = <String, ({int agentId, String brief, String from})>{};
+
+  /// The agents a call can be passed between: the one answering calls, and those set up for hand-offs.
+  Future<List<Map<String, Object?>>> callTeam() async => db.all('agents', where: "enabled = 1 AND handles IN ('incoming', 'handoff', 'human')", orderBy: 'id');
+
+  Future<AgentAccess?> accessOf(Map<String, Object?> agent) async {
+    final skillSource = {for (final k in await db.all('skills', where: 'source_id IS NOT NULL')) k['id'] as int: k['source_id'] as int};
+    return AgentAccess.parse(agent['access'] as String?, skillSource: skillSource);
+  }
+
+  /// The agent on this call, and the extra instructions for passing it on.
+  Future<({Map<String, Object?> agent, String team, String brief, List<Map<String, Object?>> others})?> _callAgent(String room, String mode) async {
+    if (mode == 'owner') return null;
+    final team = await callTeam();
+    if (team.isEmpty) return null;
+    final now = _onCall[room];
+    final agent = team.where((a) => a['id'] == now?.agentId).firstOrNull ??
+        (mode.startsWith('outbound#') ? null : team.firstWhere((a) => a['handles'] == 'incoming', orElse: () => team.first));
+    if (agent == null) return null;
+    // Who this agent may pass calls to: the links drawn in the call flow (or everyone, if none drawn).
+    final links = (() {
+      try {
+        final l = (jsonDecode('${agent['access'] ?? '{}'}') as Map)['passTo'];
+        return l is List ? {for (final v in l) (v as num).toInt()} : null;
+      } catch (_) {
+        return null;
+      }
+    })();
+    final others = [
+      for (final a in team)
+        if (a['id'] != agent['id'] && (links == null ? ('${a['transfer_when'] ?? ''}'.trim().isNotEmpty || a['handles'] == 'incoming') : links.contains(a['id']))) a,
+    ];
+    final teamText = others.isEmpty
+        ? ''
+        : ' Your team on this call:\n${others.map((a) => '- ${a['name']}${a['handles'] == 'human' ? ' (a person)' : ''}: ${a['handles'] == 'incoming' && '${a['transfer_when'] ?? ''}'.isEmpty ? 'the main assistant (anything else)' : a['transfer_when']}').join('\n')}\n'
+            'When what the caller wants is a teammate’s job, do not handle it yourself and do not ask them questions: reply with ONLY one short sentence '
+            'saying you are passing them to that teammate, followed by [transfer:Name|one-line brief: who the caller is, what they want, details so far]. '
+            'People marked (a person) are real people: pass to them only when the caller asks for a person or it’s beyond you.';
+    final brief = now == null || now.brief.isEmpty ? '' : ' You have just been passed this call by ${now.from}. Their brief: ${now.brief}';
+    return (agent: agent, team: teamText, brief: brief, others: others);
+  }
+
+  final _pendingConnect = <String, ({int agentId, String brief, String from})>{};
+
+  /// Rings the person a call is being passed to, into the call's room. Returns what the AI says
+  /// to them when they answer (a one-line brief), or null if they didn't answer.
+  Future<Map<String, Object?>> _connectHuman(String room) async {
+    final p = _pendingConnect.remove(room);
+    if (p == null || phone == null) return {'ok': false};
+    final person = (await db.all('agents', where: 'id = ?', args: [p.agentId])).firstOrNull;
+    final access = (jsonDecode('${person?['access'] ?? '{}'}') as Map?) ?? {};
+    final number = '${access['number'] ?? ''}'.trim();
+    final lines = await db.all('lines', where: "provider = 'twilio'", orderBy: 'id');
+    if (person == null || number.isEmpty || lines.isEmpty) return {'ok': false, 'why': 'no number'};
+    final cfg = (jsonDecode('${lines.first['config']}') as Map).cast<String, dynamic>();
+    try {
+      await phone!.call(line: cfg, number: Phone.e164(number, lineNumber: '${cfg['number']}'), room: room, name: '${person['name']}');
+      await log('Connected a caller to ${person['name']}');
+      return {
+        'ok': true,
+        'say': 'Hi ${person['name']}, this is ${p.from}. ${p.brief.isEmpty ? 'I have a caller for you.' : 'I have a caller for you: ${p.brief}.'} I’ll connect you now.',
+      };
+    } catch (e) {
+      await log('${person['name']} didn’t answer a passed call: $e');
+      return {'ok': false, 'name': person['name']};
+    }
+  }
+
+  /// A teammate whose "pass the call here when…" clearly matches what the caller just said.
+  Future<({String name, String brief})?> _routeByMeaning(({Map<String, Object?> agent, String team, String brief, List<Map<String, Object?>> others})? flow, String question, List<ChatMessage> convo) async {
+    if (flow == null || question.trim().split(RegExp(r'\s+')).length < 3) return null;
+    final cands = {for (final a in flow.others) if ('${a['transfer_when'] ?? ''}'.trim().isNotEmpty) '${a['id']}': '${a['transfer_when']}'.trim()};
+    if (cands.isEmpty) return null;
+    try {
+      final ranked = await knowledge.rankToolsScored(question, cands, k: 2);
+      if (ranked.isEmpty || ranked.first.$2 < 0.42 || (ranked.length > 1 && ranked.first.$2 - ranked[1].$2 < 0.10)) return null;
+      final a = flow.others.firstWhere((a) => '${a['id']}' == ranked.first.$1);
+      final said = [for (final m in convo) if (m.role == 'user') m.content].reversed.take(3).toList().reversed.join(' ');
+      return (name: '${a['name']}', brief: 'The caller said: "$said"');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static final _transfer = RegExp(r'\[transfer:\s*([^|\]]+?)\s*(?:\|([^\]]*))?\]', caseSensitive: false);
+
   /// The call task behind an outbound call's mode ("outbound#12").
   Future<Map<String, Object?>?> _taskOf(String mode) async {
     final id = int.tryParse(mode.startsWith('outbound#') ? mode.substring(9) : '');
     return id == null ? null : (await db.all('call_tasks', where: 'id = ?', args: [id])).firstOrNull;
   }
 
-  Future<String> _voiceSystem(String mode, [String lang = '']) async {
-    final agent = (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
+  Future<String> _voiceSystem(String mode, [String lang = '', Map<String, Object?>? onCall]) async {
+    final agent = onCall ?? (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
     final ownerName = user?.name.split(' ').first ?? 'the owner';
     final task = await _taskOf(mode);
     final system = task != null
@@ -1096,7 +1219,7 @@ class AppState extends ChangeNotifier {
         ? Persona.ownerSystem('${agent?['name'] ?? 'Ava'}', ownerName)
         : '${Persona.callerSystem(agent)} Reply in the caller’s language.';
     final speak = _languageNames[lang];
-    final hangup = mode == 'owner' ? '' : ' When the call is clearly over (the goal is done or they want to go, and you have said goodbye), end your final reply with [hangup].';
+    final hangup = mode == 'owner' ? '' : ' Only when the call is over — the caller has nothing else and your reply says goodbye — end that goodbye reply with [hangup]. Never add it to a question.';
     return '$system$hangup This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
         'If there are many items, say the three or four most useful ones and ask if they want to hear more. '
         'The person’s words come from speech recognition and may contain mis-heard words: work out what they most likely meant and answer that; never repeat their words back. '
@@ -1331,7 +1454,23 @@ class AppState extends ChangeNotifier {
         unawaited(prewarm([ChatMessage('system', await _voiceSystem(m, l))], scopes: _voiceScopes(m), target: voiceTarget(l), useTools: false).catchError((_) {}));
       }
       final task = await _taskOf(m);
-      return json(200, {'greeting': task != null ? await _openingLine(task, '${agent?['name'] ?? 'Ava'}') : Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _vocabulary()});
+      return json(200, {'greeting': task != null ? await _openingLine(task, '${agent?['name'] ?? 'Ava'}') : Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _vocabulary(), 'agentVoice': agent?['voice']});
+    }
+    if (path == '/api/connect') {
+      return json(200, await _connectHuman(req.uri.queryParameters['room'] ?? ''));
+    }
+    if (path == '/api/call-slot') {
+      // Several calls at once, up to the limit set for this computer.
+      final room = req.uri.queryParameters['room'] ?? '';
+      final max = await maxCalls();
+      _activeCalls.removeWhere((_, at) => DateTime.now().difference(at) > const Duration(hours: 3));
+      if (!_activeCalls.containsKey(room) && _activeCalls.length >= max) {
+        await log('Turned a call away: all $max lines busy');
+        return json(200, {'ok': false, 'busy': _activeCalls.length, 'max': max});
+      }
+      _activeCalls[room] = DateTime.now();
+      notifyListeners();
+      return json(200, {'ok': true, 'busy': _activeCalls.length, 'max': max});
     }
     if (path == '/api/call-ended') {
       unawaited(_callEnded(jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>));
@@ -1353,6 +1492,7 @@ class AppState extends ChangeNotifier {
     final model = '${body['model'] ?? 'caller'}'.split(':');
     final mode = model.first == 'owner' || model.first.startsWith('outbound#') ? model.first : 'caller';
     final lang = model.length > 1 ? model[1] : 'en';
+    final room = model.length > 2 ? model[2] : '';
     String textOf(Object? c) => c is String
         ? c
         : c is List
@@ -1364,7 +1504,10 @@ class AppState extends ChangeNotifier {
     ];
 
     final scopes = _voiceScopes(mode);
-    final messages = [ChatMessage('system', await _voiceSystem(mode, lang)), ...convo];
+    var flow = room.isEmpty ? null : await _callAgent(room, mode);
+    var access = flow == null ? null : await accessOf(flow.agent);
+    final messages = [ChatMessage('system', '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}'), ...convo];
+    ({String name, String brief})? passTo;
     // A drafted call ("CALL_TASK {…}") is saved for review, never read aloud.
     Future<void> saveTask(String t) async {
       final m = RegExp(r'CALL_TASK\s*(\{.*\})').firstMatch(t);
@@ -1460,14 +1603,24 @@ class AppState extends ChangeNotifier {
       if (!continuing && !justAcked) fill();
     });
     try {
+      // Route by meaning: when the caller clearly wants a teammate's job, pass the call at once
+      // (the agent's own judgement still works for anything less clear).
+      final routed = await _routeByMeaning(flow, question, convo);
       final multilingual = voiceTarget(lang);
-      final live = multilingual is LocalTarget && mode == 'owner' && await _needsLiveTools(question, scopes);
-      final full = await agentReply(
+      final live = routed == null && multilingual is LocalTarget && mode == 'owner' && await _needsLiveTools(question, scopes);
+      if (routed != null) {
+        passTo = routed;
+        final line = 'Sure, let me pass you to ${routed.name}, who can help with that.';
+        chunk({'content': line});
+        sent = line;
+      }
+      final full = routed != null ? sent : await agentReply(
         messages,
         target: live ? null : multilingual,
         useTools: live || multilingual is! LocalTarget,
         cancelled: () => gone,
         scopes: scopes,
+        access: access,
         approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later
         onToolStart: (_) => fill(),
         onText: (t) {
@@ -1475,9 +1628,15 @@ class AppState extends ChangeNotifier {
             sent = ''; // text before a tool call is dropped; the real answer follows
             return;
           }
+          // Passing the call to a teammate: never said aloud.
+          final m = _transfer.firstMatch(t);
+          if (m != null) {
+            passTo = (name: m.group(1)!.trim(), brief: (m.group(2) ?? '').trim());
+            t = t.substring(0, m.start);
+          }
           t = spokenText(t);
           // Nobody listens to a minute-long answer: stop at a sentence end and offer the rest.
-          if (t.length > _maxSpoken) {
+          if (t.length > _maxSpoken && passTo == null) {
             final end = t.lastIndexOf(RegExp(r'[.!?؟。]\s'), _maxSpoken);
             t = '${t.substring(0, end > sent.length ? end + 1 : _maxSpoken)} ${_more[lang] ?? _more['en']!}';
             capped = true;
@@ -1489,6 +1648,45 @@ class AppState extends ChangeNotifier {
         },
       );
       await saveTask(full);
+      // The call goes to a teammate: they pick up straight away, in their own voice.
+      final target = passTo == null ? null : (await callTeam()).where((a) => '${a['name']}'.toLowerCase() == passTo!.name.toLowerCase()).firstOrNull;
+      if (target != null && target['handles'] == 'human' && flow != null && !gone) {
+        // A real person: the voice agent puts the caller on hold and rings them (see /api/connect).
+        _pendingConnect[room] = (agentId: target['id'] as int, brief: passTo!.brief, from: '${flow.agent['name']}');
+        chunk({'content': ' [connect:${target['id']}] '});
+        sent += ' → connecting ${target['name']}';
+      } else if (target != null && flow != null && target['id'] != flow.agent['id'] && !gone) {
+        _onCall[room] = (agentId: target['id'] as int, brief: passTo!.brief, from: '${flow.agent['name']}');
+        await log('Call passed from ${flow.agent['name']} to ${target['name']}');
+        chunk({'content': ' [voice:${target['voice'] ?? 'default'}] '});
+        flow = await _callAgent(room, mode);
+        access = flow == null ? null : await accessOf(flow.agent);
+        var said = '';
+        await agentReply(
+          [
+            ChatMessage('system', '${await _voiceSystem(mode, lang, flow!.agent)}${flow.brief}${flow.team}'),
+            ...convo,
+            ChatMessage('assistant', spokenText(full.split('[transfer').first).trim()),
+            ChatMessage('user', '(You have just taken over the call. Greet the caller in one short sentence as ${target['name']}, show you know what they need from the brief, and carry on.)'),
+          ],
+          scopes: scopes,
+          access: access,
+          cancelled: () => gone,
+          approve: (_, _) async => false,
+          onText: (t) {
+            if (t.isEmpty) {
+              said = '';
+              return;
+            }
+            t = spokenText(t.split('[transfer').first);
+            if (t.length > said.length) {
+              chunk({'content': t.substring(said.length)});
+              said = t;
+            }
+          },
+        );
+        sent += ' → ${target['name']}: $said';
+      }
     } on Cancelled {
       if (!capped) {
         ping.cancel();
@@ -1715,6 +1913,31 @@ class AppState extends ChangeNotifier {
     } finally {
       speechDownloads.remove(e.id);
       notifyListeners();
+    }
+  }
+}
+
+/// What one agent may use on calls (null = everything shared with calls). Keeping each agent
+/// to what its job needs keeps its prompt small and its answers fast.
+class AgentAccess {
+  const AgentAccess({this.tools, this.skills, this.docs, this.skillDocs = const {}});
+  final Set<int>? tools, skills, docs; // MCP server ids, skill ids, knowledge ids
+  final Set<int> skillDocs; // documents behind the allowed skills
+
+  static AgentAccess? parse(String? json, {Map<int, int> skillSource = const {}}) {
+    if (json == null || json.isEmpty) return null;
+    try {
+      final j = jsonDecode(json) as Map;
+      Set<int>? ids(String k) => j[k] is List ? {for (final v in j[k] as List) (v as num).toInt()} : null;
+      final skills = ids('skills');
+      return AgentAccess(
+        tools: ids('tools'),
+        skills: skills,
+        docs: ids('docs'),
+        skillDocs: {for (final id in skills ?? <int>{}) ?skillSource[id]},
+      );
+    } catch (_) {
+      return null;
     }
   }
 }

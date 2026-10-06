@@ -235,6 +235,11 @@ class Db {
     );
     CREATE INDEX app_rows_tbl ON app_rows(app_id, tbl)
     ''',
+    // Call flow: each agent says when calls should be passed to it, and what it may use.
+    '''
+    ALTER TABLE agents ADD COLUMN transfer_when TEXT;
+    ALTER TABLE agents ADD COLUMN access TEXT
+    ''',
   ];
 
   // ---------- settings ----------

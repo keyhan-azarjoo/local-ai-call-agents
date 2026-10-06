@@ -186,6 +186,7 @@ class Block {
   String describe(AppSpec spec) => switch (type) {
         'hero' => 'banner',
         'text' => 'text',
+        'availability' => 'free times of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
         _ => '${type == 'info' ? 'details' : type} of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
       };
 
@@ -199,6 +200,7 @@ class Block {
       'list' || 'table' || 'grid' || 'cards' || 'search' || 'catalog' || 'menu' => 'list',
       'form' || 'create' || 'add' || 'booking' || 'order' || 'input' => 'form',
       'info' || 'details' || 'single' || 'record' || 'hours' => 'info',
+      'availability' || 'free' || 'slots' || 'calendar' || 'schedule' || 'timetable' => 'availability',
       _ => '',
     };
     if (type.isEmpty) return null;
@@ -287,7 +289,7 @@ class AppSpec {
   final Map<String, String> site;
   String get style => site['style'] ?? 'modern';
 
-  static const siteKeys = ['style', 'tagline', 'about', 'logo', 'hero', 'address', 'phone', 'email', 'footer', 'currency'];
+  static const siteKeys = ['style', 'tagline', 'about', 'logo', 'hero', 'address', 'phone', 'email', 'footer', 'currency', 'booking_minutes'];
 
   /// The look: dark background, and sans / serif / rounded letters.
   final bool dark;
@@ -415,6 +417,12 @@ class AppSpec {
           } else {
             d['fields'] = keep;
           }
+        }
+        if (b.type == 'availability') {
+          final link = t.fields.where((f) => f.type == 'link').firstOrNull;
+          final ok = link != null && t.fields.any((f) => f.type == 'date') && t.fields.any((f) => f.type == 'time') && (p.manager || t.access.add);
+          if (ok) blocks.add(Block({...b.data, 'table': t.id}));
+          continue;
         }
         final type = b.type == 'list' && t.single ? 'info' : (b.type == 'info' && !t.single ? 'list' : b.type);
         d['type'] = type;

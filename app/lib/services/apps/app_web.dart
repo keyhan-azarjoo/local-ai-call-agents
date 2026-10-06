@@ -241,6 +241,42 @@ label.lbl .req{color:var(--accent)}
 .footer .bottom{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;border-top:1px solid var(--line);padding-top:20px;padding-bottom:28px;font-size:13.5px;color:var(--muted)}
 .footer .bottom a{display:inline;color:var(--muted);font-size:13.5px;margin:0}
 
+/* availability */
+.avail{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow)}
+.avail-ctl{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;margin-bottom:18px}
+.avail-ctl .field{margin:0}
+.avail-ctl input[type=date]{width:auto;min-width:180px}
+.guests{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:4px}
+.guests button{width:36px;height:36px;border-radius:50%;border:0;background:var(--soft);color:var(--ink);cursor:pointer;font-size:16px;display:grid;place-items:center}
+.guests b{min-width:64px;text-align:center;font-size:15px}
+.slots{display:flex;flex-wrap:wrap;gap:8px;padding:2px 2px 14px}
+.slot{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:9px 14px;font:600 14px var(--body);cursor:pointer;white-space:nowrap}
+.slot.on{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.slot.full{opacity:.4;text-decoration:line-through}
+.slot:disabled{opacity:.3;cursor:default}
+.res-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:8px}
+.res{border:1.5px solid var(--line);border-radius:calc(var(--radius) * .7 + 4px);padding:14px;text-align:left;background:var(--surface);color:var(--ink);font:inherit;cursor:pointer;transition:all .15s;position:relative}
+.res b{display:block;font:var(--head-weight) 20px var(--head)}
+.res small{color:var(--muted);font-size:13px}
+.res .st{display:inline-flex;align-items:center;gap:6px;margin-top:8px;font-size:12.5px;font-weight:700}
+.res.free .st{color:#15803d}.res.free:hover{border-color:var(--accent);transform:translateY(-2px)}
+.res.taken{cursor:not-allowed;background:var(--soft)}.res.taken b{color:var(--muted)}.res.taken .st{color:#b91c1c}
+.res.small{opacity:.55;cursor:not-allowed}
+.res.picked{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent)}
+.dark .res.free .st{color:#86efac}.dark .res.taken .st{color:#fca5a5}
+.tl{overflow-x:auto;margin-top:18px;border:1px solid var(--line);border-radius:12px}
+.tl table{border-collapse:collapse;font-size:12.5px;min-width:100%}
+.tl th,.tl td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;height:34px;min-width:44px;text-align:center}
+.tl th{background:var(--soft);font-weight:600;color:var(--muted);padding:0 6px;white-space:nowrap}
+.tl th.rn{position:sticky;left:0;background:var(--surface);text-align:left;padding:0 12px;color:var(--ink);min-width:110px;z-index:1}
+.tl td.b{background:color-mix(in srgb,var(--accent) 78%,transparent);color:var(--on-accent);font-weight:600;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:1px;padding:0 8px;font-size:12px;text-align:left;border-radius:6px;box-shadow:inset 0 0 0 2px var(--surface)}
+.tl td.b:hover{filter:brightness(1.08)}
+.tl td.f{cursor:pointer}.tl td.f:hover{background:var(--soft)}
+.tl td.past{background:repeating-linear-gradient(45deg,transparent,transparent 4px,var(--soft) 4px,var(--soft) 8px)}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-top:10px;flex-wrap:wrap}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.daynav{display:flex;align-items:center;gap:8px}
+
 /* manager on the website */
 .adminbar{position:sticky;top:0;z-index:25;background:#111827;color:#f9fafb;font:500 14px var(--body)}
 .adminbar .wrap{display:flex;align-items:center;gap:10px;height:46px;flex-wrap:nowrap;overflow-x:auto}
@@ -476,7 +512,7 @@ function imageInput(value, onChange) {
 async function fieldInput(f, value, ctx = {}) {
   const wrap = el('<div class="field' + (['longtext', 'links', 'image'].includes(f.type) || ctx.full ? ' full' : '') + '"><label class="lbl">' + esc(f.label) + (f.required ? ' <span class="req">*</span>' : '') + '</label></div>');
   const add = (n) => { wrap.append(n); return n; };
-  let get;
+  let get, set = () => {};
   const pills = (opts, cur, multi, onPick) => {
     const p = add(el('<div class="pills"></div>'));
     opts.forEach(([val, label]) => { const b = el('<button type="button" class="pill-opt">' + esc(label) + '</button>'); b.dataset.v = val; b.onclick = () => onPick(val, p); p.append(b); });
@@ -484,8 +520,8 @@ async function fieldInput(f, value, ctx = {}) {
   };
   switch (f.type) {
     case 'longtext': { const n = add(el('<textarea></textarea>')); n.value = value ?? ''; get = () => n.value; break; }
-    case 'number': case 'money': { const n = add(el('<input type="number" step="any" inputmode="decimal">')); n.value = value ?? ''; get = () => n.value; break; }
-    case 'date': case 'time': case 'email': { const n = add(el('<input type="' + f.type + '">')); n.value = value ?? ''; get = () => n.value; break; }
+    case 'number': case 'money': { const n = add(el('<input type="number" step="any" inputmode="decimal">')); n.value = value ?? ''; get = () => n.value; set = (v) => n.value = v ?? ''; break; }
+    case 'date': case 'time': case 'email': { const n = add(el('<input type="' + f.type + '">')); n.value = value ?? ''; get = () => n.value; set = (v) => n.value = v ?? ''; break; }
     case 'datetime': { const n = add(el('<input type="datetime-local">')); n.value = value ? String(value).replace(' ', 'T').slice(0, 16) : ''; get = () => n.value.replace('T', ' '); break; }
     case 'phone': { const n = add(el('<input type="tel" autocomplete="tel">')); n.value = value ?? ''; get = () => n.value; break; }
     case 'yesno': { const n = add(el('<label class="switch"><input type="checkbox"><i></i><span></span></label>')); const c = $('input', n); c.checked = !!value; const sync = () => $('span', n).textContent = c.checked ? 'Yes' : 'No'; c.onchange = sync; sync(); get = () => c.checked; break; }
@@ -506,7 +542,8 @@ async function fieldInput(f, value, ctx = {}) {
         const p = pills(list.map((r) => [String(r.id), nameOf(t, r)]), cur, false, (v, p) => { cur = String(cur) === v ? null : Number(v); $$('.pill-opt', p).forEach((x) => x.classList.toggle('on', x.dataset.v === String(cur))); });
         $$('.pill-opt', p).forEach((x) => x.classList.toggle('on', x.dataset.v === String(cur)));
         get = () => cur;
-      } else { const n = add(el('<select><option value="">Choose…</option>' + list.map((r) => '<option value="' + r.id + '"' + (r.id === value ? ' selected' : '') + '>' + esc(nameOf(t, r)) + '</option>').join('') + '</select>')); get = () => n.value ? Number(n.value) : null; }
+        set = (v) => { cur = v ?? null; $$('.pill-opt', p).forEach((x) => x.classList.toggle('on', x.dataset.v === String(cur))); };
+      } else { const n = add(el('<select><option value="">' + (ctx.optional ? 'Any free one' : 'Choose…') + '</option>' + list.map((r) => '<option value="' + r.id + '"' + (r.id === value ? ' selected' : '') + '>' + esc(nameOf(t, r)) + '</option>').join('') + '</select>')); get = () => n.value ? Number(n.value) : null; set = (v) => n.value = v ?? ''; }
       break;
     }
     case 'links': {
@@ -542,7 +579,86 @@ async function fieldInput(f, value, ctx = {}) {
     }
     default: { const n = add(el('<input type="text">')); n.value = value ?? ''; if (/name/.test(f.id)) n.autocomplete = 'name'; get = () => n.value; }
   }
-  return {node: wrap, get, f};
+  return {node: wrap, get, set, f};
+}
+
+// ================= bookings =================
+/// A table of bookings for things booked one at a time (tables, stylists, rooms…).
+function shapeOf(t) {
+  const links = t.fields.filter((f) => f.type === 'link' && table(f.link) && table(f.link).kind !== 'single');
+  const link = links.find((f) => /table|room|stylist|barber|doctor|dentist|therap|staff|trainer|coach|court|desk|seat|bay|chair|lane|pitch|vehicle|tutor|teacher|person/i.test(f.id + ' ' + f.link)) || links[0];
+  const date = t.fields.find((f) => f.type === 'date'), time = t.fields.find((f) => f.type === 'time');
+  if (!link || !date || !time) return null;
+  const res = table(link.link);
+  return {link, res, date, time, guests: t.fields.find((f) => f.type === 'number' && /guest|people|party|person|size|covers/.test(f.id))};
+}
+const toMin = (s) => { const m = /^(\d{1,2}):(\d{2})/.exec(s || ''); return m ? +m[1] * 60 + +m[2] : null; };
+const toHHMM = (m) => String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+const todayISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+function slotsOf(plan) { const o = toMin(plan.open) ?? 720, c0 = toMin(plan.close) ?? 1320, c = c0 <= o ? c0 + 1440 : c0, out = []; for (let m = o; m <= c - 30; m += 30) out.push(m); return out; }
+const isTaken = (plan, id, at) => plan.busy.some((h) => h.resource === id && at < toMin(h.to) + (toMin(h.to) < toMin(h.from) ? 1440 : 0) && at + plan.minutes > toMin(h.from));
+
+/// Customers: pick a day, people and time, see which tables are free, tap one to fill the form.
+async function availabilityBlock(b, t, state) {
+  const sh = shapeOf(t); if (!sh) return null;
+  const what = sh.res.title.toLowerCase();
+  const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || 'Find a free ' + what.replace(/s$/, '')) + '</h2></div><div class="avail">'
+    + '<div class="avail-ctl"><div class="field"><label class="lbl">Day</label><input type="date"></div>'
+    + (sh.guests ? '<div class="field"><label class="lbl">' + esc(sh.guests.label) + '</label><div class="guests"><button type="button" data-d="-1">' + icon('minus') + '</button><b>2</b><button type="button" data-d="1">' + icon('plus') + '</button></div></div>' : '')
+    + '</div><label class="lbl">Time</label><div class="slots"></div><div class="res-grid"></div><div class="legend"><span><i style="background:#16a34a"></i>Free</span><span><i style="background:#dc2626"></i>Booked</span>'
+    + '<button class="btn sm" data-a="day" style="margin-left:auto">See the whole day</button></div><div class="tl" hidden></div></div></div></section>');
+  const day = $('input[type=date]', n), slotsBox = $('.slots', n), grid = $('.res-grid', n), tl = $('.tl', n);
+  day.value = todayISO(); day.min = todayISO();
+  let guests = 2, at = null, plan = null, picked = null;
+  const seats = (r) => r.seats ?? 999;
+  const nowMin = () => { const d = new Date(); return day.value === todayISO() ? d.getHours() * 60 + d.getMinutes() : -1; };
+  const fill = () => {
+    const form = state.forms[t.id]; if (!form) return;
+    form[sh.date.id]?.set(day.value); if (at != null) form[sh.time.id]?.set(toHHMM(at));
+    if (sh.guests) form[sh.guests.id]?.set(guests); form[sh.link.id]?.set(picked);
+  };
+  const drawRes = () => {
+    grid.innerHTML = '';
+    if (at == null) { grid.innerHTML = '<div class="muted" style="grid-column:1/-1">Choose a time to see what’s free.</div>'; return; }
+    for (const r of plan.resources) {
+      const taken = isTaken(plan, r.id, at), small = !taken && seats(r) < guests;
+      const c = el('<button type="button" class="res ' + (taken ? 'taken' : small ? 'small' : 'free') + (picked === r.id ? ' picked' : '') + '"><b>' + esc(r.name) + '</b><small>' + (r.seats ? r.seats + ' seats' : '') + '</small><div class="st">' + (taken ? '● Booked' : small ? 'Too small' : '● Free') + '</div></button>');
+      if (!taken && !small) c.onclick = () => { picked = r.id; drawRes(); fill(); $('#form-' + t.id)?.scrollIntoView({behavior: 'smooth', block: 'start'}); toast(sh.res.title.replace(/s$/, '') + ' ' + r.name + ' at ' + toHHMM(at) + ' — add your details below'); };
+      grid.append(c);
+    }
+  };
+  const drawSlots = () => {
+    slotsBox.innerHTML = '';
+    for (const m of slotsOf(plan)) {
+      const full = plan.resources.every((r) => isTaken(plan, r.id, m) || seats(r) < guests);
+      const s = el('<button type="button" class="slot' + (m === at ? ' on' : '') + (full ? ' full' : '') + '">' + toHHMM(m) + '</button>');
+      s.disabled = m <= nowMin() || full;
+      s.onclick = () => { at = m; picked = null; drawSlots(); drawRes(); fill(); };
+      slotsBox.append(s);
+    }
+  };
+  const drawDay = () => {
+    const ss = slotsOf(plan);
+    let h = '<table><tr><th class="rn">' + esc(sh.res.title) + '</th>' + ss.map((m) => '<th>' + toHHMM(m) + '</th>').join('') + '</tr>';
+    for (const r of plan.resources) {
+      h += '<tr><th class="rn">' + esc(r.name) + (r.seats ? ' <span style="color:var(--muted);font-weight:400">· ' + r.seats + '</span>' : '') + '</th>';
+      for (let i = 0; i < ss.length; i++) {
+        const bk = plan.busy.find((x) => x.resource === r.id && ss[i] >= toMin(x.from) && ss[i] < toMin(x.from) + plan.minutes);
+        if (bk) { let k = 1; while (i + k < ss.length && ss[i + k] < toMin(bk.from) + plan.minutes) k++; h += '<td class="b" colspan="' + k + '">Booked</td>'; i += k - 1; continue; }
+        h += '<td class="' + (ss[i] <= nowMin() ? 'past' : 'f') + '" data-r="' + r.id + '" data-m="' + ss[i] + '"></td>';
+      }
+      h += '</tr>';
+    }
+    tl.innerHTML = h + '</table>';
+  };
+  tl.onclick = (e) => { const c = e.target.closest('td.f'); if (!c) return; at = +c.dataset.m; picked = +c.dataset.r; drawSlots(); drawRes(); fill(); $('#form-' + t.id)?.scrollIntoView({behavior: 'smooth', block: 'start'}); };
+  $('[data-a=day]', n).onclick = (e) => { tl.hidden = !tl.hidden; e.target.textContent = tl.hidden ? 'See the whole day' : 'Hide the day'; };
+  const load = async () => { plan = await api('_plan/' + t.id + '?date=' + day.value); if (at != null && (at <= nowMin())) at = null; drawSlots(); drawRes(); drawDay(); fill(); };
+  day.onchange = () => { picked = null; load(); };
+  $$('.guests button', n).forEach((x) => x.onclick = () => { guests = Math.max(1, Math.min(30, guests + +x.dataset.d)); $('.guests b', n).textContent = guests + (guests === 1 ? ' person' : ' people'); picked = null; drawSlots(); drawRes(); fill(); });
+  if (sh.guests) $('.guests b', n).textContent = '2 people';
+  await load();
+  return n;
 }
 
 // ================= customer website =================
@@ -684,9 +800,11 @@ async function formBlock(b, t, page, state) {
       inputs.push(inp);
       continue;
     }
-    const inp = await fieldInput(f, null);
+    const inp = await fieldInput(f, null, {optional: !f.required});
     grid.append(inp.node); inputs.push(inp);
   }
+  state.forms = state.forms || {};
+  state.forms[t.id] = Object.fromEntries(inputs.map((i) => [i.f.id, i]));
   if (fc) new IntersectionObserver((e) => { inView = e[0].isIntersecting; fc.classList.toggle('show', !inView && $('span', fc).textContent !== ''); }).observe(n);
   form.onsubmit = async (e) => {
     e.preventDefault();
@@ -747,6 +865,7 @@ async function site() {
       else if (b.type === 'text') nodes[i] = textBlock(b);
       else if (b.type === 'list' && table(b.table)) nodes[i] = await listBlock(b, table(b.table), pg, state);
       else if (b.type === 'info' && table(b.table)) nodes[i] = await infoBlock(b, table(b.table));
+      else if (b.type === 'availability' && table(b.table)) nodes[i] = await availabilityBlock(b, table(b.table), state);
     } catch (e) { nodes[i] = fail(e); }
   }
   nodes.filter(Boolean).forEach((n) => main.append(n));
@@ -875,18 +994,57 @@ async function manageTable(t, c) {
   const box = el('<div class="card"><div class="tablewrap"></div></div>'); c.append(box);
   const draw = () => dataTable(t, $('.tablewrap', box), {q, filter, fresh: false});
   $('input', bar).oninput = (e) => { q = e.target.value.toLowerCase(); draw(); };
+  // Bookings of tables, stylists, rooms…: a day plan as well as the list.
+  if (shapeOf(t)) {
+    const plan = el('<div class="card" style="margin-bottom:22px"></div>');
+    c.insertBefore(plan, bar);
+    await dayPlanView(t, plan);
+  }
   await rows(t.id, true); await draw();
 }
 
+/// The manager's day: every table (stylist, room…) across the opening hours, bookings by name.
+async function dayPlanView(t, box, date) {
+  const sh = shapeOf(t);
+  date = date || todayISO();
+  const plan = await api('_plan/' + t.id + '?date=' + date);
+  const ss = slotsOf(plan);
+  const shift = (d) => { const x = new Date(date + 'T12:00'); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
+  const label = new Date(date + 'T12:00').toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
+  const count = new Set(plan.busy.map((h) => h.id)).size;
+  let h = '<div class="card-h"><h3>Day plan · ' + esc(label) + '</h3><div class="daynav"><button class="btn sm" data-d="-1">←</button><input type="date" style="width:auto" value="' + date + '"><button class="btn sm" data-d="1">→</button><button class="btn sm" data-d="0">Today</button></div></div>'
+    + '<div class="card-b"><div class="muted" style="margin-bottom:8px">' + count + ' booking' + (count === 1 ? '' : 's') + ' · each holds a ' + esc(sh.res.title.toLowerCase().replace(/s$/, '')) + ' for ' + plan.minutes + ' minutes (change it in Design & texts). Click an empty slot to add a booking.</div><div class="tl"><table><tr><th class="rn">' + esc(sh.res.title) + '</th>' + ss.map((m) => '<th>' + toHHMM(m) + '</th>').join('') + '</tr>';
+  for (const r of plan.resources) {
+    h += '<tr><th class="rn">' + esc(r.name) + (r.seats ? ' <span style="color:var(--muted);font-weight:400">· ' + r.seats + '</span>' : '') + '</th>';
+    for (let i = 0; i < ss.length; i++) {
+      const b = plan.busy.find((x) => x.resource === r.id && ss[i] >= toMin(x.from) && ss[i] < toMin(x.from) + plan.minutes);
+      if (b) {
+        let k = 1; while (i + k < ss.length && ss[i + k] < toMin(b.from) + plan.minutes) k++;
+        h += '<td class="b" colspan="' + k + '" data-id="' + b.id + '" title="' + esc(b.who + (b.guests ? ' · ' + b.guests + ' people' : '') + ' · ' + b.from + '–' + b.to) + '">' + esc(b.who) + (b.guests ? ' · ' + b.guests : '') + ' <span style="opacity:.75;font-weight:500">' + esc(b.from) + '</span></td>';
+        i += k - 1;
+      } else h += '<td class="f" data-r="' + r.id + '" data-m="' + ss[i] + '"></td>';
+    }
+    h += '</tr>';
+  }
+  box.innerHTML = h + '</table></div></div>';
+  $$('[data-d]', box).forEach((b) => b.onclick = () => dayPlanView(t, box, +b.dataset.d === 0 ? todayISO() : shift(+b.dataset.d)));
+  $('input[type=date]', box).onchange = (e) => dayPlanView(t, box, e.target.value);
+  $('table', box).onclick = async (e) => {
+    const c = e.target.closest('td'); if (!c) return;
+    if (c.dataset.id) { const r = (await rows(t.id, true)).find((x) => String(x.id) === c.dataset.id); if (r) drawer(t, r, () => go(VIEW)); return; }
+    if (c.dataset.r) drawer(t, null, () => go(VIEW), {[sh.date.id]: date, [sh.time.id]: toHHMM(+c.dataset.m), [sh.link.id]: +c.dataset.r});
+  };
+}
+
 /// Add or edit one record in a side panel.
-async function drawer(t, r, done) {
+async function drawer(t, r, done, prefill = {}) {
   const bg = el('<div class="drawer-bg"></div>'), d = el('<div class="drawer"><div class="dh"><h3>' + (r ? esc(nameOf(t, r)) : 'Add to ' + esc(t.title.toLowerCase())) + '</h3><button class="iconbtn">' + icon('x') + '</button></div><div class="db"><div class="fgrid"></div><div class="msg"></div></div><div class="df">' + (r ? '<button class="btn danger">' + icon('trash') + ' Delete</button>' : '') + '<span class="sp"></span><button class="btn cancel">Cancel</button><button class="btn primary">Save</button></div></div>');
   document.body.append(bg, d);
   requestAnimationFrame(() => requestAnimationFrame(() => { bg.classList.add('show'); d.classList.add('show'); }));
   const close = () => { bg.classList.remove('show'); d.classList.remove('show'); setTimeout(() => { bg.remove(); d.remove(); }, 300); };
   bg.onclick = close; $('.dh .iconbtn', d).onclick = close; $('.df .cancel', d).onclick = close;
   const inputs = [];
-  for (const f of t.fields) { const i = await fieldInput(f, r ? r[f.id] : undefined, {full: f.id === labelOf(t)}); $('.fgrid', d).append(i.node); inputs.push(i); }
+  for (const f of t.fields) { const i = await fieldInput(f, r ? r[f.id] : prefill[f.id], {full: f.id === labelOf(t), optional: !f.required}); $('.fgrid', d).append(i.node); inputs.push(i); }
   $('.df .primary', d).onclick = async () => {
     const b = {}; for (const i of inputs) b[i.f.id] = i.get();
     try { await api('t/' + t.id + (r ? '/' + r.id : ''), {method: r ? 'PUT' : 'POST', body: JSON.stringify(b)}); delete cache[t.id]; close(); toast('Saved'); done(); }
@@ -947,7 +1105,7 @@ async function website(c) {
   const card = (title) => { const k = el('<div class="card" style="margin-bottom:22px"><div class="card-h"><h3>' + esc(title) + '</h3></div><div class="card-b"><div class="fgrid"></div></div></div>'); c.append(k); return $('.fgrid', k); };
 
   card('Your business').append(txt('name', 'Name'), txt('tagline', 'Tagline', false, 'One short line, e.g. “Wood-fired pizza since 1998”.'), txt('about', 'About you', true, 'A few sentences, shown in the footer.'),
-    txt('currency', 'Currency', false, 'e.g. £, €, $ or AED'), txt('footer', 'Footer note', false, 'e.g. “Free parking at the back”'), imgField('logo', 'Logo', 'A PNG with a clear background looks best.'), imgField('hero', 'Cover picture', 'The big photo at the top of your home page.'));
+    txt('currency', 'Currency', false, 'e.g. £, €, $ or AED'), ...(SPEC.tables.some((t) => shapeOf(t)) ? [txt('booking_minutes', 'How long a booking lasts (minutes)', false, 'A table (or stylist, room…) stays booked this long. Default 120.')] : []), txt('footer', 'Footer note', false, 'e.g. “Free parking at the back”'), imgField('logo', 'Logo', 'A PNG with a clear background looks best.'), imgField('hero', 'Cover picture', 'The big photo at the top of your home page.'));
   card('Contact').append(txt('address', 'Address', true), txt('phone', 'Phone'), txt('email', 'Email'));
 
   const look = el('<div class="card" style="margin-bottom:22px"><div class="card-h"><h3>Style</h3></div><div class="card-b"><div class="styles"></div><div class="colorrow"><label class="lbl" style="margin:0">Main colour</label><input type="color"><button class="btn sm">Use the style’s colour</button><span class="hint" style="margin:0">Buttons, links and highlights.</span></div></div></div>');

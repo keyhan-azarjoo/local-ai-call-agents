@@ -46,7 +46,8 @@ final appTemplates = <AppTemplate>[
       ]),
       _t('reservations', 'Reservations', 'Table bookings', 'add', [
         _f('name', 'Name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true),
-        _f('guests', 'Guests', 'number', req: true), _f('requests', 'Special requests', 'longtext'), _f('status', 'Status', 'choice', options: ['Requested', 'Confirmed', 'Seated', 'Cancelled'], manager: true),
+        _f('guests', 'Guests', 'number', req: true), _f('table', 'Table', 'link', link: 'dining_tables'), _f('requests', 'Special requests', 'longtext'),
+        _f('status', 'Status', 'choice', options: ['Confirmed', 'Seated', 'Finished', 'Cancelled', 'No-show'], manager: true),
       ]),
       _hours,
     ],
@@ -60,8 +61,9 @@ final appTemplates = <AppTemplate>[
         _list('menu_items', 'Menu'), _form('orders', 'Your order', 'Send to the kitchen', 'Thank you! The kitchen has your order and it will be with you shortly.'),
       ]},
       {'id': 'book', 'title': 'Book a table', 'blocks': [
-        _hero('Book a table', 'Lunch or dinner, two or twenty — we’ll keep a table for you.'),
-        _form('reservations', 'Reserve', 'Request booking', 'Thank you! We’ll confirm your booking by phone shortly.'),
+        _hero('Book a table', 'Pick a day and time, see which tables are free, and it’s yours.'),
+        {'type': 'availability', 'table': 'reservations', 'title': 'Find a free table'},
+        _form('reservations', 'Your booking', 'Book this table', 'Your table is booked — we look forward to seeing you!'),
       ]},
     ],
   }, {
@@ -98,14 +100,18 @@ final appTemplates = <AppTemplate>[
       _t('appointments', 'Appointments', 'Appointment requests', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('service', 'Service', 'link', link: 'services', req: true),
         _f('stylist', 'Stylist', 'link', link: 'stylists'), _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true), _f('notes', 'Anything we should know?', 'longtext'),
-        _f('status', 'Status', 'choice', options: ['Requested', 'Confirmed', 'Done', 'Cancelled'], manager: true),
+        _f('status', 'Status', 'choice', options: ['Confirmed', 'Done', 'Cancelled', 'No-show'], manager: true),
       ]),
       _hours,
     ],
     'pages': [
       {'id': 'home', 'title': 'Home', 'blocks': [_hero('Look and feel your best', 'Expert cuts, beautiful colour and treatments that leave your hair healthier.', button: 'Book now', link: 'book'), _list('services', 'Services & prices'), _info('opening_hours', 'Opening hours')]},
       {'id': 'team', 'title': 'Our team', 'blocks': [_hero('Meet the team', 'Experienced, friendly and always learning.'), _list('stylists', 'Stylists', search: false)]},
-      {'id': 'book', 'title': 'Book', 'blocks': [_hero('Book an appointment', 'Choose a service and a time that suits you; we’ll confirm by text.'), _form('appointments', 'Your appointment', 'Request appointment', 'Thank you! We’ll text you to confirm your appointment.')]},
+      {'id': 'book', 'title': 'Book', 'blocks': [
+        _hero('Book an appointment', 'See who’s free, pick a time, and you’re booked.'),
+        {'type': 'availability', 'table': 'appointments', 'title': 'Find a free stylist'},
+        _form('appointments', 'Your appointment', 'Book appointment', 'You’re booked! We’ll text you a reminder the day before.'),
+      ]},
     ],
   }, {
     'services': [
@@ -210,14 +216,19 @@ final appTemplates = <AppTemplate>[
       _t('appointments', 'Appointments', 'Appointment requests', 'add', [
         _f('name', 'Patient name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'),
         _f('treatment', 'Treatment', 'link', link: 'treatments', req: true), _f('doctor', 'Preferred dentist', 'link', link: 'doctors'),
-        _f('date', 'Preferred date', 'date', req: true), _f('reason', 'Reason for visit', 'longtext'), _f('status', 'Status', 'choice', options: ['Requested', 'Confirmed', 'Completed', 'Cancelled'], manager: true),
+        _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true), _f('reason', 'Reason for visit', 'longtext'),
+        _f('status', 'Status', 'choice', options: ['Confirmed', 'Completed', 'Cancelled', 'No-show'], manager: true),
       ]),
       _hours,
     ],
     'pages': [
       {'id': 'home', 'title': 'Home', 'blocks': [_hero('Healthy smiles, without the worry', 'Friendly dentists, clear prices and appointments that suit you.', button: 'Request an appointment', link: 'book'), _list('treatments', 'Treatments'), _info('opening_hours', 'Opening hours')]},
       {'id': 'team', 'title': 'Our dentists', 'blocks': [_hero('Meet our team', 'Experienced, gentle and here to help.'), _list('doctors', 'Dentists', search: false)]},
-      {'id': 'book', 'title': 'Appointments', 'blocks': [_hero('Request an appointment', 'Tell us what you need; we’ll call to confirm a time.'), _form('appointments', 'Your appointment', 'Send request', 'Thank you! We’ll call you within one working day to confirm.')]},
+      {'id': 'book', 'title': 'Appointments', 'blocks': [
+        _hero('Book an appointment', 'Choose a day and see when our dentists are free.'),
+        {'type': 'availability', 'table': 'appointments', 'title': 'Find a free appointment'},
+        _form('appointments', 'Your appointment', 'Book appointment', 'You’re booked! We’ll send a reminder the day before.'),
+      ]},
     ],
   }, {
     'treatments': [

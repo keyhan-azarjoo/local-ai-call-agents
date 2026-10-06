@@ -3,6 +3,41 @@ import 'dart:convert';
 import '../../data/db.dart';
 import 'app_spec.dart';
 
+/// A table of bookings for things that can only be booked once at a time (restaurant
+/// tables, stylists, rooms…): it links to them and has a date and a time.
+class BookingShape {
+  BookingShape(this.table, this.resourceField, this.resources, this.dateField, this.timeField, {this.guestsField, this.seatsField, this.statusField});
+  final TableSpec table, resources;
+  final FieldSpec resourceField, dateField, timeField;
+  final FieldSpec? guestsField, seatsField, statusField;
+
+  static BookingShape? of(AppSpec spec, TableSpec t) {
+    // What gets booked: a table, stylist, room, doctor… rather than a service or menu item.
+    final links = t.fields.where((f) => f.type == 'link' && spec.table(f.link!) != null && !spec.table(f.link!)!.single).toList();
+    final link = links.where((f) => _bookable.hasMatch('${f.id} ${f.link}')).firstOrNull ?? links.firstOrNull;
+    final date = t.fields.where((f) => f.type == 'date').firstOrNull;
+    final time = t.fields.where((f) => f.type == 'time').firstOrNull;
+    if (link == null || date == null || time == null) return null;
+    final res = spec.table(link.link!)!;
+    return BookingShape(t, link, res, date, time,
+        guestsField: t.fields.where((f) => f.type == 'number' && RegExp(r'guest|people|party|person|size|covers').hasMatch(f.id)).firstOrNull,
+        seatsField: res.fields.where((f) => f.type == 'number' && RegExp(r'seat|capacity|guest|size|people|places').hasMatch(f.id)).firstOrNull,
+        statusField: t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull);
+  }
+
+  static final _bookable = RegExp(r'table|room|stylist|barber|doctor|dentist|therap|staff|trainer|coach|court|desk|seat|bay|chair|lane|pitch|vehicle|tutor|teacher|person', caseSensitive: false);
+
+  /// A booking with this status doesn't hold the table.
+  bool cancelled(Map<String, Object?> r) => statusField != null && RegExp(r'cancel|no.?show|declin|reject', caseSensitive: false).hasMatch('${r[statusField!.id] ?? ''}');
+}
+
+int? _minutes(Object? hhmm) {
+  final m = RegExp(r'^(\d{1,2})[:.](\d{2})').firstMatch('${hhmm ?? ''}'.trim());
+  return m == null ? null : int.parse(m[1]!) * 60 + int.parse(m[2]!);
+}
+
+String _hhmm(int m) => '${(m ~/ 60 % 24).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
+
 class AppDataError implements Exception {
   AppDataError(this.message);
   final String message;
@@ -49,9 +84,113 @@ class AppData {
     final t = _table(table);
     if (t.single) return setSingle(table, values, manager: manager);
     final clean = await _clean(t, values, manager: manager, partial: false);
+    // The same booking or order again within half an hour (asked twice, saved twice): keep one.
+    final same = await _recentSame(t, clean);
+    if (same != null) return same;
     if (via != null) clean['_via'] = via;
+    final shape = BookingShape.of(spec, t);
+    if (shape != null) await _holdResource(shape, clean);
     final now = DateTime.now().millisecondsSinceEpoch;
     return db.raw.insert('app_rows', {'app_id': appId, 'tbl': t.id, 'data': jsonEncode(clean), 'created_at': now, 'updated_at': now});
+  }
+
+  Future<int?> _recentSame(TableSpec t, Map<String, Object?> clean) async {
+    final since = DateTime.now().subtract(const Duration(minutes: 30)).millisecondsSinceEpoch;
+    final keys = [for (final f in t.fields) if (!f.managerOnly && f.type != 'link' && clean[f.id] != null) f.id];
+    if (keys.length < 2) return null;
+    final rows = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND created_at > ?', whereArgs: [appId, t.id, since]);
+    for (final r in rows) {
+      final d = (jsonDecode(r['data'] as String) as Map).cast<String, Object?>();
+      if (keys.every((k) => '${d[k]}'.toLowerCase() == '${clean[k]}'.toLowerCase())) return r['id'] as int;
+    }
+    return null;
+  }
+
+  // ---------------- bookings ----------------
+
+  /// How long one booking holds a table (minutes): the manager sets it on the website.
+  int get bookingMinutes => int.tryParse(spec.site['booking_minutes'] ?? '') ?? 120;
+
+  /// Bookings that hold something on [date] ("YYYY-MM-DD"): which, from, to (minutes), and the record.
+  Future<List<({int resource, int from, int to, Map<String, Object?> row})>> busy(BookingShape b, String date) async {
+    final out = <({int resource, int from, int to, Map<String, Object?> row})>[];
+    for (final r in await list(b.table.id, manager: true)) {
+      if ('${r[b.dateField.id] ?? ''}' != date || b.cancelled(r)) continue;
+      final from = _minutes(r[b.timeField.id]);
+      final res = r[b.resourceField.id];
+      if (from == null || res is! int) continue;
+      out.add((resource: res, from: from, to: from + bookingMinutes, row: r));
+    }
+    return out;
+  }
+
+  /// What can be booked on [date] at [time] for [guests]: free ones first, smallest that fits first.
+  Future<({List<Map<String, Object?>> free, List<Map<String, Object?>> taken})> availability(BookingShape b, String date, String time, {int guests = 0}) async {
+    final at = _minutes(time) ?? (throw AppDataError('Give the time as HH:MM.'));
+    final hold = await busy(b, date);
+    final all = await list(b.resources.id, manager: true);
+    bool fits(Map<String, Object?> r) => guests <= 0 || b.seatsField == null || ((r[b.seatsField!.id] as num?) ?? 999) >= guests;
+    bool takenAt(Map<String, Object?> r) => hold.any((h) => h.resource == r['id'] && at < h.to && at + bookingMinutes > h.from);
+    final free = all.where((r) => fits(r) && !takenAt(r)).toList()
+      ..sort((x, y) => (((x[b.seatsField?.id] as num?) ?? 0).compareTo((y[b.seatsField?.id] as num?) ?? 0)));
+    return (free: free, taken: all.where(takenAt).toList());
+  }
+
+  /// A new booking: its table must be free then; with no table chosen, the best free one is given.
+  Future<void> _holdResource(BookingShape b, Map<String, Object?> clean) async {
+    final date = clean[b.dateField.id], time = clean[b.timeField.id];
+    if (date == null || time == null) return;
+    final guests = (clean[b.guestsField?.id] as num?)?.toInt() ?? 0;
+    final a = await availability(b, '$date', '$time', guests: guests);
+    final what = b.resources.title.toLowerCase();
+    String names(List<Map<String, Object?>> rs) => rs.take(8).map((r) => '${r[b.resources.labelField] ?? r['id']}').join(', ');
+    final chosen = clean[b.resourceField.id];
+    if (chosen == null) {
+      if (a.free.isEmpty) throw AppDataError('Sorry, nothing is free at $time on $date${guests > 0 ? ' for $guests' : ''}. Try another time.');
+      clean[b.resourceField.id] = a.free.first['id'];
+      return;
+    }
+    if (!a.free.any((r) => r['id'] == chosen)) {
+      final r = (await list(b.resources.id, manager: true)).where((x) => x['id'] == chosen).firstOrNull;
+      final tooSmall = r != null && !a.taken.any((x) => x['id'] == chosen);
+      throw AppDataError('${b.resources.title.replaceAll(RegExp(r's$'), '')} ${r?[b.resources.labelField] ?? chosen} '
+          '${tooSmall ? 'is too small for $guests' : 'is already booked at $time on $date'}. '
+          '${a.free.isEmpty ? 'Nothing else is free then.' : 'Free $what then: ${names(a.free)}.'}');
+    }
+  }
+
+  /// The day plan: every resource and its bookings, for the website (no names) or the manager.
+  Future<Map<String, Object?>> dayPlan(BookingShape b, String date, {required bool manager}) async {
+    final hours = spec.tables.where((t) => t.single).expand((t) => [t]).toList();
+    int? open, close;
+    for (final t in hours) {
+      final times = t.fields.where((f) => f.type == 'time').toList();
+      if (times.length < 2) continue;
+      final r = await single(t.id, manager: true);
+      open = _minutes(r[times[0].id]);
+      close = _minutes(r[times[1].id]);
+      if (open != null && close != null) break;
+    }
+    return {
+      'minutes': bookingMinutes,
+      'open': _hhmm(open ?? 12 * 60),
+      'close': _hhmm(close ?? 22 * 60),
+      'resources': [
+        for (final r in await list(b.resources.id, manager: true))
+          {'id': r['id'], 'name': '${r[b.resources.labelField] ?? r['id']}', if (b.seatsField != null) 'seats': r[b.seatsField!.id]},
+      ],
+      'busy': [
+        for (final h in await busy(b, date))
+          {
+            'resource': h.resource,
+            'from': _hhmm(h.from),
+            'to': _hhmm(h.to),
+            if (manager) 'id': h.row['id'],
+            if (manager) 'who': '${h.row[b.table.labelField] ?? ''}',
+            if (manager && b.guestsField != null) 'guests': h.row[b.guestsField!.id],
+          },
+      ],
+    };
   }
 
   Future<void> update(String table, int id, Map<String, dynamic> values) async {

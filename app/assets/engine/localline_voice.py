@@ -33,7 +33,7 @@ from pathlib import Path
 import aiohttp
 import httpx
 import numpy as np
-from livekit import rtc
+from livekit import api, rtc
 from livekit.agents import (
     APIConnectOptions,
     Agent,
@@ -675,6 +675,7 @@ class AppLLM(openai.LLM):
         return super().chat(**kw)
 
 
+_HANGUP = _re.compile(r"\s*\[hangup\]\s*", _re.IGNORECASE)
 _SENTENCE_END = _re.compile(r"[.!?؟。…](?=\s)")
 
 
@@ -684,6 +685,18 @@ class Ava(Agent):
 
     # Set by the call: plays/stops the "thinking" sound while the rest of the answer is on its way.
     waiting = None
+    # The model ends its last reply with [hangup] when the call is over.
+    hangup_requested = False
+
+    def _strip_hangup(self, t: str) -> str:
+        if "[hangup]" in t.lower():
+            self.hangup_requested = True
+            return _HANGUP.sub("", t)
+        return t
+
+    async def transcription_node(self, text, model_settings):  # noqa: ANN001, ANN201
+        async for t in text:
+            yield self._strip_hangup(t) if "[" in t else t
 
     async def tts_node(self, text, model_settings):  # noqa: ANN001, ANN201
         tts_ = self.session.tts
@@ -736,6 +749,7 @@ class Ava(Agent):
                         else:
                             buf += t
                         continue
+                piece = self._strip_hangup(piece) if piece else piece
                 if piece and piece.strip():
                     spoke = True
                     async with tts_.synthesize(piece.strip()) as stream:
@@ -899,6 +913,13 @@ async def entrypoint(ctx: JobContext) -> None:
     asyncio.create_task(warm_phrases())
     session.on("user_state_changed", sync_sound)
     # When the call ends: the conversation goes back to the app (Calls, and the call's result).
+    def caller_number() -> str:
+        for p in ctx.room.remote_participants.values():
+            n = p.attributes.get("sip.phoneNumber")
+            if n:
+                return n
+        return ""
+
     async def report() -> None:
         base = os.environ.get("LL_APP_URL")
         if not base or not phone_call:
@@ -911,13 +932,32 @@ async def entrypoint(ctx: JobContext) -> None:
                 transcript.append({"role": role, "text": text})
         try:
             async with aiohttp.ClientSession() as h:
-                await h.post(f"{base}/api/call-ended", json={"room": ctx.room.name, "transcript": transcript, "answered": picked_up["yes"],
+                await h.post(f"{base}/api/call-ended", json={"room": ctx.room.name, "transcript": transcript, "answered": picked_up["yes"], "number": caller_number(),
                                                               "started_at": int(started * 1000), "duration_s": int(time.time() - started)},
                              headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=10))
         except Exception as e:  # noqa: BLE001
             log.warning("could not report the call: %s", e)
 
     ctx.add_shutdown_callback(report)
+
+    async def hang_up() -> None:
+        await asyncio.sleep(1.0)  # let the goodbye finish on their side
+        log.info("hanging up")
+        try:
+            url = os.environ.get("LIVEKIT_URL", "").replace("ws://", "http://").replace("wss://", "https://")
+            lk = api.LiveKitAPI(url, os.environ.get("LIVEKIT_API_KEY"), os.environ.get("LIVEKIT_API_SECRET"))
+            await lk.room.delete_room(api.DeleteRoomRequest(room=ctx.room.name))
+            await lk.aclose()
+        except Exception as e:  # noqa: BLE001
+            log.warning("hang up failed: %s", e)
+            ctx.shutdown("hang up")
+
+    def maybe_hang_up(ev) -> None:  # noqa: ANN001
+        if phone_call and ava.hangup_requested and ev.old_state == "speaking" and ev.new_state != "speaking":
+            ava.hangup_requested = False
+            asyncio.create_task(hang_up())
+
+    session.on("agent_state_changed", maybe_hang_up)
 
     if mode.startswith("outbound#"):
         # Wait until they pick up (the phone is still ringing until then).

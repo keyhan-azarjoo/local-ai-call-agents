@@ -629,7 +629,10 @@ class LinesPage extends StatelessWidget {
                 last: l == lines.last,
                 leading: LogoBox(child: Text(providers[l['provider']]?.$1.substring(0, 2) ?? '?', style: const TextStyle(fontWeight: FontWeight.w700))),
                 title: Text(l['label'] as String),
-                subtitle: Muted('${l['number'] ?? ''} · ${providers[l['provider']]?.$1 ?? ''}', mono: true),
+                subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Muted('${l['number'] ?? ''} · ${providers[l['provider']]?.$1 ?? ''}', mono: true),
+                  if (l['provider'] == 'twilio') _InboundSwitch(line: l),
+                ]),
                 trailing: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                   Pill(l['status'] == 'verified' ? 'Account verified · call engine coming next' : 'Saved · call engine coming next',
                       tone: l['status'] == 'verified' ? Tone.blue : Tone.neutral),
@@ -652,6 +655,58 @@ class LinesPage extends StatelessWidget {
         ]),
       ),
     ]);
+  }
+}
+
+/// "Answer calls here": calls to the Twilio number come to Ava on this computer.
+class _InboundSwitch extends StatefulWidget {
+  const _InboundSwitch({required this.line});
+  final Map<String, Object?> line;
+  @override
+  State<_InboundSwitch> createState() => _InboundSwitchState();
+}
+
+class _InboundSwitchState extends State<_InboundSwitch> {
+  bool busy = false;
+  String? note;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.read<AppState>();
+    final on = '${widget.line['config']}'.contains('"inbound":true');
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Transform.scale(
+            scale: .8,
+            child: Switch(
+              value: on,
+              onChanged: busy
+                  ? null
+                  : (v) async {
+                      setState(() => busy = true);
+                      final r = await s.setInbound(widget.line['id'] as int, v);
+                      if (mounted) {
+                        setState(() {
+                          busy = false;
+                          note = r;
+                        });
+                      }
+                    },
+            ),
+          ),
+          Text(busy ? 'Setting up…' : 'Answer calls here', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        ]),
+        if (note != null) Muted(note!, size: 12),
+        if (on)
+          const Muted(
+            'One-time router setting: forward TCP port 5080 and UDP ports 52000–52500 to this computer '
+            '(router admin page → Port forwarding). Until then, calls still reach the previous setup.',
+            size: 12,
+          ),
+      ]),
+    );
   }
 }
 

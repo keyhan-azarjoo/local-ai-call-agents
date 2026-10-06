@@ -614,6 +614,64 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<String?> _contactName(String number) async {
+    if (number.isEmpty) return null;
+    final digits = number.replaceAll(RegExp(r'[^0-9]'), '');
+    for (final c in await db.all('contacts', orderBy: 'id')) {
+      final d = '${c['number'] ?? ''}'.replaceAll(RegExp(r'[^0-9]'), '');
+      if (d.length >= 7 && (digits.endsWith(d.substring(d.length - 7)))) return '${c['name']}';
+    }
+    return null;
+  }
+
+  /// Answer calls to this Twilio line here (or give the number back to its previous setup).
+  Future<String> setInbound(int lineId, bool on) async {
+    final line = (await db.all('lines', where: 'id = ?', args: [lineId])).firstOrNull;
+    if (line == null || phone == null || voice == null) return 'Not available here.';
+    var cfg = (jsonDecode('${line['config']}') as Map).cast<String, dynamic>();
+    try {
+      if (on) {
+        cfg = await phone!.ensureTwilioTrunk(cfg) ?? cfg;
+        final ip = await Phone.publicIp();
+        if (ip == null) return 'Couldn’t find this network’s public address. Check the internet connection.';
+        cfg = await phone!.enableInbound(cfg, publicIp: ip);
+        await db.update('lines', lineId, {'config': jsonEncode(cfg)});
+        if (!voice!.phoneReady) await startVoice();
+        if (voice!.phoneReady) await phone!.ensureInbound(cfg);
+        await log('Calls to ${cfg['number']} now come to this computer');
+        refresh();
+        return 'Calls to ${cfg['number']} now come here. If this computer can’t be reached, they still go to the previous setup.';
+      }
+      cfg = await phone!.disableInbound(cfg);
+      await db.update('lines', lineId, {'config': jsonEncode(cfg)});
+      await log('Calls to ${cfg['number']} go back to the previous setup');
+      refresh();
+      return 'Calls to ${cfg['number']} go to the previous setup again.';
+    } catch (e) {
+      return '$e';
+    }
+  }
+
+  /// After the engine starts: lines that answer here get their LiveKit side again.
+  Future<void> _restoreInbound() async {
+    if (phone == null || voice?.phoneReady != true) return;
+    for (final l in await db.all('lines', where: "provider = 'twilio'", orderBy: 'id')) {
+      final cfg = (jsonDecode('${l['config']}') as Map).cast<String, dynamic>();
+      if (cfg['inbound'] == true) {
+        try {
+          await phone!.ensureInbound(cfg);
+          // The public address can change (new router, ISP): keep Twilio pointing here.
+          final ip = await Phone.publicIp();
+          if (ip != null && ip != cfg['publicIp']) {
+            await db.update('lines', l['id'] as int, {'config': jsonEncode(await phone!.enableInbound(cfg, publicIp: ip))});
+          }
+        } catch (e) {
+          await log('Couldn’t set up incoming calls for ${cfg['number']}: $e');
+        }
+      }
+    }
+  }
+
   /// The voice agent reports a finished phone call: keep it in Calls and report back on the task.
   Future<void> _callEnded(Map<String, dynamic> b) async {
     final room = '${b['room'] ?? ''}';
@@ -639,7 +697,7 @@ class AppState extends ChangeNotifier {
     final line = task?['line_id'] == null ? null : (await db.all('lines', where: 'id = ?', args: [task!['line_id']])).firstOrNull;
     await db.insert('calls', {
       'direction': task != null ? 'outbound' : 'inbound',
-      'name': task?['to_name'] ?? b['caller'] ?? 'Caller',
+      'name': task?['to_name'] ?? await _contactName('${b['number'] ?? ''}') ?? 'Caller',
       'number': task?['number'] ?? b['number'] ?? '',
       'line': line?['number'] ?? '',
       'started_at': (b['started_at'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
@@ -739,6 +797,7 @@ class AppState extends ChangeNotifier {
       if (!f.existsSync() || f.readAsStringSync() != src) await f.writeAsString(src);
     }
     await v.start();
+    await _restoreInbound();
   }
 
   Future<void> installVoiceEngine() async {
@@ -933,6 +992,11 @@ class AppState extends ChangeNotifier {
     }
     voice = VoiceEngine(dataDir: p.dirname(db.path), appUrl: 'http://127.0.0.1:$port', appKey: host!.engineKey)..addListener(notifyListeners);
     phone = Phone(voice!);
+    // Lines that answer calls here need the voice engine running from the start.
+    unawaited(() async {
+      final lines = await db.all('lines', where: "provider = 'twilio'", orderBy: 'id');
+      if (lines.any((l) => '${l['config']}'.contains('"inbound":true'))) await startVoice();
+    }());
     AppLifecycleListener(
       onExitRequested: () async {
         await voice?.stop();
@@ -948,6 +1012,8 @@ class AppState extends ChangeNotifier {
           if (dv == 'install') await installVoiceEngine();
           await startVoice();
           // Debug builds only: place a queued call on launch, for testing phone calls.
+          final inbound = int.tryParse(Platform.environment['LOCALAILINE_DEV_INBOUND'] ?? '');
+          if (inbound != null) await log('DEV inbound: ${await setInbound(inbound, true)}');
           final call = int.tryParse(Platform.environment['LOCALAILINE_DEV_CALL'] ?? '');
           if (call != null) await placeCall(call);
         }());
@@ -989,7 +1055,8 @@ class AppState extends ChangeNotifier {
         ? Persona.ownerSystem('${agent?['name'] ?? 'Ava'}', ownerName)
         : '${Persona.callerSystem(agent)} Reply in the caller’s language.';
     final speak = _languageNames[lang];
-    return '$system This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
+    final hangup = mode == 'owner' ? '' : ' When the call is clearly over (the goal is done or they want to go, and you have said goodbye), end your final reply with [hangup].';
+    return '$system$hangup This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
         'If there are many items, say the three or four most useful ones and ask if they want to hear more. '
         'The person’s words come from speech recognition and may contain mis-heard words: work out what they most likely meant and answer that; never repeat their words back. '
         'Names are often mis-heard (“K-Han” or “Kay hun” for “Keyhan”): if a name sounds like one you know, use that person — don’t say they don’t exist. '
@@ -1190,7 +1257,7 @@ class AppState extends ChangeNotifier {
   /// A trailing fragment that might still turn into markdown is held back.
   static String spokenText(String t) {
     t = t.split('CALL_TASK').first;
-    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\s+)$');
+    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z]*|\s+)$');
     for (var held = t.replaceFirst(pending, ''); held != t; held = t.replaceFirst(pending, '')) {
       t = held;
     }

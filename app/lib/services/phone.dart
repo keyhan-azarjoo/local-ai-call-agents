@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -59,6 +62,86 @@ class Phone {
     return {...cfg, 'sipDomain': trunk['domain_name'], 'trunkSid': trunk['sid'], 'sipUser': 'localailine', 'sipPass': pass, 'credentialListSid': list['sid']};
   }
 
+  /// Sends calls to your number to this computer: the number joins the LocalAILine trunk, whose
+  /// origination points here. Its previous setup (e.g. another app's webhook) is kept as the
+  /// trunk's backup, so callers are still answered there if this computer can't be reached.
+  Future<Map<String, dynamic>> enableInbound(Map<String, dynamic> cfg, {required String publicIp, int port = sipPort}) async {
+    final sid = cfg['sid'], trunk = cfg['trunkSid'];
+    final nums = (await _twilio(cfg, 'GET', 'https://api.twilio.com/2010-04-01/Accounts/$sid/IncomingPhoneNumbers.json?PhoneNumber=${Uri.encodeQueryComponent('${cfg['number']}')}'))['incoming_phone_numbers'] as List;
+    if (nums.isEmpty) throw PhoneError('${cfg['number']} isn’t a number in this Twilio account.');
+    final n = nums.first as Map;
+    final previous = cfg['previousVoice'] ?? {'url': n['voice_url'], 'method': n['voice_method'], 'trunk': n['trunk_sid']};
+    if ('${previous['url'] ?? ''}'.isNotEmpty) {
+      await _twilio(cfg, 'POST', 'https://trunking.twilio.com/v1/Trunks/$trunk', {'DisasterRecoveryUrl': '${previous['url']}', 'DisasterRecoveryMethod': '${previous['method'] ?? 'POST'}'});
+    }
+    final origins = (await _twilio(cfg, 'GET', 'https://trunking.twilio.com/v1/Trunks/$trunk/OriginationUrls'))['origination_urls'] as List;
+    for (final o in origins.cast<Map>()) {
+      await _twilio(cfg, 'DELETE', 'https://trunking.twilio.com/v1/Trunks/$trunk/OriginationUrls/${o['sid']}');
+    }
+    await _twilio(cfg, 'POST', 'https://trunking.twilio.com/v1/Trunks/$trunk/OriginationUrls',
+        {'FriendlyName': 'This computer', 'SipUrl': 'sip:$publicIp:$port;transport=tcp', 'Priority': '10', 'Weight': '10', 'Enabled': 'true'});
+    if (n['trunk_sid'] != trunk) {
+      await _twilio(cfg, 'POST', 'https://trunking.twilio.com/v1/Trunks/$trunk/PhoneNumbers', {'PhoneNumberSid': '${n['sid']}'});
+    }
+    return {...cfg, 'inbound': true, 'previousVoice': previous, 'numberSid': n['sid'], 'publicIp': publicIp};
+  }
+
+  /// Gives the number back to its previous setup.
+  Future<Map<String, dynamic>> disableInbound(Map<String, dynamic> cfg) async {
+    final trunk = cfg['trunkSid'], pn = cfg['numberSid'];
+    if (pn != null) {
+      try {
+        await _twilio(cfg, 'DELETE', 'https://trunking.twilio.com/v1/Trunks/$trunk/PhoneNumbers/$pn');
+      } on PhoneError catch (e) {
+        if (!e.message.contains('404')) rethrow;
+      }
+    }
+    return {...cfg, 'inbound': false};
+  }
+
+  /// Our public IP, asked from Twilio's STUN server (no other service involved).
+  static Future<String?> publicIp() async {
+    final sock = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+    final done = Completer<String?>();
+    sock.listen((e) {
+      if (e != RawSocketEvent.read || done.isCompleted) return;
+      final d = sock.receive();
+      if (d == null) return;
+      final b = ByteData.sublistView(d.data);
+      for (var i = 20; i + 4 <= d.data.length;) {
+        final t = b.getUint16(i), l = b.getUint16(i + 2);
+        if (t == 0x0020 && l >= 8) {
+          done.complete([for (var k = 0; k < 4; k++) d.data[i + 8 + k] ^ [0x21, 0x12, 0xa4, 0x42][k]].join('.'));
+          return;
+        }
+        i += 4 + l + ((4 - l % 4) % 4);
+      }
+    });
+    try {
+      final host = (await InternetAddress.lookup('global.stun.twilio.com', type: InternetAddressType.IPv4)).first;
+      final req = Uint8List(20);
+      req.buffer.asByteData()
+        ..setUint16(0, 1)
+        ..setUint32(4, 0x2112A442);
+      final rnd = Random.secure();
+      for (var i = 8; i < 20; i++) {
+        req[i] = rnd.nextInt(256);
+      }
+      for (var attempt = 0; attempt < 3 && !done.isCompleted; attempt++) {
+        sock.send(req, host, 3478);
+        await Future.any([done.future, Future.delayed(const Duration(seconds: 1))]);
+      }
+      return done.isCompleted ? await done.future : null;
+    } catch (_) {
+      return null;
+    } finally {
+      sock.close();
+    }
+  }
+
+  /// The port calls come in on. Not 5060: home routers' "SIP ALG" interferes with that one.
+  static const sipPort = 5080;
+
   // ---------------- LiveKit SIP ----------------
 
   Future<Map<String, dynamic>> _livekit(String method, Map<String, Object?> body) async {
@@ -86,6 +169,25 @@ class Phone {
       },
     });
     return _trunks[key] = (j['sip_trunk_id'] ?? j['sipTrunkId']) as String;
+  }
+
+  /// LiveKit side of incoming calls (it forgets them when it restarts): calls to the number
+  /// get their own room "pstn-in-…", where Ava answers.
+  final _inbound = <String>{};
+  Future<void> ensureInbound(Map<String, dynamic> cfg) async {
+    final number = '${cfg['number']}';
+    if (_inbound.contains(number)) return;
+    final t = await _livekit('CreateSIPInboundTrunk', {
+      'trunk': {'name': 'Twilio $number', 'numbers': [number]},
+    });
+    await _livekit('CreateSIPDispatchRule', {
+      'rule': {
+        'dispatch_rule_individual': {'room_prefix': 'pstn-in-'},
+      },
+      'trunk_ids': [t['sip_trunk_id'] ?? t['sipTrunkId']],
+      'name': 'Answer $number',
+    });
+    _inbound.add(number);
   }
 
   /// Rings [number] from the line; Ava joins room [room] and takes over once they answer.

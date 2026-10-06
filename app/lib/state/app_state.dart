@@ -1277,6 +1277,78 @@ class AppState extends ChangeNotifier {
   final _dayDoubted = <String>{};
 
   /// The agents a call can be passed between: the one answering calls, and those set up for hand-offs.
+  /// A pretend customer phones in: a local model plays them (with [goal] and the [facts] they
+  /// know) and talks to the answering agent through the real call path, so bookings and orders
+  /// land in the business's app. Each line is given to [onLine] as it is said; the call is kept
+  /// in Calls (Tests) with what the AI did. Returns the transcript.
+  Future<List<Map<String, String>>> testCall({
+    required String goal,
+    required List<String> facts,
+    String number = '+447700900999',
+    int maxTurns = 10,
+    void Function(String who, String text)? onLine,
+    bool Function()? stop,
+  }) async {
+    final h = host;
+    if (h == null || !h.running) throw StateError('The app\'s call service isn\'t running.');
+    if (!llmReady) throw StateError('Set up the AI first (Settings).');
+    final room = 'pstn-in-0-_${number}_test${DateTime.now().millisecondsSinceEpoch}';
+    final base = 'http://127.0.0.1:${h.port}';
+    final started = DateTime.now();
+    final logFrom = started.millisecondsSinceEpoch;
+    final cfg = jsonDecode((await http.get(Uri.parse('$base/api/voice-config?room=$room&mode=caller&token=${h.engineKey}'))).body) as Map;
+    final turns = <Map<String, String>>[{'role': 'assistant', 'content': '${cfg['greeting']}'}];
+    onLine?.call('ai', '${cfg['greeting']}');
+    final farewell = RegExp(r'\b(bye|goodbye|take care|have a (great|good|nice|lovely)|see you|thanks for calling)\b', caseSensitive: false);
+    for (var i = 0; i < maxTurns && !(stop?.call() ?? false); i++) {
+      // The customer's next line.
+      final said = (await askWhole([
+        ChatMessage('system', 'You are role-playing a CUSTOMER phoning a business. You are NOT the assistant. Your goal: $goal\n'
+            'Facts you know (use exactly these, never invent others):\n- ${facts.join('\n- ')}\n'
+            'Speak like a real phone caller: one or two short sentences. Answer what you were just asked. If the assistant suggests a detail that is not in your facts, '
+            'say no and give the right one. When your goal is done (they clearly confirmed it) or clearly cannot be done, say a short goodbye and end with [END]. Output only what you say.'),
+        for (final t in turns) ChatMessage(t['role'] == 'user' ? 'assistant' : 'user', t['content']!),
+        if (i == 0) ChatMessage('user', '(Say your opening line now.)'),
+      ])).trim();
+      final ended = said.contains('[END]');
+      final line = said.replaceAll('[END]', '').trim();
+      if (line.isEmpty) break;
+      turns.add({'role': 'user', 'content': line});
+      onLine?.call('them', line);
+      // The assistant's answer, exactly as on a phone call.
+      final rq = http.Request('POST', Uri.parse('$base/v1/chat/completions?token=${h.engineKey}'))
+        ..headers['content-type'] = 'application/json'
+        ..body = jsonEncode({'model': 'caller:en:$room', 'stream': true, 'messages': turns});
+      final rs = await http.Client().send(rq);
+      final body = await rs.stream.bytesToString();
+      var text = body.split('\n').where((l) => l.startsWith('data: {')).map((l) => '${(jsonDecode(l.substring(6)) as Map)['choices'][0]['delta']['content'] ?? ''}').join();
+      final passed = RegExp(r'\[(voice|connect):([^\]]*)\]').firstMatch(text);
+      final hangup = text.contains('[hangup]') && farewell.hasMatch(text);
+      text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
+      turns.add({'role': 'assistant', 'content': text});
+      if (passed != null) onLine?.call('note', passed.group(1) == 'connect' ? 'Passing the call to a person' : 'Passed to another agent');
+      onLine?.call('ai', text);
+      if (hangup || passed?.group(1) == 'connect' || (ended && !text.trim().endsWith('?'))) break;
+    }
+    // What the AI did meanwhile (bookings, orders, checks), from the activity log.
+    final did = [for (final a in await db.all('audit', where: 'at >= ?', args: [logFrom], orderBy: 'id')) '${a['what']}'];
+    await db.insert('calls', {
+      'direction': 'test',
+      'name': 'Test call: ${goal.length > 60 ? '${goal.substring(0, 60)}…' : goal}',
+      'number': number,
+      'line': 'Simulated caller',
+      'started_at': started.millisecondsSinceEpoch,
+      'duration_s': DateTime.now().difference(started).inSeconds,
+      'outcome': 'Test',
+      'summary': did.isEmpty ? 'Nothing was saved.' : did.join(' · '),
+      'transcript': jsonEncode([for (final t in turns) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': t['content']}]),
+    });
+    await http.post(Uri.parse('$base/api/call-ended?token=${h.engineKey}'), body: jsonEncode({'room': room, 'transcript': [], 'answered': true, 'number': number}));
+    await log('Ran a test call: $goal');
+    refresh();
+    return turns;
+  }
+
   /// Adds an agent (or a real person) to the call flow from a ready-made role.
   Future<int> addRole(RoleTemplate t) async {
     final id = await db.insert('agents', {

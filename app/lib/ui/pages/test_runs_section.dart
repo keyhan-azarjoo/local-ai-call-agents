@@ -65,10 +65,20 @@ class _TestRunsSectionState extends State<TestRunsSection> {
 
   @override
   Widget build(BuildContext context) {
+    final start = Panel(
+      child: Row(children: [
+        const Icon(Icons.record_voice_over_outlined),
+        const SizedBox(width: 12),
+        const Expanded(child: Muted('Have a pretend customer phone your assistant: watch the conversation live, then check your app’s website.')),
+        Btn('Run a test call', kind: BtnKind.primary, onPressed: () => showDialog(context: context, barrierDismissible: false, builder: (_) => const TestCallDialog())),
+      ]),
+    );
     if (runs.isEmpty) {
-      return const Panel(
-        child: EmptyState(icon: Icons.science_outlined, title: 'No test calls yet', body: 'Run the phone-call scenarios (app/test/scenarios) and they show up here, live.'),
-      );
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        start,
+        const SizedBox(height: 12),
+        const Panel(child: EmptyState(icon: Icons.science_outlined, title: 'No test scenarios yet', body: 'Results of the phone-call scenarios (app/test/scenarios) show up here, live.')),
+      ]);
     }
     final passed = runs.where((r) => r['pass'] == true).length;
     final apps = <String, List<Map<String, dynamic>>>{};
@@ -81,6 +91,8 @@ class _TestRunsSectionState extends State<TestRunsSection> {
     ];
     final calls = runs.fold<int>(0, (n, r) => n + ((r['calls'] as List?)?.where((c) => (c as Map).containsKey('turns')).length ?? 0));
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      start,
+      const SizedBox(height: 12),
       Panel(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
@@ -238,4 +250,123 @@ Widget _bubble(BuildContext ctx, String line) {
       ),
     ]),
   );
+}
+
+
+/// Ready-made things a test customer can ring about.
+const _presets = <(String, String, List<String>)>[
+  ('Book a table', 'Book a table for 2 tomorrow at 7pm.', ['Day: tomorrow', 'Time: 7pm', 'People: 2']),
+  ('Order for delivery', 'Order 2 Margherita pizzas and 1 tiramisu for delivery.', ['You want: 2 Margherita, 1 tiramisu', 'Delivery to: 12 Mill Lane', 'Postcode: E1 6AN']),
+  ('Order for collection', 'Order 1 Diavola and 2 San Pellegrino to collect at 6:30pm.', ['You want: 1 Diavola, 2 San Pellegrino', 'You will collect it at 6:30pm']),
+  ('Change my booking', 'You booked a table for tomorrow; move it to 9pm, same day.', ['Your booking: tomorrow', 'New time: 9pm', 'You booked with the number you are calling from']),
+  ('Cancel my booking', 'Cancel your table booking for tomorrow.', ['Your booking: tomorrow', 'You booked with the number you are calling from']),
+  ('Book a haircut', 'Book a skin fade on Saturday at 10am with Tony.', ['Service: skin fade', 'Day: Saturday', 'Time: 10am', 'Barber: Tony']),
+  ('Ask a price', 'Ask how much your most popular item or service costs. You do not want to book or order.', []),
+  ('Speak to a person', 'Ask to speak to the manager about a compliment.', ['It is about a compliment']),
+];
+
+/// Runs one test call and shows it as it happens.
+class TestCallDialog extends StatefulWidget {
+  const TestCallDialog({super.key});
+  @override
+  State<TestCallDialog> createState() => _TestCallDialogState();
+}
+
+class _TestCallDialogState extends State<TestCallDialog> {
+  final goal = TextEditingController(text: _presets.first.$2);
+  final facts = TextEditingController(text: _presets.first.$3.join('\n'));
+  final name = TextEditingController(text: 'Alex Morgan');
+  final number = TextEditingController(text: '+447700900999');
+  final lines = <(String, String)>[];
+  final scroll = ScrollController();
+  bool running = false, stopped = false, done = false;
+  String? error;
+
+  Future<void> _run() async {
+    final s = context.read<AppState>();
+    setState(() {
+      running = true;
+      lines.clear();
+      error = null;
+    });
+    try {
+      await s.testCall(
+        goal: goal.text.trim(),
+        facts: ['Your name: ${name.text.trim()}', ...facts.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty)],
+        number: number.text.trim(),
+        stop: () => stopped,
+        onLine: (who, text) {
+          if (!mounted) return;
+          setState(() => lines.add((who, text)));
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
+          });
+        },
+      );
+    } catch (e) {
+      error = '$e';
+    }
+    if (mounted) {
+      setState(() {
+        running = false;
+        done = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720, maxHeight: 760),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Text('Test call', style: displayStyle(context, 22)),
+              const Muted('A local AI plays the customer and phones your assistant the way a real caller does. Bookings and orders go into your app.'),
+              const SizedBox(height: 14),
+              if (lines.isEmpty && !running) ...[
+                Wrap(spacing: 8, runSpacing: 8, children: [
+                  for (final p in _presets)
+                    InkWell(
+                      onTap: () => setState(() {
+                        goal.text = p.$2;
+                        facts.text = p.$3.join('\n');
+                      }),
+                      child: Pill(p.$1, tone: goal.text == p.$2 ? Tone.blue : Tone.neutral),
+                    ),
+                ]),
+                const SizedBox(height: 12),
+                Field(label: 'What the customer wants', child: TextField(controller: goal, maxLines: 2)),
+                const SizedBox(height: 8),
+                Field(label: 'What they know (one per line)', child: TextField(controller: facts, maxLines: 4)),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: Field(label: 'Their name', child: TextField(controller: name))),
+                  const SizedBox(width: 12),
+                  Expanded(child: Field(label: 'Calling from (use the same number to change or cancel later)', child: TextField(controller: number))),
+                ]),
+              ] else
+                Expanded(
+                  child: ListView(controller: scroll, children: [
+                    for (final (who, text) in lines)
+                      if (who == 'note') Padding(padding: const EdgeInsets.only(bottom: 8), child: Center(child: Pill(text, tone: Tone.blue))) else _bubble(context, '${who == 'ai' ? 'AI' : 'CALLER'}: $text'),
+                    if (running) const Padding(padding: EdgeInsets.all(12), child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)))),
+                    if (done) Padding(padding: const EdgeInsets.all(8), child: Muted(error ?? 'Call finished — it is saved in Calls → Tests. Open your app’s manager page to see what was booked or ordered.')),
+                  ]),
+                ),
+              const SizedBox(height: 12),
+              Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                if (running) Btn('Hang up', kind: BtnKind.danger, onPressed: () => setState(() => stopped = true)),
+                if (!running) Btn('Close', onPressed: () => Navigator.pop(context)),
+                const SizedBox(width: 8),
+                if (!running) Btn(done ? 'Call again' : 'Start the call', kind: BtnKind.primary, onPressed: () {
+                  stopped = false;
+                  done = false;
+                  _run();
+                }),
+              ]),
+            ]),
+          ),
+        ),
+      );
 }

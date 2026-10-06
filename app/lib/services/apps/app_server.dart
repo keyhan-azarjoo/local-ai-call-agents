@@ -15,7 +15,7 @@ import 'app_web.dart';
 /// - `/mcp`: what customers may do (callers can use it without approval)
 /// - `/mcp/manager`: the rest, for the owner (needs the manager PIN)
 class AppServer {
-  AppServer({required this.data, required this.pin, this.filesDir, this.onSpecChanged});
+  AppServer({required this.data, required this.pin, this.filesDir, this.onSpecChanged, this.readPicture});
   final AppData data;
   String pin;
 
@@ -24,6 +24,9 @@ class AppServer {
 
   /// The manager changed the website (texts, pictures, style) on the manager page.
   final Future<void> Function(AppSpec spec)? onSpecChanged;
+
+  /// Reads records for a table from a photo (with an AI that can see). Throws with a message.
+  final Future<List<Map<String, dynamic>>> Function(String table, String base64)? readPicture;
   HttpServer? _http;
   bool paused = false;
 
@@ -108,6 +111,21 @@ class AppServer {
       return _json(req, 403, {'error': 'Wrong PIN.'});
     }
     if (rest == '_upload' && req.method == 'POST') return _upload(req, manager);
+    if (rest.startsWith('_import/') && req.method == 'POST') {
+      if (!manager) return _json(req, 403, {'error': 'Only the manager can do that.'});
+      final t = spec.table(rest.substring(8));
+      if (t == null || readPicture == null) return _json(req, 404, {'error': 'Not available.'});
+      final bytes = <int>[];
+      await for (final chunk in req) {
+        bytes.addAll(chunk);
+        if (bytes.length > 12 * 1024 * 1024) return _json(req, 413, {'error': 'The picture is too big.'});
+      }
+      try {
+        return _json(req, 200, {'rows': await readPicture!(t.id, base64Encode(bytes))});
+      } catch (e) {
+        return _json(req, 400, {'error': '$e'});
+      }
+    }
     if (rest == '_site' && req.method == 'PUT') {
       if (!manager) return _json(req, 403, {'error': 'Only the manager can do that.'});
       return _saveSite(req);
@@ -129,7 +147,7 @@ class AppServer {
         return _json(req, 200, await data.list(t.id, search: req.uri.queryParameters['q'], manager: manager));
       case 'POST':
         if (!manager && !t.access.add) return deny();
-        return _json(req, 200, {'id': await data.add(t.id, await _body(req), manager: manager)});
+        return _json(req, 200, {'id': await data.add(t.id, await _body(req), manager: manager, via: manager ? 'manager' : 'website')});
       case 'PUT':
         if (!manager) return deny();
         if (t.single) return _json(req, 200, {'id': await data.setSingle(t.id, await _body(req))});
@@ -356,7 +374,7 @@ class AppServer {
         final r = await data.single(t.id, manager: manager);
         return r.isEmpty ? 'Not set yet.' : data.describe(t.id, [r]);
       case 'add':
-        final id = await data.add(t.id, args, manager: manager);
+        final id = await data.add(t.id, args, manager: manager, via: 'phone');
         return 'Done. Added to ${t.title.toLowerCase()} with id $id:\n${await data.describe(t.id, [(await data.get(t.id, id, manager: manager))!])}';
       case 'set':
         await data.setSingle(t.id, args);

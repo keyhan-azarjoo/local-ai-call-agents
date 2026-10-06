@@ -390,6 +390,30 @@ class AppBuilder {
     return (kind: j['kind'] as String, target: j['target'] == null ? null : slug(j['target']));
   }
 
+  // ---------------- reading records from a photo ----------------
+
+  /// Reads the records in a photo (a menu, a price list, a product sheet…) for one table.
+  /// Nothing is saved: the user checks them first.
+  Future<List<Map<String, dynamic>>> rowsFromPicture(AppSpec spec, String tableId, String base64, {required String model}) async {
+    final t = spec.table(tableId)!;
+    final fields = t.fields.where((f) => f.type != 'image' && f.type != 'links' && !f.managerOnly).toList();
+    final j = await askJson(
+      'This picture shows ${t.title.toLowerCase()} of "${spec.name}" (${t.purpose}), e.g. a menu or a price list.\n'
+      'Read EVERY item in it, in order. For each item fill these fields when the picture shows them:\n'
+      '${fields.map((f) => '- ${f.id}: ${f.type == 'money' ? 'price, as printed' : fieldTypes[f.type]}${f.options.isNotEmpty ? ', one of: ${f.options.join(' / ')}' : ''}${f.link != null ? ' (a name from ${spec.table(f.link!)?.title.toLowerCase()})' : ''}').join('\n')}\n'
+      'Copy prices exactly as printed, as text with the decimal point (e.g. "6.50"). Leave out fields the picture does not show. Copy names exactly as written.\n'
+      'JSON: {"rows":[{"${fields.first.id}":"..."}]}',
+      images: [base64],
+      model: model,
+      check: (j) => j['rows'] is List && (j['rows'] as List).whereType<Map>().isNotEmpty ? null : 'Give "rows": a list with one object per item in the picture.',
+    );
+    final ids = {for (final f in fields) f.id};
+    return [
+      for (final r in (j['rows'] as List).whereType<Map>())
+        {for (final e in r.entries) if (ids.contains(slug(e.key)) && e.value != null && '${e.value}'.trim().isNotEmpty) slug(e.key): e.value},
+    ].where((r) => r.isNotEmpty).take(80).toList();
+  }
+
   // ---------------- example data ----------------
 
   Future<List<Map<String, dynamic>>> exampleRows(AppSpec spec, String tableId, List<PictureNotes> pics, Map<String, List<String>> linkNames) async {

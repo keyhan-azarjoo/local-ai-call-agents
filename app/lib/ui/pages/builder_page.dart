@@ -11,6 +11,7 @@ import '../../services/apps/app_spec.dart';
 import '../../services/apps/app_styles.dart';
 import '../../services/apps/app_templates.dart';
 import '../../services/apps/apps_manager.dart';
+import '../../services/mcp/mcp_manager.dart' show McpServer;
 import '../../services/companion/host_server.dart';
 import '../../services/system.dart';
 import '../../state/app_state.dart';
@@ -706,26 +707,8 @@ class _Pictures extends StatelessWidget {
     if (bytes == null) return;
     final b64 = await _shrink(bytes);
     final err = await s.apps.addPicture(job, b64);
-    if (err == 'novision' && context.mounted) {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (c) => AlertDialog(
-          title: Text('Let your AI see pictures', style: displayStyle(c, 20)),
-          content: const SizedBox(
-            width: 440,
-            child: Text('None of your downloaded models can look at pictures. Download Gemma 3 (4B, about 3.3 GB)? '
-                'It reads pictures here on this computer; your main AI stays the same.'),
-          ),
-          actions: [
-            Btn('Not now', onPressed: () => Navigator.pop(c, false)),
-            Btn('Download', kind: BtnKind.primary, onPressed: () => Navigator.pop(c, true)),
-          ],
-        ),
-      );
-      if (ok == true) {
-        await s.pullModel(_visionModel, select: false);
-        if (await s.visionModel() != null) await s.apps.addPicture(job, b64);
-      }
+    if (err == 'novision' && context.mounted && await _offerVision(context, s)) {
+      await s.apps.addPicture(job, b64);
     }
   }
 
@@ -790,11 +773,12 @@ class _AppDetailState extends State<_AppDetail> {
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
     return FutureBuilder(
-      future: Future.wait([s.apps.app(widget.id), s.apps.avaConnected(widget.id)]),
+      future: Future.wait([s.apps.app(widget.id), s.apps.avaServers(widget.id)]),
       builder: (context, snap) {
         final a = snap.data?[0] as BuiltApp?;
         if (a == null) return snap.hasData ? const Text('This app was deleted.') : const SizedBox();
-        final ava = snap.data![1] as bool;
+        final servers = snap.data![1] as List<McpServer>;
+        final ava = servers.isNotEmpty;
         final spec = a.spec;
         final run = s.apps.runOf(a.id);
         final busy = s.apps.editing[a.id];
@@ -812,7 +796,9 @@ class _AppDetailState extends State<_AppDetail> {
             if (run != AppRun.stopped) ...[
               Btn('Website', small: true, kind: BtnKind.ghost, icon: Icons.open_in_new, onPressed: () => openExternal(local)),
               const SizedBox(width: 6),
-              Btn('Edit texts & photos', small: true, kind: BtnKind.ghost, icon: Icons.edit_outlined, onPressed: () => openExternal('$local/manage#website')),
+              Btn('Open manager page', small: true, kind: BtnKind.primary, icon: Icons.admin_panel_settings_outlined, onPressed: () => openExternal('$local/manage#pin=${a.pin}')),
+              const SizedBox(width: 6),
+              Btn('Edit texts & photos', small: true, kind: BtnKind.ghost, icon: Icons.edit_outlined, onPressed: () => openExternal('$local/manage#pin=${a.pin}&v=website')),
               const SizedBox(width: 6),
             ],
             _RunControls(app: a),
@@ -861,8 +847,35 @@ class _AppDetailState extends State<_AppDetail> {
                 const Eyebrow('Ava (chat and phone calls)'),
                 const SizedBox(height: 4),
                 SwitchRow('Ava can use this app', value: ava, onChanged: (v) => v ? s.apps.connectAva(a.id) : s.apps.disconnectAva(a.id)),
-                const Muted('Callers can do what customers can (e.g. ask about the menu, place an order) — no approval needed. '
-                    'You can also manage everything by chatting or talking to Ava; changes ask you first.', size: 12),
+                const SizedBox(height: 6),
+                for (final (role, who, about) in [
+                  ('customers', 'For callers & customers', 'Anyone who calls can ask and order or book — no approval needed.'),
+                  ('manager', 'Only you · manager', 'PIN-protected. You manage everything by chat or voice; changes ask you first.'),
+                ]) ...[
+                  Builder(builder: (context) {
+                    final srv = servers.where((x) => x.secret['role'] == role).firstOrNull;
+                    final tools = srv?.tools ?? const [];
+                    return Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(border: Border.all(color: context.c.line), borderRadius: BorderRadius.circular(LL.rSm)),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Row(children: [
+                          Icon(role == 'manager' ? Icons.lock_outline : Icons.public, size: 16),
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(who, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5))),
+                          Pill(srv == null ? 'Off' : (tools.isEmpty ? 'Connecting…' : '${tools.length} tools'), tone: tools.isEmpty ? Tone.neutral : Tone.green),
+                        ]),
+                        const SizedBox(height: 4),
+                        Muted(about, size: 12),
+                        if (tools.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Wrap(spacing: 4, runSpacing: 4, children: [for (final t in tools) Pill(t.name.replaceAll('_', ' '))]),
+                        ],
+                      ]),
+                    );
+                  }),
+                ],
               ]),
             ),
           ]),
@@ -879,6 +892,10 @@ class _AppDetailState extends State<_AppDetail> {
                 trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                   _AccessPicker(value: t.access, onChanged: (acc) => s.apps.setAccess(a.id, t.id, acc)),
                   const SizedBox(width: 6),
+                  if (!t.single) ...[
+                    Btn('Add from a photo', small: true, icon: Icons.add_photo_alternate_outlined, onPressed: busy != null ? null : () => _addFromPhoto(context, s, a, t)),
+                    const SizedBox(width: 6),
+                  ],
                   Btn('Change', small: true, onPressed: busy != null
                       ? null
                       : () async {
@@ -1063,6 +1080,89 @@ Future<({String name, String phone, String address})?> _askBusiness(BuildContext
       ),
     ),
   );
+}
+
+/// A photo of a menu, price list…: the AI reads the items, you tick what to keep, they're added.
+Future<void> _addFromPhoto(BuildContext context, AppState s, BuiltApp a, TableSpec t) async {
+  final f = await openFile(acceptedTypeGroups: const [XTypeGroup(label: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp', 'heic'])]);
+  if (f == null) return;
+  final b64 = await _shrink(await f.readAsBytes());
+  List<Map<String, dynamic>> rows;
+  try {
+    rows = await s.apps.rowsFromPicture(a.id, t.id, b64);
+  } on NoVision {
+    if (!context.mounted) return;
+    if (await _offerVision(context, s)) {
+      if (context.mounted) await _addFromPhoto(context, s, a, t);
+    }
+    return;
+  } catch (e) {
+    s.toast('Could not read the picture: $e');
+    return;
+  }
+  if (rows.isEmpty) return s.toast('Nothing readable was found. Try a sharper, straighter photo.');
+  if (!context.mounted) return;
+  final keep = List.filled(rows.length, true);
+  final label = t.labelField;
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (d) => StatefulBuilder(
+      builder: (d, set) => AlertDialog(
+        title: Text('Found ${rows.length} ${t.title.toLowerCase()}', style: displayStyle(d, 20)),
+        content: SizedBox(
+          width: 520,
+          height: 420,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Muted('Untick anything wrong. You can edit details and add a photo to each one afterwards.'),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(children: [
+                for (final (i, r) in rows.indexed)
+                  CheckboxListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    value: keep[i],
+                    onChanged: (v) => set(() => keep[i] = v ?? false),
+                    title: Text('${r[label] ?? '(no name)'}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text([for (final e in r.entries) if (e.key != label) '${t.field(e.key)?.label ?? e.key}: ${e.value}'].join(' · '), maxLines: 2, overflow: TextOverflow.ellipsis),
+                  ),
+              ]),
+            ),
+          ]),
+        ),
+        actions: [
+          Btn('Cancel', onPressed: () => Navigator.pop(d, false)),
+          Btn('Add ${keep.where((k) => k).length}', kind: BtnKind.primary, onPressed: keep.any((k) => k) ? () => Navigator.pop(d, true) : null),
+        ],
+      ),
+    ),
+  );
+  if (ok != true) return;
+  final n = await s.apps.addRows(a.id, t.id, [for (final (i, r) in rows.indexed) if (keep[i]) r]);
+  s.toast('Added $n to ${t.title.toLowerCase()}.');
+}
+
+/// None of the downloaded models can see: offer Gemma 3. Returns true once it's ready.
+Future<bool> _offerVision(BuildContext context, AppState s) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: Text('Let your AI read pictures', style: displayStyle(c, 20)),
+      content: const SizedBox(
+        width: 440,
+        child: Text('None of your downloaded models can look at pictures. Download Gemma 3 (4B, about 3.3 GB)? '
+            'It reads pictures here on this computer; your main AI stays the same.'),
+      ),
+      actions: [
+        Btn('Not now', onPressed: () => Navigator.pop(c, false)),
+        Btn('Download', kind: BtnKind.primary, onPressed: () => Navigator.pop(c, true)),
+      ],
+    ),
+  );
+  if (ok != true) return false;
+  s.toast('Downloading Gemma 3… you can keep working.');
+  await s.pullModel(_visionModel, select: false);
+  return await s.visionModel() != null;
 }
 
 /// Asks clearly, then deletes the app and everything that belongs to it.

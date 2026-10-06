@@ -134,7 +134,8 @@ class AppsManager extends ChangeNotifier {
     if (a == null) return;
     var srv = _servers[id];
     if (srv == null || !srv.running) {
-      srv = AppServer(data: AppData(db, id, a.spec), pin: a.pin, filesDir: filesDir(id), onSpecChanged: (spec) => saveSpec(id, spec, fromSite: true));
+      srv = AppServer(data: AppData(db, id, a.spec), pin: a.pin, filesDir: filesDir(id), onSpecChanged: (spec) => saveSpec(id, spec, fromSite: true),
+          readPicture: (table, b64) => rowsFromPicture(id, table, b64));
       try {
         await srv.start(a.port);
       } on SocketException {
@@ -223,6 +224,9 @@ class AppsManager extends ChangeNotifier {
   Future<List<McpServer>> _avaRows(int id) async => [for (final s in await mcp.servers()) if (s.secret['app'] == id) s];
 
   Future<bool> avaConnected(int id) async => (await _avaRows(id)).isNotEmpty;
+
+  /// The app's two tool servers for Ava: customers' and the manager's.
+  Future<List<McpServer>> avaServers(int id) => _avaRows(id);
 
   /// Lets Ava use the app in chats and on calls: customers' actions for everyone
   /// (callers can order or book without you approving), the manager's only for you.
@@ -624,6 +628,38 @@ class AppsManager extends ChangeNotifier {
         };
       });
 
+  /// Records read from a photo of a menu, price list… (not saved yet).
+  /// Throws [NoVision] when no downloaded AI can see pictures.
+  Future<List<Map<String, dynamic>>> rowsFromPicture(int id, String table, String base64) async {
+    final model = await visionModel();
+    if (model == null) throw NoVision();
+    final a = (await app(id))!;
+    editing[id] = 'Reading your picture…';
+    notifyListeners();
+    try {
+      return await builder.rowsFromPicture(a.spec, table, base64, model: model);
+    } finally {
+      editing.remove(id);
+      notifyListeners();
+    }
+  }
+
+  /// Saves the records the user kept. Returns how many were added.
+  Future<int> addRows(int id, String table, List<Map<String, dynamic>> rows) async {
+    final a = (await app(id))!;
+    final data = AppData(db, id, a.spec);
+    var n = 0;
+    for (final r in rows) {
+      try {
+        await data.add(table, r, manager: true);
+        n++;
+      } on AppDataError catch (_) {}
+    }
+    await log('Added $n ${a.spec.table(table)?.title.toLowerCase()} to ${a.name} from a photo');
+    notifyListeners();
+    return n;
+  }
+
   /// A new style picked by hand (no AI needed).
   Future<void> setStyle(int id, String style, {String? accent}) async {
     final s = (await app(id))!.spec;
@@ -645,6 +681,11 @@ class AppsManager extends ChangeNotifier {
     final s = (await app(id))!.spec;
     await saveSpec(id, s.copyWith(tables: [for (final t in s.tables) t.id == table ? t.copyWith(access: access) : t]).repaired());
   }
+}
+
+class NoVision implements Exception {
+  @override
+  String toString() => 'None of your downloaded AI models can read pictures. In LocalAILine, add a picture once to download one (Gemma 3).';
 }
 
 class _Simple implements Exception {

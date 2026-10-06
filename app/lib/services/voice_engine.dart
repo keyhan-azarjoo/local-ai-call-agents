@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-enum EnginePart { livekit, whisper, accurate, agent }
+enum EnginePart { redis, livekit, sip, whisper, accurate, agent }
 
 enum PartState { missing, stopped, starting, running, failed }
 
@@ -36,8 +36,44 @@ class VoiceEngine extends ChangeNotifier {
   String? problem;
 
   String get livekitUrl => 'ws://127.0.0.1:$livekitPort';
-  /// Ready to talk (the larger hearing model is optional).
-  bool get ready => EnginePart.values.every((e) => e == EnginePart.accurate || state[e] == PartState.running);
+  /// Ready to talk (phone calling and the larger hearing model are optional).
+  bool get ready => [EnginePart.livekit, EnginePart.whisper, EnginePart.agent].every((e) => state[e] == PartState.running);
+
+  /// Phone calls (LiveKit SIP) are running.
+  bool get phoneReady => ready && state[EnginePart.sip] == PartState.running;
+
+  static const redisPort = 6390;
+
+  /// LiveKit's phone (SIP) service: built from source once (needs Go), kept with the app's data.
+  Future<String?> sipBinary() async {
+    for (final f in [p.join(dataDir, 'bin', 'livekit-sip'), p.join(Platform.environment['HOME'] ?? '', 'go', 'bin', 'livekit-sip')]) {
+      if (File(f).existsSync()) return f;
+    }
+    return which('livekit-sip');
+  }
+
+  /// Builds the phone service: `brew install opus libsoxr pkg-config redis`, then `go install`.
+  Future<void> installPhone() async {
+    final brew = await which('brew');
+    final go = await which('go');
+    if (brew == null || go == null) throw Exception('Phone calling needs Homebrew and Go: brew install go');
+    Future<void> run(String exe, List<String> args, {Map<String, String> env = const {}}) async {
+      _log('\$ ${p.basename(exe)} ${args.join(' ')}');
+      final pr = await Process.start(exe, args, environment: env);
+      pr.stdout.transform(utf8.decoder).listen((l) => _log(l.trim()));
+      pr.stderr.transform(utf8.decoder).listen((l) => _log(l.trim()));
+      if (await pr.exitCode != 0) throw Exception('Install step failed: ${p.basename(exe)} ${args.take(2).join(' ')}');
+    }
+
+    await run(brew, ['install', 'opus', 'libsoxr', 'pkg-config', 'redis']);
+    final bin = Directory(p.join(dataDir, 'bin'))..createSync(recursive: true);
+    await run(go, ['install', 'github.com/livekit/sip/cmd/livekit-sip@latest'], env: {
+      'GOBIN': bin.path,
+      'PKG_CONFIG_PATH': '/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig',
+      'PATH': '/opt/homebrew/bin:/usr/local/bin:${Platform.environment['PATH']}',
+    });
+    _log('Phone calling installed.');
+  }
 
   String _secret() {
     final f = File(p.join(dataDir, 'voice-engine.secret'));
@@ -243,13 +279,33 @@ class VoiceEngine extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // Phone calls need LiveKit's SIP service, which talks to LiveKit through Redis.
+    final sipBin = await sipBinary();
+    final redis = sipBin == null ? null : await which('redis-server');
+    if (redis != null && state[EnginePart.redis] != PartState.running) {
+      await _spawn(EnginePart.redis, redis, ['--port', '$redisPort', '--bind', '127.0.0.1', '--save', '', '--appendonly', 'no'],
+          healthy: () async {
+            try {
+              final s = await Socket.connect('127.0.0.1', redisPort, timeout: const Duration(milliseconds: 300));
+              s.destroy();
+              return true;
+            } catch (_) {
+              return false;
+            }
+          });
+    }
+    final withRedis = state[EnginePart.redis] == PartState.running;
     if (state[EnginePart.livekit] != PartState.running) {
-      await _spawn(
-        EnginePart.livekit,
-        (await which('livekit-server'))!,
-        ['--bind', '127.0.0.1', '--node-ip', '127.0.0.1', '--port', '$livekitPort', '--keys', '$apiKey: $apiSecret'],
-        healthy: () => _ok('http://127.0.0.1:$livekitPort'),
-      );
+      final cfg = File(p.join(dataDir, 'livekit.yaml'))
+        ..writeAsStringSync('port: $livekitPort\nbind_addresses: ["127.0.0.1"]\nrtc:\n  tcp_port: 7881\n  node_ip: 127.0.0.1\n'
+            '${withRedis ? 'redis:\n  address: 127.0.0.1:$redisPort\n' : ''}keys:\n  $apiKey: $apiSecret\n');
+      await _spawn(EnginePart.livekit, (await which('livekit-server'))!, ['--config', cfg.path], healthy: () => _ok('http://127.0.0.1:$livekitPort'));
+    }
+    if (withRedis && sipBin != null && state[EnginePart.sip] != PartState.running) {
+      final cfg = File(p.join(dataDir, 'sip.yaml'))
+        ..writeAsStringSync('api_key: $apiKey\napi_secret: $apiSecret\nws_url: $livekitUrl\nredis:\n  address: 127.0.0.1:$redisPort\n'
+            'sip_port: 5060\nrtp_port: 52000-52500\nuse_external_ip: true\nlogging:\n  level: info\n');
+      await _spawn(EnginePart.sip, sipBin, ['--config', cfg.path], healthy: () async => log.any((l) => l.contains('[sip]') && l.contains('sip signaling listening')));
     }
     if (state[EnginePart.whisper] != PartState.running) {
       await _spawn(
@@ -301,7 +357,7 @@ class VoiceEngine extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    for (final e in [EnginePart.agent, EnginePart.accurate, EnginePart.whisper, EnginePart.livekit]) {
+    for (final e in [EnginePart.agent, EnginePart.accurate, EnginePart.whisper, EnginePart.sip, EnginePart.livekit, EnginePart.redis]) {
       _procs.remove(e)?.kill();
       state[e] = PartState.stopped;
     }
@@ -310,7 +366,7 @@ class VoiceEngine extends ChangeNotifier {
   }
 
   /// A signed LiveKit access token (JWT, HS256) for joining one room.
-  Future<String> token({required String identity, required String room, String? name, Duration ttl = const Duration(hours: 2)}) async {
+  Future<String> token({required String identity, String room = '', String? name, Duration ttl = const Duration(hours: 2), bool sipAdmin = false}) async {
     String b64(Object o) => base64Url.encode(utf8.encode(jsonEncode(o))).replaceAll('=', '');
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final head = b64({'alg': 'HS256', 'typ': 'JWT'});
@@ -320,7 +376,8 @@ class VoiceEngine extends ChangeNotifier {
       'name': name ?? identity,
       'nbf': now - 10,
       'exp': now + ttl.inSeconds,
-      'video': {'room': room, 'roomJoin': true, 'canPublish': true, 'canSubscribe': true, 'canPublishData': true},
+      'video': {'room': room, 'roomJoin': room.isNotEmpty, 'roomCreate': sipAdmin, 'canPublish': true, 'canSubscribe': true, 'canPublishData': true},
+      if (sipAdmin) 'sip': {'admin': true, 'call': true},
     });
     final mac = await Hmac.sha256().calculateMac(utf8.encode('$head.$body'), secretKey: SecretKey(utf8.encode(apiSecret)));
     return '$head.$body.${base64Url.encode(mac.bytes).replaceAll('=', '')}';

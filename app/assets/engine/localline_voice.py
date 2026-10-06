@@ -154,6 +154,8 @@ class WhisperStreamingSTT(stt.STT):
         self.agent_env: dict[int, float] = {}
         # Names to expect (from the app), given to Whisper as a hint for English.
         self.vocabulary = ""
+        # Recognise Ava's own voice coming back (speakers in the room); off on phone calls.
+        self.echo_check = True
         self.play_end = 0.0
 
     def record_agent_audio(self, pcm: np.ndarray, sr: int) -> None:
@@ -202,6 +204,8 @@ class WhisperStreamingSTT(stt.STT):
         """True when this sound is Ava's own voice coming back: it follows what she is playing,
         or (while she speaks) is much quieter than the caller usually is. Words aren't compared:
         echoes are mis-heard, and callers share common words with her."""
+        if not self.echo_check:
+            return False
         like = self.echo_likeness(pcm, t_end or time.monotonic())
         log.debug("own-voice check: like=%.2f text=%s", like, text[:40])
         # Follows what Ava just played (only possible if she played something then): her echo.
@@ -790,6 +794,11 @@ async def entrypoint(ctx: JobContext) -> None:
     # Room names from the app: talk-<caller|owner>-<language>-<id>; phone calls: pstn-…
     parts = ctx.room.name.split("-")
     mode = parts[1] if len(parts) > 2 and parts[0] == "talk" and parts[1] in ("caller", "owner") else "caller"
+    phone_call = parts[0] == "pstn"
+    if ctx.room.name.startswith("pstn-out-"):  # a call Ava placed: pstn-out-<task id>
+        mode = f"outbound#{ctx.room.name[9:]}"
+    started = time.time()
+    picked_up = {"yes": not ctx.room.name.startswith("pstn-out-")}
     cfg = await app_config(mode, parts[2] if len(parts) > 3 and parts[0] == "talk" else "auto")
     # Voices chosen in the app, per language.
     VOICE_CHOICE.clear()
@@ -798,6 +807,8 @@ async def entrypoint(ctx: JobContext) -> None:
     vad = silero.VAD.load(min_silence_duration=0.35)
     stt_ = WhisperStreamingSTT(vad=silero.VAD.load(min_silence_duration=0.4), language=language)
     stt_.vocabulary = cfg.get("vocabulary") or ""
+    # On a phone call the far end cancels its own echo; Ava's voice isn't in the room.
+    stt_.echo_check = not phone_call
     model = mode if os.environ.get("LL_APP_URL") else os.environ.get("LL_LLM_MODEL", "qwen3:4b-instruct")
     session = build_session(stt_, vad, model)
     session.tts._language = language  # noqa: SLF001
@@ -885,7 +896,49 @@ async def entrypoint(ctx: JobContext) -> None:
 
     asyncio.create_task(warm_phrases())
     session.on("user_state_changed", sync_sound)
-    greeting = cfg.get("greeting") if mode == "caller" else f"Hi, it's {cfg.get('name', 'Ava')}. What can I do for you?"
+    # When the call ends: the conversation goes back to the app (Calls, and the call's result).
+    async def report() -> None:
+        base = os.environ.get("LL_APP_URL")
+        if not base or not phone_call:
+            return
+        transcript = []
+        for item in session.history.items:
+            text = getattr(item, "text_content", None)
+            role = getattr(item, "role", None)
+            if text and role in ("user", "assistant"):
+                transcript.append({"role": role, "text": text})
+        try:
+            async with aiohttp.ClientSession() as h:
+                await h.post(f"{base}/api/call-ended", json={"room": ctx.room.name, "transcript": transcript, "answered": picked_up["yes"],
+                                                              "started_at": int(started * 1000), "duration_s": int(time.time() - started)},
+                             headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=10))
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not report the call: %s", e)
+
+    ctx.add_shutdown_callback(report)
+
+    if mode.startswith("outbound#"):
+        # Wait until they pick up (the phone is still ringing until then).
+        answered = asyncio.Event()
+
+        def check(*_):  # noqa: ANN002
+            for p in ctx.room.remote_participants.values():
+                if p.attributes.get("sip.callStatus") == "active":
+                    answered.set()
+
+        ctx.room.on("participant_attributes_changed", check)
+        ctx.room.on("participant_connected", check)
+        check()
+        try:
+            await asyncio.wait_for(answered.wait(), timeout=75)
+        except asyncio.TimeoutError:
+            log.info("no answer")
+            ctx.shutdown("no answer")
+            return
+        picked_up["yes"] = True
+        await asyncio.sleep(0.6)  # let them say "hello?"
+
+    greeting = cfg.get("greeting") if (mode == "caller" or mode.startswith("outbound#")) else f"Hi, it's {cfg.get('name', 'Ava')}. What can I do for you?"
     greeting = greeting or os.environ.get("LL_GREETING", "")
     if greeting:
         session.say(greeting, allow_interruptions=True)

@@ -17,6 +17,14 @@ class Persona {
       'sentence, then on the last line write exactly: CALL_TASK {"to": "<who>", "number": "<phone number or empty>", "goal": "<what to achieve>"}. '
       'Never write CALL_TASK unless asked to make a call.';
 
+  /// A call Ava placed for the owner, to reach a goal.
+  static String outboundSystem(String agentName, String owner, String to, String goal) =>
+      'You are $agentName, an AI assistant phoning ${to.isEmpty ? 'someone' : to} on behalf of $owner. You placed this call. '
+      'Your goal:\n$goal\n'
+      'Speak naturally and briefly, one question at a time, and listen. Be polite; say you are an AI assistant if asked. '
+      'Share nothing about $owner beyond what the goal allows. If they can’t help or it’s the wrong person, apologise and end politely. '
+      'When you have what you need, confirm it back in one sentence, thank them and say goodbye.';
+
   static List<ChatMessage> callerStart(Map<String, Object?>? agent) =>
       [ChatMessage('system', callerSystem(agent)), ChatMessage('assistant', greeting(agent))];
 }

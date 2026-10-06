@@ -24,6 +24,7 @@ import '../services/mcp/mcp_manager.dart';
 import '../services/persona.dart';
 import '../services/speech.dart';
 import '../services/system.dart';
+import '../services/phone.dart';
 import '../services/voice_engine.dart';
 
 enum Gate { loading, setup, signIn, app, companion }
@@ -574,6 +575,85 @@ class AppState extends ChangeNotifier {
 
   /// The live voice engine (LiveKit + Whisper + voice agent), host computers only.
   VoiceEngine? voice;
+  Phone? phone;
+
+  /// Places a queued call: your line (Twilio) rings the number, and Ava talks once they answer.
+  Future<void> placeCall(int taskId) async {
+    final task = (await db.all('call_tasks', where: 'id = ?', args: [taskId])).firstOrNull;
+    if (task == null) return;
+    Future<void> fail(String why) async {
+      await db.update('call_tasks', taskId, {'status': 'failed', 'result': why});
+      await log('Call to ${task['to_name'] ?? task['number']} failed: $why');
+      refresh();
+    }
+
+    final lines = await db.all('lines', where: "provider = 'twilio'", orderBy: 'id');
+    final line = lines.where((l) => l['id'] == task['line_id']).firstOrNull ?? lines.firstOrNull;
+    if (line == null) return fail('Add a Twilio phone line first (Phone line). Other line types can’t place calls yet.');
+    if (voice == null || phone == null) return fail('Calls are placed from the main computer.');
+    try {
+      await db.update('call_tasks', taskId, {'status': 'calling', 'line_id': line['id'], 'result': null});
+      refresh();
+      var cfg = (jsonDecode('${line['config']}') as Map).cast<String, dynamic>();
+      final updated = await phone!.ensureTwilioTrunk(cfg);
+      if (updated != null) {
+        cfg = updated;
+        await db.update('lines', line['id'] as int, {'config': jsonEncode(cfg)});
+      }
+      if (!voice!.phoneReady) await startVoice();
+      if (!voice!.phoneReady) {
+        return fail(await voice!.sipBinary() == null
+            ? 'Phone calling isn’t installed yet: Settings → Voice → “Install phone calling”.'
+            : 'The phone service didn’t start. See Settings → Voice.');
+      }
+      final number = Phone.e164('${task['number']}', lineNumber: '${cfg['number']}');
+      await phone!.call(line: cfg, number: number, room: 'pstn-out-$taskId', name: '${task['to_name'] ?? number}');
+      await log('Calling ${task['to_name'] ?? number} from ${cfg['number']}');
+    } catch (e) {
+      await fail('$e');
+    }
+  }
+
+  /// The voice agent reports a finished phone call: keep it in Calls and report back on the task.
+  Future<void> _callEnded(Map<String, dynamic> b) async {
+    final room = '${b['room'] ?? ''}';
+    final turns = [for (final t in (b['transcript'] as List? ?? []).cast<Map>()) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': '${t['text']}'}];
+    final answered = turns.any((t) => t['who'] == 'them');
+    final pickedUp = b['answered'] == true;
+    final taskId = int.tryParse(room.startsWith('pstn-out-') ? room.substring(9) : '');
+    final task = taskId == null ? null : (await db.all('call_tasks', where: 'id = ?', args: [taskId])).firstOrNull;
+    var summary = answered ? '' : (pickedUp ? 'They picked up but didn’t say anything (maybe voicemail).' : 'No answer.');
+    if (answered && llmReady) {
+      try {
+        final out = StringBuffer();
+        await for (final t in chat([
+          ChatMessage('system', 'Summarise this phone call for the person who asked for it, in 1–3 short sentences: what was found out or agreed, '
+              'especially anything the goal asked to find out. Plain text.'),
+          ChatMessage('user', '${task == null ? '' : 'Goal: ${task['goal']}\n\n'}Call:\n${turns.map((t) => '${t['who'] == 'ai' ? 'Ava' : 'Them'}: ${t['text']}').join('\n')}'),
+        ]).timeout(const Duration(seconds: 40))) {
+          out.write(t);
+        }
+        summary = out.toString().trim();
+      } catch (_) {}
+    }
+    final line = task?['line_id'] == null ? null : (await db.all('lines', where: 'id = ?', args: [task!['line_id']])).firstOrNull;
+    await db.insert('calls', {
+      'direction': task != null ? 'outbound' : 'inbound',
+      'name': task?['to_name'] ?? b['caller'] ?? 'Caller',
+      'number': task?['number'] ?? b['number'] ?? '',
+      'line': line?['number'] ?? '',
+      'started_at': (b['started_at'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
+      'duration_s': (b['duration_s'] as num?)?.toInt() ?? 0,
+      'outcome': answered ? 'Answered' : (pickedUp ? 'Picked up, no reply' : 'No answer'),
+      'summary': summary,
+      'transcript': jsonEncode(turns),
+    });
+    if (task != null) {
+      await db.update('call_tasks', taskId!, {'status': answered ? 'done' : 'no_answer', 'result': summary});
+      await log('Call to ${task['to_name'] ?? task['number']}: ${answered ? 'done' : 'no answer'}');
+    }
+    refresh();
+  }
   String voiceLanguage = 'auto';
 
   String thinkingSound = 'keyboard', ambientSound = 'none';
@@ -851,6 +931,7 @@ class AppState extends ChangeNotifier {
       voiceChoice['${r['key']}'.substring(12)] = '${r['value']}';
     }
     voice = VoiceEngine(dataDir: p.dirname(db.path), appUrl: 'http://127.0.0.1:$port', appKey: host!.engineKey)..addListener(notifyListeners);
+    phone = Phone(voice!);
     AppLifecycleListener(
       onExitRequested: () async {
         await voice?.stop();
@@ -865,6 +946,9 @@ class AppState extends ChangeNotifier {
         unawaited(() async {
           if (dv == 'install') await installVoiceEngine();
           await startVoice();
+          // Debug builds only: place a queued call on launch, for testing phone calls.
+          final call = int.tryParse(Platform.environment['LOCALAILINE_DEV_CALL'] ?? '');
+          if (call != null) await placeCall(call);
         }());
       }
       final code = Platform.environment['LOCALAILINE_DEV_PAIRCODE'];
@@ -888,9 +972,21 @@ class AppState extends ChangeNotifier {
   /// "caller" = someone calling in; "owner" = you giving instructions.
   Set<String> _voiceScopes(String mode) => mode == 'owner' ? {'me', 'contacts', 'all'} : {'all'};
 
+  /// The call task behind an outbound call's mode ("outbound#12").
+  Future<Map<String, Object?>?> _taskOf(String mode) async {
+    final id = int.tryParse(mode.startsWith('outbound#') ? mode.substring(9) : '');
+    return id == null ? null : (await db.all('call_tasks', where: 'id = ?', args: [id])).firstOrNull;
+  }
+
   Future<String> _voiceSystem(String mode, [String lang = '']) async {
     final agent = (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
-    final system = mode == 'owner' ? Persona.ownerSystem('${agent?['name'] ?? 'Ava'}', user?.name.split(' ').first ?? 'the owner') : '${Persona.callerSystem(agent)} Reply in the caller’s language.';
+    final ownerName = user?.name.split(' ').first ?? 'the owner';
+    final task = await _taskOf(mode);
+    final system = task != null
+        ? Persona.outboundSystem('${agent?['name'] ?? 'Ava'}', ownerName, '${task['to_name'] ?? ''}', '${task['goal']}')
+        : mode == 'owner'
+        ? Persona.ownerSystem('${agent?['name'] ?? 'Ava'}', ownerName)
+        : '${Persona.callerSystem(agent)} Reply in the caller’s language.';
     final speak = _languageNames[lang];
     return '$system This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
         'If there are many items, say the three or four most useful ones and ask if they want to hear more. '
@@ -900,6 +996,27 @@ class AppState extends ChangeNotifier {
         'You have already said a short “let me check” when needed: go straight to the answer, don’t start with fillers.'
         '${mode == 'owner' ? await _capabilities(_voiceScopes(mode)) : ''}'
         '${speak == null ? ' Always reply in the language the person speaks.' : ' The person is speaking $speak: reply only in $speak${lang == 'en' ? '' : ', and say names of dishes, products and places in $speak too (translate or write them in $speak script), because the voice can only read $speak'}.'}';
+  }
+
+  /// What Ava says when the person picks up: who she is and why she's calling, in one breath.
+  Future<String> _openingLine(Map<String, Object?> task, String agentName) async {
+    final owner = user?.name.split(' ').first ?? 'the owner';
+    final to = '${task['to_name'] ?? ''}'.trim();
+    final hi = 'Hi${to.isEmpty ? '' : ' $to'}, this is $agentName, an AI assistant calling on behalf of $owner.';
+    try {
+      final out = StringBuffer();
+      await for (final t in chat([
+        ChatMessage('system', 'Write ONE short, natural sentence a polite caller says right after introducing themselves, to explain why they are calling. '
+            'Use the goal below, speak to the person directly, no greeting, no name. Output only the sentence.'),
+        ChatMessage('user', 'Goal: ${task['goal']}'),
+      ]).timeout(const Duration(seconds: 8))) {
+        out.write(t);
+      }
+      final why = spokenText(out.toString()).trim();
+      return why.isEmpty || why.length > 200 ? hi : '$hi $why';
+    } catch (_) {
+      return hi;
+    }
   }
 
   /// Names the hearing should expect (people, the assistant, users in connected systems),
@@ -1096,14 +1213,20 @@ class AppState extends ChangeNotifier {
     if (path == '/api/voice-config') {
       final agent = (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
       // A call is starting: load the model and its instructions while the greeting plays.
-      final m = req.uri.queryParameters['mode'] == 'owner' ? 'owner' : 'caller';
+      final qm = req.uri.queryParameters['mode'] ?? '';
+      final m = qm == 'owner' || qm.startsWith('outbound#') ? qm : 'caller';
       final l = req.uri.queryParameters['lang'] ?? voiceLanguage;
       // The main AI for English (and for detecting); the multilingual one too when a language is chosen.
       unawaited(prewarm([ChatMessage('system', await _voiceSystem(m))], scopes: _voiceScopes(m)).catchError((_) {}));
       if (l != 'auto' && l != 'en' && voiceTarget(l) != null) {
         unawaited(prewarm([ChatMessage('system', await _voiceSystem(m, l))], scopes: _voiceScopes(m), target: voiceTarget(l), useTools: false).catchError((_) {}));
       }
-      return json(200, {'greeting': Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _vocabulary()});
+      final task = await _taskOf(m);
+      return json(200, {'greeting': task != null ? await _openingLine(task, '${agent?['name'] ?? 'Ava'}') : Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _vocabulary()});
+    }
+    if (path == '/api/call-ended') {
+      unawaited(_callEnded(jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>));
+      return json(200, {'ok': true});
     }
     if (path == '/v1/models') {
       return json(200, {
@@ -1119,7 +1242,7 @@ class AppState extends ChangeNotifier {
     final body = jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>;
     // "caller" / "owner", optionally with the language being spoken: "caller:fa".
     final model = '${body['model'] ?? 'caller'}'.split(':');
-    final mode = model.first == 'owner' ? 'owner' : 'caller';
+    final mode = model.first == 'owner' || model.first.startsWith('outbound#') ? model.first : 'caller';
     final lang = model.length > 1 ? model[1] : 'en';
     String textOf(Object? c) => c is String
         ? c

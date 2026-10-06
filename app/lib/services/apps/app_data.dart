@@ -44,10 +44,12 @@ class AppData {
   /// The one record of a "single" table ({} when not set yet).
   Future<Map<String, Object?>> single(String table, {bool manager = false}) async => (await list(table, manager: manager)).firstOrNull ?? {};
 
-  Future<int> add(String table, Map<String, dynamic> values, {bool manager = false}) async {
+  /// [via]: where it came from — 'website', 'phone' (Ava, on a call or in a chat) or 'manager'.
+  Future<int> add(String table, Map<String, dynamic> values, {bool manager = false, String? via}) async {
     final t = _table(table);
     if (t.single) return setSingle(table, values, manager: manager);
     final clean = await _clean(t, values, manager: manager, partial: false);
+    if (via != null) clean['_via'] = via;
     final now = DateTime.now().millisecondsSinceEpoch;
     return db.raw.insert('app_rows', {'app_id': appId, 'tbl': t.id, 'data': jsonEncode(clean), 'created_at': now, 'updated_at': now});
   }
@@ -92,6 +94,7 @@ class AppData {
       for (final f in t.fields)
         if (manager || !f.managerOnly) f.id: d[f.id],
       if (manager) 'created_at': DateTime.fromMillisecondsSinceEpoch(r['created_at'] as int).toIso8601String().substring(0, 16).replaceFirst('T', ' '),
+      if (manager && d['_via'] != null) 'via': d['_via'],
     };
   }
 

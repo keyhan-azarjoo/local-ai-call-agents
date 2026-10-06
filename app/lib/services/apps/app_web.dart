@@ -241,6 +241,24 @@ label.lbl .req{color:var(--accent)}
 .footer .bottom{display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;border-top:1px solid var(--line);padding-top:20px;padding-bottom:28px;font-size:13.5px;color:var(--muted)}
 .footer .bottom a{display:inline;color:var(--muted);font-size:13.5px;margin:0}
 
+/* manager on the website */
+.adminbar{position:sticky;top:0;z-index:25;background:#111827;color:#f9fafb;font:500 14px var(--body)}
+.adminbar .wrap{display:flex;align-items:center;gap:10px;height:46px;flex-wrap:nowrap;overflow-x:auto}
+.adminbar b{margin-right:auto;display:flex;align-items:center;gap:8px;white-space:nowrap}
+.adminbar a,.adminbar button{color:#f9fafb;background:rgba(255,255,255,.1);border:0;border-radius:8px;padding:6px 12px;font:500 13.5px var(--body);text-decoration:none;cursor:pointer;white-space:nowrap}
+.adminbar a:hover,.adminbar button:hover{background:rgba(255,255,255,.2)}
+.has-admin .topnav{top:46px}
+.item{position:relative}
+.edit-btn{position:absolute;top:10px;right:10px;z-index:3;display:grid;place-items:center;width:36px;height:36px;border-radius:50%;border:0;background:#111827;color:#fff;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.25);font-size:15px}
+.edit-btn:hover{transform:scale(1.06)}
+.sec-actions{display:flex;gap:8px;flex-wrap:wrap}
+.imp-row{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line)}
+.imp-row input[type=checkbox]{width:20px;height:20px;margin-top:2px;flex:none;accent-color:var(--accent)}
+.imp-row .nm{font-weight:600}
+.imp-row .kv{color:var(--muted);font-size:14px}
+.reading{text-align:center;padding:40px 10px;color:var(--muted)}
+.reading .spinner{margin:0 auto 16px}
+
 /* toast */
 .toast{position:fixed;left:50%;top:22px;transform:translate(-50%,-160%);z-index:99;background:var(--ink);color:var(--bg);padding:12px 20px;border-radius:999px;font-weight:600;font-size:14.5px;box-shadow:var(--shadow-lg);transition:transform .35s cubic-bezier(.2,.8,.2,1);display:flex;gap:8px;align-items:center}
 .toast.show{transform:translate(-50%,0)}
@@ -580,7 +598,11 @@ async function listBlock(b, t, page, state) {
   const label = labelOf(t), imgF = firstOf(t, 'image'), priceF = fields.find((f) => f.type === 'money'), descF = fields.find((f) => f.type === 'longtext'), catF = fields.find((f) => f.type === 'choice');
   const pick = page.blocks.some((o) => o.type === 'form' && table(o.table)?.fields.some((f) => f.type === 'links' && f.qty && f.link === t.id));
   const all = await rows(t.id, true), links = await linkMaps(t);
-  const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2></div><div class="toolbar"></div><div class="grid' + (imgF ? '' : ' compact') + '"></div></div></section>');
+  const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2>' + (SPEC.manager ? '<div class="sec-actions"><button class="btn sm" data-a="photo">' + icon('image') + ' Add from a photo</button><button class="btn primary sm" data-a="add">' + icon('plus') + ' Add</button></div>' : '') + '</div><div class="toolbar"></div><div class="grid' + (imgF ? '' : ' compact') + '"></div></div></section>');
+  if (SPEC.manager) {
+    $('[data-a=add]', n).onclick = () => drawer(t, null, () => site());
+    $('[data-a=photo]', n).onclick = () => importPhoto(t, () => site());
+  }
   const bar = $('.toolbar', n), grid = $('.grid', n);
   let q = '', cat = '';
   if (b.search !== false && all.length > 4) { const s = el('<div class="search">' + icon('search') + '<input placeholder="Search ' + esc(t.title.toLowerCase()) + '"></div>'); $('input', s).oninput = (e) => { q = e.target.value.toLowerCase(); draw(); }; bar.append(s); }
@@ -604,7 +626,8 @@ async function listBlock(b, t, page, state) {
         + '<div class="body"><div class="top"><h3>' + esc(nameOf(t, r)) + '</h3>' + (priceF && r[priceF.id] !== undefined && r[priceF.id] !== null ? '<span class="price">' + money(r[priceF.id]) + '</span>' : '') + '</div>'
         + (descF && r[descF.id] ? '<p class="desc">' + esc(r[descF.id]) + '</p>' : '') + (tags ? '<div class="meta">' + tags + '</div>' : '')
         + (pick ? '<div class="foot"><span class="qtybadge">' + (q2 ? q2 + ' in your ' + esc(state.formName) : '') + '</span><button class="btn primary sm">' + icon('plus') + ' Add</button></div>' : '') + '</div></article>');
-      if (pick) $('button', card).onclick = () => state.add(t.id, r.id);
+      if (pick) $('.foot button', card).onclick = () => state.add(t.id, r.id);
+      if (SPEC.manager) { const e = el('<button class="edit-btn" title="Edit">✎</button>'); e.onclick = () => drawer(t, r, () => site()); card.prepend(e); }
       grid.append(card);
     });
   };
@@ -626,8 +649,10 @@ async function infoBlock(b, t) {
     if (f.type === 'email') val = '<a href="mailto:' + esc(v) + '">' + val + '</a>';
     body += '<div class="info-row"><div class="info-ic">' + icon(fieldIcon(f)) + '</div><div><small>' + esc(f.label) + '</small><b>' + val + '</b></div></div>';
   }
-  if (!body) return null;
-  return el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2></div><div class="info"><div class="info-card">' + body + '</div></div></div></section>');
+  if (!body && !SPEC.manager) return null;
+  const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2>' + (SPEC.manager ? '<button class="btn sm">✎ Edit</button>' : '') + '</div><div class="info"><div class="info-card">' + (body || '<div class="muted">Not filled in yet.</div>') + '</div></div></div></section>');
+  if (SPEC.manager) $('.sec-head .btn', n).onclick = () => drawer(t, r.id ? r : null, () => site());
+  return n;
 }
 
 async function formBlock(b, t, page, state) {
@@ -689,6 +714,13 @@ async function site() {
   const id = location.pathname.startsWith('/p/') ? decodeURIComponent(location.pathname.slice(3)) : (pages[0] || {}).id;
   const page = pages.find((p) => p.id === id);
   app.innerHTML = '';
+  // Signed in as the manager: edit right here on the website.
+  document.body.classList.toggle('has-admin', !!SPEC.manager);
+  if (SPEC.manager) {
+    const bar = el('<div class="adminbar"><div class="wrap"><b>' + icon('palette') + ' Manager view — edit anything with ✎ or + Add</b><a href="/manage">Dashboard</a><a href="/manage#website">Design & texts</a><button>Sign out</button></div></div>');
+    $('button', bar).onclick = () => { localStorage.removeItem(KEY_NAME); KEY = ''; start(); };
+    app.append(bar);
+  }
   app.append(navbar(pages, id));
   const main = el('<main></main>'); app.append(main);
   if (!page) { main.append(el('<section class="sec"><div class="wrap"><div class="empty">This page doesn’t exist. <a href="/">Go to the home page</a></div></div></section>')); app.append(await footer(pages)); return; }
@@ -806,14 +838,14 @@ async function dataTable(t, box, {limit = 0, q = '', filter = '', fresh = true} 
   if (limit) all = all.slice(0, limit);
   const cols = t.fields.filter((f) => f.id !== label && f !== sf && f.type !== 'image' && f.type !== 'longtext').slice(0, 4);
   if (!all.length) { box.innerHTML = '<div class="empty" style="margin:20px;border:0">' + icon(q ? 'search' : 'list') + '<div>' + (q || filter ? 'Nothing matches.' : 'Nothing here yet.') + '</div></div>'; return; }
-  box.innerHTML = '<table class="data"><thead><tr><th>' + esc(t.fields.find((f) => f.id === label)?.label || 'Name') + '</th>' + cols.map((f) => '<th>' + esc(f.label) + '</th>').join('') + (sf ? '<th>' + esc(sf.label) + '</th>' : '') + '<th>Added</th></tr></thead><tbody></tbody></table>';
+  box.innerHTML = '<table class="data"><thead><tr><th>' + esc(t.fields.find((f) => f.id === label)?.label || 'Name') + '</th>' + cols.map((f) => '<th>' + esc(f.label) + '</th>').join('') + (sf ? '<th>' + esc(sf.label) + '</th>' : '') + '<th>Added · from</th></tr></thead><tbody></tbody></table>';
   const tb = $('tbody', box);
   for (const r of all) {
     const fresh10 = Date.now() - new Date(String(r.created_at).replace(' ', 'T')).getTime() < 600000;
     const tr = el('<tr' + (fresh10 && t.access.includes('add') ? ' class="new"' : '') + '><td><div class="cell-main">' + (imgF ? '<div class="thumb-sm">' + media(r[imgF.id], nameOf(t, r), 'sm') + '</div>' : '') + esc(nameOf(t, r)) + '</div></td>'
       + cols.map((f) => '<td>' + esc(fmt(f, r[f.id], links)) + '</td>').join('')
       + (sf ? '<td><select class="status s' + Math.max(0, sf.options.indexOf(r[sf.id])) % 5 + '">' + sf.options.map((o) => '<option' + (o === r[sf.id] ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></td>' : '')
-      + '<td class="muted" style="white-space:nowrap">' + esc(r.created_at || '') + '</td></tr>');
+      + '<td class="muted" style="white-space:nowrap">' + esc(r.created_at || '') + (r.via === 'phone' ? ' <span class="tag acc">' + icon('phone') + ' Phone</span>' : (r.via === 'website' ? ' <span class="tag">Website</span>' : '')) + '</td></tr>');
     if (sf) { const s = $('select', tr); s.onclick = (e) => e.stopPropagation(); s.onchange = async () => { await api('t/' + t.id + '/' + r.id, {method: 'PUT', body: JSON.stringify({[sf.id]: s.value})}); s.className = 'status s' + sf.options.indexOf(s.value) % 5; delete cache[t.id]; toast(sf.label + ': ' + s.value); }; }
     tr.onclick = () => drawer(t, r, () => go(VIEW));
     tb.append(tr);
@@ -832,8 +864,9 @@ async function manageTable(t, c) {
     return;
   }
   const sf = statusField(t);
-  const head = el('<div class="head"><h1>' + esc(t.title) + '</h1><button class="btn primary">' + icon('plus') + ' Add</button><p class="sub">' + esc(t.purpose || '') + '</p></div>');
-  $('button', head).onclick = () => drawer(t, null, () => go(VIEW));
+  const head = el('<div class="head"><h1>' + esc(t.title) + '</h1><button class="btn" data-a="photo">' + icon('image') + ' Add from a photo</button><button class="btn primary" data-a="add">' + icon('plus') + ' Add</button><p class="sub">' + esc(t.purpose || '') + '</p></div>');
+  $('[data-a=add]', head).onclick = () => drawer(t, null, () => go(VIEW));
+  $('[data-a=photo]', head).onclick = () => importPhoto(t, () => go(VIEW));
   c.append(head);
   const bar = el('<div class="toolbar"><div class="search">' + icon('search') + '<input placeholder="Search"></div></div>');
   let q = '', filter = '';
@@ -861,6 +894,45 @@ async function drawer(t, r, done) {
   };
   const del = $('.df .danger', d);
   if (del) del.onclick = async () => { if (!confirm('Delete “' + nameOf(t, r) + '”?')) return; await api('t/' + t.id + '/' + r.id, {method: 'DELETE'}); delete cache[t.id]; close(); toast('Deleted'); done(); };
+}
+
+/// Add records from a photo of a menu, price list…: the AI reads it, you tick what to keep.
+function importPhoto(t, done) {
+  const input = el('<input type="file" accept="image/*" hidden>');
+  document.body.append(input);
+  input.onchange = async () => {
+    const file = input.files[0]; input.remove(); if (!file) return;
+    const bg = el('<div class="drawer-bg"></div>'), d = el('<div class="drawer"><div class="dh"><h3>Add ' + esc(t.title.toLowerCase()) + ' from a photo</h3><button class="iconbtn">' + icon('x') + '</button></div><div class="db"><div class="reading"><div class="spinner"></div><b>Reading your picture…</b><div class="hint">Your AI is reading every item. This can take a minute.</div></div></div><div class="df"><span class="sp"></span><button class="btn cancel">Cancel</button><button class="btn primary" disabled>Add</button></div></div>');
+    document.body.append(bg, d);
+    requestAnimationFrame(() => requestAnimationFrame(() => { bg.classList.add('show'); d.classList.add('show'); }));
+    let closed = false;
+    const close = () => { closed = true; bg.classList.remove('show'); d.classList.remove('show'); setTimeout(() => { bg.remove(); d.remove(); }, 300); };
+    bg.onclick = close; $('.dh .iconbtn', d).onclick = close; $('.df .cancel', d).onclick = close;
+    let found;
+    try {
+      const blob = await shrink(file);
+      const r = await fetch('/api/_import/' + t.id, {method: 'POST', body: blob, headers: {'Content-Type': blob.type || 'image/jpeg', 'X-Key': KEY}});
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'Could not read the picture');
+      found = j.rows || [];
+    } catch (e) { if (!closed) $('.db', d).innerHTML = '<div class="err">' + esc(e.message) + '</div>'; return; }
+    if (closed) return;
+    if (!found.length) { $('.db', d).innerHTML = '<div class="empty">Nothing readable was found. Try a sharper, straighter photo.</div>'; return; }
+    const label = labelOf(t), others = t.fields.filter((f) => f.id !== label && found.some((r) => r[f.id] !== undefined));
+    const list = el('<div><p class="muted" style="margin-bottom:8px">Found ' + found.length + '. Untick anything wrong — you can edit details and add photos afterwards.</p></div>');
+    found.forEach((r, i) => list.append(el('<label class="imp-row"><input type="checkbox" checked data-i="' + i + '"><div><div class="nm">' + esc(r[label] ?? '(no name)') + '</div><div class="kv">' + others.map((f) => r[f.id] === undefined ? '' : esc(f.label) + ': ' + esc(f.type === 'money' ? money(r[f.id]) : r[f.id])).filter(Boolean).join(' · ') + '</div></div></label>')));
+    $('.db', d).innerHTML = ''; $('.db', d).append(list);
+    const add = $('.df .primary', d);
+    const count = () => { const n = $$('input:checked', list).length; add.disabled = !n; add.textContent = 'Add ' + n; };
+    list.onchange = count; count();
+    add.onclick = async () => {
+      add.disabled = true;
+      let ok = 0, bad = 0;
+      for (const c of $$('input:checked', list)) { try { await api('t/' + t.id, {method: 'POST', body: JSON.stringify(found[Number(c.dataset.i)])}); ok++; } catch (_) { bad++; } }
+      delete cache[t.id]; close(); toast('Added ' + ok + (bad ? ' (' + bad + ' could not be added)' : '')); done();
+    };
+  };
+  input.click();
 }
 
 /// Website: name, details, pictures, style, colour and every text on the pages.
@@ -930,8 +1002,15 @@ async function website(c) {
 }
 
 async function start() {
+  // LocalAILine opens /manage#pin=… to sign you in straight away.
+  if (location.hash.startsWith('#pin=')) {
+    const h = new URLSearchParams(location.hash.slice(1));
+    KEY = h.get('pin') || ''; localStorage.setItem(KEY_NAME, KEY);
+    history.replaceState(null, '', location.pathname + (h.get('v') ? '#' + h.get('v') : ''));
+  }
   try { SPEC = await api('_spec'); } catch (e) { document.getElementById('app').innerHTML = '<div class="wrap" style="padding:60px 24px"><div class="err">' + esc(e.message) + '</div></div>'; return; }
   if (MANAGER) return SPEC.manager ? admin() : login();
+  if (!SPEC.pages.some((p) => !p.manager)) { location.replace('/manage'); return; }
   await site();
 }
 start();

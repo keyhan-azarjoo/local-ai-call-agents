@@ -245,4 +245,26 @@ void main() {
     await expectLater(http.get(Uri.parse('http://127.0.0.1:${a.port}/')), throwsA(anything), reason: 'the website is gone');
     await db.raw.close();
   });
+
+  test('manager reads records from a photo; customers cannot', () async {
+    final tmp = Directory.systemTemp.createTempSync('imp');
+    final db = await Db.open(path: '${tmp.path}/t.db');
+    final spec = AppSpec.fromJson(restaurant);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final id = await db.insert('apps', {'name': 'x', 'request': 'x', 'spec': jsonEncode(spec.toJson()), 'port': 0, 'pin': '1234', 'created_at': now, 'updated_at': now});
+    String? seenTable;
+    final srv = AppServer(data: AppData(db, id, spec), pin: '1234', readPicture: (t, b64) async {
+      seenTable = t;
+      expect(base64Decode(b64), [1, 2, 3]);
+      return [{'name': 'Lasagne', 'price': 11}];
+    });
+    await srv.start(0);
+    final url = Uri.parse('http://127.0.0.1:${srv.port}/api/_import/menu_items');
+    expect((await http.post(url, body: [1, 2, 3], headers: {'Content-Type': 'image/jpeg'})).statusCode, 403);
+    final r = await http.post(url, body: [1, 2, 3], headers: {'Content-Type': 'image/jpeg', 'X-Key': '1234'});
+    expect(r.statusCode, 200);
+    expect(seenTable, 'menu_items');
+    expect(jsonDecode(r.body)['rows'], [{'name': 'Lasagne', 'price': 11}]);
+    await srv.stop();
+  });
 }

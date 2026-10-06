@@ -334,7 +334,7 @@ class VoiceEngine extends ChangeNotifier {
       final tls = File(crt).existsSync() ? 'tls:\n  port: 5061\n  port_listen: 5061\n  certs:\n    - cert_file: "$crt"\n      key_file: "$key"\n' : '';
       final cfg = File(p.join(dataDir, 'sip.yaml'))
         ..writeAsStringSync('api_key: $apiKey\napi_secret: $apiSecret\nws_url: $livekitUrl\nredis:\n  address: 127.0.0.1:$redisPort\n'
-            'sip_port: 5060\nrtp_port: 52000-52500\nuse_external_ip: true\n${tls}logging:\n  level: info\n');
+            'sip_port: 5080\nrtp_port: 52000-52500\nuse_external_ip: true\n${tls}logging:\n  level: info\n');
       sipTls = tls.isNotEmpty;
       // Each call's audio port asks STUN for its outside port (home routers renumber ports).
       await _spawn(EnginePart.sip, sipBin, ['--config', cfg.path], env: {'LIVEKIT_SIP_MEDIA_STUN': 'global.stun.twilio.com:3478'}, healthy: () async => log.any((l) => l.contains('[sip]') && l.contains('sip signaling listening')));

@@ -48,4 +48,18 @@ void main() {
     expect(Phone.e164('(415) 555-0100', lineNumber: '+16065432628'), '+14155550100');
     expect(Phone.e164('07700 900124'), '07700 900124');
   });
+
+  test('the hang-up marker reaches the voice agent whole', () {
+    const reply = 'Thank you, goodbye! [hangup]';
+    var sent = '';
+    final chunks = <String>[];
+    for (var i = 1; i <= reply.length; i++) {
+      final t = AppState.spokenText(reply.substring(0, i));
+      if (t.length > sent.length) {
+        chunks.add(t.substring(sent.length));
+        sent = t;
+      }
+    }
+    expect(chunks.any((c) => c.contains('[hangup]')), isTrue);
+  });
 }

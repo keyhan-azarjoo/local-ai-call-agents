@@ -457,7 +457,7 @@ class AppsManager extends ChangeNotifier {
         try {
           final blocks = await builder.pageBlocks(spec, p.id);
           spec = spec.copyWith(pages: [for (final x in spec.pages) x.id == p.id ? x.copyWith(blocks: blocks) : x]);
-          return '${blocks.length} parts: ${blocks.map((b) => b.type == 'text' ? 'text' : '${b.type} of ${spec.table(b.table!)?.title.toLowerCase()}').join(', ')}';
+          return '${blocks.length} parts: ${blocks.map((b) => b.describe(spec)).join(', ')}';
         } on BuildError {
           spec = spec.copyWith(pages: [for (final x in spec.pages) x.id == p.id ? x.copyWith(blocks: _simpleBlocks(spec, x)) : x]);
           throw const _Simple('The AI struggled here, so the page got a simple layout.');

@@ -182,6 +182,13 @@ class Block {
   String get type => data['type'] as String;
   String? get table => data['table'] as String?;
 
+  /// A few words about this part of a page, e.g. "banner", "list of menu".
+  String describe(AppSpec spec) => switch (type) {
+        'hero' => 'banner',
+        'text' => 'text',
+        _ => '${type == 'info' ? 'details' : type} of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
+      };
+
   static Block? fromJson(Object? j) {
     if (j is String) return Block({'type': 'text', 'text': j});
     if (j is! Map) return null;

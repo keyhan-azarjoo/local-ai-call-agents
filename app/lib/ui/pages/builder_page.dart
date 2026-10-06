@@ -899,7 +899,7 @@ class _AppDetailState extends State<_AppDetail> {
                   last: i == spec.pages.length - 1,
                   leading: const Icon(Icons.web_outlined, size: 20),
                   title: Text(p.title),
-                  subtitle: Muted(p.blocks.map((b) => b.type == 'text' ? 'text' : '${b.type} of ${spec.table(b.table!)?.title.toLowerCase() ?? b.table}').join(' · ')),
+                  subtitle: Muted(p.blocks.map((b) => b.describe(spec)).join(' · ')),
                   trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                     if (run != AppRun.stopped) Btn('View', small: true, kind: BtnKind.ghost, onPressed: () => openExternal('$local/p/${p.id}')),
                     Btn('Change', small: true, onPressed: busy != null

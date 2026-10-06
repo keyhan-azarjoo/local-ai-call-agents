@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:localailine/data/db.dart';
 import 'package:localailine/services/apps/app_builder.dart';
 import 'package:localailine/services/apps/app_spec.dart';
+import 'package:localailine/services/apps/app_templates.dart';
 import 'package:localailine/services/apps/apps_manager.dart';
 import 'package:localailine/services/mcp/mcp_manager.dart';
 import 'package:localailine/services/ollama.dart';
@@ -51,7 +52,8 @@ void main() {
         ..ollamaVersion = '1'
         ..llmModel = 'qwen3:4b-instruct'
         ..installedModels = [OllamaModel('qwen3:4b-instruct', 1, '4B', 'Q4')];
-      final spec = AppSpec.fromJson(restaurant);
+      // A ready-made app: its pages have banners (no table) — this once crashed the app page.
+      final spec = AppSpec.fromJson(appTemplates.first.spec.cast<String, dynamic>());
       final now = DateTime.now().millisecondsSinceEpoch;
       appId = await s.db.insert('apps', {
         'name': spec.name, 'request': 'I have a restaurant…', 'spec': jsonEncode(spec.toJson()), 'port': 8790, 'pin': '123456', 'created_at': now, 'updated_at': now,
@@ -90,7 +92,7 @@ void main() {
       ),
     ));
     await shot('1-list');
-    expect(find.text('Luigi’s'), findsOneWidget);
+    expect(find.text('Trattoria Bella'), findsNWidgets(2)); // your app + the template card
     expect(find.text('Run'), findsOneWidget);
     expect(find.text('Use this'), findsNWidgets(10));
     expect(find.text('Describe your own'), findsOneWidget);

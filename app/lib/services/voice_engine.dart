@@ -8,7 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
-enum EnginePart { redis, livekit, sip, whisper, accurate, agent }
+enum EnginePart { redis, livekit, sip, bridge, whisper, accurate, agent }
 
 enum PartState { missing, stopped, starting, running, failed }
 
@@ -53,6 +53,36 @@ class VoiceEngine extends ChangeNotifier {
       if (File(f).existsSync()) return f;
     }
     return which('livekit-sip');
+  }
+
+  /// The call bridge: keeps this computer signed in to your private Twilio SIP address over a
+  /// connection it opens itself, so incoming calls arrive without any router settings.
+  String get bridgeBinary => p.join(dataDir, 'bin', 'll-sipreg');
+
+  Future<void> startBridge(Map<String, String> env) async {
+    if (state[EnginePart.bridge] == PartState.running || !File(bridgeBinary).existsSync()) return;
+    await _spawn(EnginePart.bridge, bridgeBinary, [], env: {...env, 'LL_LOCAL_SIP': '127.0.0.1:5080'},
+        healthy: () async => log.any((l) => l.contains('[bridge]') && l.contains('registered')));
+  }
+
+  Future<void> stopBridge() async {
+    _procs.remove(EnginePart.bridge)?.kill();
+    state[EnginePart.bridge] = PartState.stopped;
+    notifyListeners();
+  }
+
+  /// Builds the call bridge from its source (in the app).
+  Future<void> installBridge({required Map<String, String> files}) async {
+    final go = await which('go');
+    if (go == null) throw Exception('Answering calls needs Go: brew install go');
+    final src = Directory(p.join(Directory.systemTemp.path, 'localailine-bridge-${DateTime.now().millisecondsSinceEpoch}'))..createSync();
+    files.forEach((name, text) => File(p.join(src.path, name)).writeAsStringSync(text));
+    Directory(p.join(dataDir, 'bin')).createSync(recursive: true);
+    final r = await Process.run(go, ['build', '-o', bridgeBinary, '.'], workingDirectory: src.path,
+        environment: {'PATH': '/opt/homebrew/bin:/usr/local/bin:${Platform.environment['PATH']}'});
+    await src.delete(recursive: true);
+    if (r.exitCode != 0) throw Exception('Couldn’t build the call bridge: ${r.stderr}');
+    _log('Call bridge installed.');
   }
 
   /// Builds the phone service from LiveKit SIP's source, with our patch (each call's audio
@@ -389,7 +419,7 @@ class VoiceEngine extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    for (final e in [EnginePart.agent, EnginePart.accurate, EnginePart.whisper, EnginePart.sip, EnginePart.livekit, EnginePart.redis]) {
+    for (final e in [EnginePart.agent, EnginePart.accurate, EnginePart.whisper, EnginePart.bridge, EnginePart.sip, EnginePart.livekit, EnginePart.redis]) {
       _procs.remove(e)?.kill();
       state[e] = PartState.stopped;
     }

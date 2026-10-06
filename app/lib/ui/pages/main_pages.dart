@@ -673,7 +673,7 @@ class _InboundSwitchState extends State<_InboundSwitch> {
   @override
   Widget build(BuildContext context) {
     final s = context.read<AppState>();
-    final on = '${widget.line['config']}'.contains('"inbound":true');
+    final on = RegExp(r'"inbound":\s*true').hasMatch('${widget.line['config']}');
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -699,12 +699,7 @@ class _InboundSwitchState extends State<_InboundSwitch> {
           Text(busy ? 'Setting up…' : 'Answer calls here', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
         ]),
         if (note != null) Muted(note!, size: 12),
-        if (on)
-          const Muted(
-            'One-time router setting: forward TCP port 5080 and UDP ports 52000–52500 to this computer '
-            '(router admin page → Port forwarding). Until then, calls still reach the previous setup.',
-            size: 12,
-          ),
+        if (on) const Muted('Ava answers calls to this number while LocalAILine is open. Turn off to give the number back to its previous setup.', size: 12),
       ]),
     );
   }

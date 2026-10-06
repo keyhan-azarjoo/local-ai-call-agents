@@ -62,42 +62,67 @@ class Phone {
     return {...cfg, 'sipDomain': trunk['domain_name'], 'trunkSid': trunk['sid'], 'sipUser': 'localailine', 'sipPass': pass, 'credentialListSid': list['sid']};
   }
 
-  /// Sends calls to your number to this computer: the number joins the LocalAILine trunk, whose
-  /// origination points here. Its previous setup (e.g. another app's webhook) is kept as the
-  /// trunk's backup, so callers are still answered there if this computer can't be reached.
-  Future<Map<String, dynamic>> enableInbound(Map<String, dynamic> cfg, {required String publicIp, int port = sipPort}) async {
-    final sid = cfg['sid'], trunk = cfg['trunkSid'];
+  /// Sends calls to your number to this computer, with no router settings: this computer signs
+  /// in to a private Twilio SIP address (the call bridge keeps that connection open) and the
+  /// number rings it. The number's previous setup (e.g. another app) is saved to restore later.
+  Future<Map<String, dynamic>> enableInbound(Map<String, dynamic> cfg) async {
+    final sid = cfg['sid'];
     final nums = (await _twilio(cfg, 'GET', 'https://api.twilio.com/2010-04-01/Accounts/$sid/IncomingPhoneNumbers.json?PhoneNumber=${Uri.encodeQueryComponent('${cfg['number']}')}'))['incoming_phone_numbers'] as List;
     if (nums.isEmpty) throw PhoneError('${cfg['number']} isn’t a number in this Twilio account.');
     final n = nums.first as Map;
-    final previous = cfg['previousVoice'] ?? {'url': n['voice_url'], 'method': n['voice_method'], 'trunk': n['trunk_sid']};
-    if ('${previous['url'] ?? ''}'.isNotEmpty) {
-      await _twilio(cfg, 'POST', 'https://trunking.twilio.com/v1/Trunks/$trunk', {'DisasterRecoveryUrl': '${previous['url']}', 'DisasterRecoveryMethod': '${previous['method'] ?? 'POST'}'});
+    final ownUrl = '${n['voice_url'] ?? ''}'.contains('twimlets.com/echo') && '${n['voice_url']}'.contains('localailine');
+    final previous = cfg['previousVoice'] ?? (ownUrl ? null : {'url': n['voice_url'], 'method': n['voice_method'], 'trunk': n['trunk_sid']});
+
+    // The private SIP address this computer signs in to.
+    var domain = '${cfg['regDomain'] ?? ''}';
+    if (domain.isEmpty) {
+      final doms = ((await _twilio(cfg, 'GET', 'https://api.twilio.com/2010-04-01/Accounts/$sid/SIP/Domains.json'))['domains'] as List).cast<Map>();
+      var d = doms.where((d) => d['friendly_name'] == 'LocalAILine').firstOrNull;
+      final rnd = Random.secure();
+      d ??= await _twilio(cfg, 'POST', 'https://api.twilio.com/2010-04-01/Accounts/$sid/SIP/Domains.json', {
+        'DomainName': 'localailine-${List.generate(6, (_) => rnd.nextInt(16).toRadixString(16)).join()}.sip.twilio.com',
+        'FriendlyName': 'LocalAILine',
+        'SipRegistration': 'true',
+        'VoiceUrl': 'https://twimlets.com/echo?Twiml=${Uri.encodeQueryComponent('<Response><Reject/></Response>')}',
+        'VoiceMethod': 'GET',
+      });
+      for (final kind in ['Registrations', 'Calls']) {
+        try {
+          await _twilio(cfg, 'POST', 'https://api.twilio.com/2010-04-01/Accounts/$sid/SIP/Domains/${d['sid']}/Auth/$kind/CredentialListMappings.json',
+              {'CredentialListSid': '${cfg['credentialListSid']}'});
+        } on PhoneError catch (e) {
+          if (!e.message.contains('already')) rethrow;
+        }
+      }
+      domain = '${d['domain_name']}';
+      cfg = {...cfg, 'regDomain': domain, 'regDomainSid': d['sid']};
     }
-    final origins = (await _twilio(cfg, 'GET', 'https://trunking.twilio.com/v1/Trunks/$trunk/OriginationUrls'))['origination_urls'] as List;
-    for (final o in origins.cast<Map>()) {
-      await _twilio(cfg, 'DELETE', 'https://trunking.twilio.com/v1/Trunks/$trunk/OriginationUrls/${o['sid']}');
+    // Off the trunk (if an earlier setup put it there), then ring our SIP address.
+    if (n['trunk_sid'] != null && n['trunk_sid'] == cfg['trunkSid']) {
+      await _twilio(cfg, 'DELETE', 'https://trunking.twilio.com/v1/Trunks/${cfg['trunkSid']}/PhoneNumbers/${n['sid']}');
     }
-    await _twilio(cfg, 'POST', 'https://trunking.twilio.com/v1/Trunks/$trunk/OriginationUrls',
-        {'FriendlyName': 'This computer', 'SipUrl': 'sip:$publicIp:$port;transport=tcp', 'Priority': '10', 'Weight': '10', 'Enabled': 'true'});
-    if (n['trunk_sid'] != trunk) {
-      await _twilio(cfg, 'POST', 'https://trunking.twilio.com/v1/Trunks/$trunk/PhoneNumbers', {'PhoneNumberSid': '${n['sid']}'});
-    }
-    return {...cfg, 'inbound': true, 'previousVoice': previous, 'numberSid': n['sid'], 'publicIp': publicIp};
+    final twiml = '<Response><Dial answerOnBridge="true" timeout="25"><Sip>sip:${cfg['sipUser']}@$domain;transport=tls</Sip></Dial></Response>';
+    await _twilio(cfg, 'POST', 'https://api.twilio.com/2010-04-01/Accounts/$sid/IncomingPhoneNumbers/${n['sid']}.json',
+        {'VoiceUrl': 'https://twimlets.com/echo?Twiml=${Uri.encodeQueryComponent(twiml)}', 'VoiceMethod': 'GET'});
+    return {...cfg, 'inbound': true, 'previousVoice': ?previous, 'numberSid': n['sid']};
   }
 
   /// Gives the number back to its previous setup.
   Future<Map<String, dynamic>> disableInbound(Map<String, dynamic> cfg) async {
-    final trunk = cfg['trunkSid'], pn = cfg['numberSid'];
-    if (pn != null) {
-      try {
-        await _twilio(cfg, 'DELETE', 'https://trunking.twilio.com/v1/Trunks/$trunk/PhoneNumbers/$pn');
-      } on PhoneError catch (e) {
-        if (!e.message.contains('404')) rethrow;
+    final prev = (cfg['previousVoice'] as Map?) ?? {};
+    if (cfg['numberSid'] != null) {
+      await _twilio(cfg, 'POST', 'https://api.twilio.com/2010-04-01/Accounts/${cfg['sid']}/IncomingPhoneNumbers/${cfg['numberSid']}.json',
+          {'VoiceUrl': '${prev['url'] ?? ''}', 'VoiceMethod': '${prev['method'] ?? 'POST'}'});
+      if (prev['trunk'] != null) {
+        await _twilio(cfg, 'POST', 'https://trunking.twilio.com/v1/Trunks/${prev['trunk']}/PhoneNumbers', {'PhoneNumberSid': '${cfg['numberSid']}'});
       }
     }
     return {...cfg, 'inbound': false};
   }
+
+  /// What the call bridge needs to sign in.
+  static Map<String, String> bridgeEnv(Map<String, dynamic> cfg) =>
+      {'LL_REG_DOMAIN': '${cfg['regDomain']}', 'LL_REG_USER': '${cfg['sipUser']}', 'LL_REG_PASS': '${cfg['sipPass']}', 'LL_NUMBER': '${cfg['number']}'};
 
   /// Our public IP, asked from Twilio's STUN server (no other service involved).
   static Future<String?> publicIp() async {

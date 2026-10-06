@@ -36,6 +36,23 @@ class VoiceEngine extends ChangeNotifier {
   String? problem;
 
   String get livekitUrl => 'ws://127.0.0.1:$livekitPort';
+
+  /// This computer on the home network: paired phones join calls here (e.g. a manager the call
+  /// is passed to). LiveKit only lets in people with a token the app signed.
+  String? lanIp;
+  String get lanLivekitUrl => 'ws://${lanIp ?? '127.0.0.1'}:$livekitPort';
+
+  static Future<String?> findLanIp() async {
+    final list = await NetworkInterface.list(type: InternetAddressType.IPv4);
+    list.sort((a, b) => (a.name == 'en0' ? 0 : 1).compareTo(b.name == 'en0' ? 0 : 1));
+    for (final i in list) {
+      if (i.name.startsWith('utun') || i.name.startsWith('bridge')) continue;
+      for (final a in i.addresses) {
+        if (!a.isLoopback && !a.address.startsWith('169.254') && !a.address.startsWith('100.')) return a.address;
+      }
+    }
+    return null;
+  }
   /// Ready to talk (phone calling and the larger hearing model are optional).
   bool get ready => [EnginePart.livekit, EnginePart.whisper, EnginePart.agent].every((e) => state[e] == PartState.running);
 
@@ -364,9 +381,10 @@ class VoiceEngine extends ChangeNotifier {
           });
     }
     final withRedis = state[EnginePart.redis] == PartState.running;
+    lanIp ??= await findLanIp();
     if (state[EnginePart.livekit] != PartState.running) {
       final cfg = File(p.join(dataDir, 'livekit.yaml'))
-        ..writeAsStringSync('port: $livekitPort\nbind_addresses: ["127.0.0.1"]\nrtc:\n  tcp_port: 7881\n  node_ip: 127.0.0.1\n'
+        ..writeAsStringSync('port: $livekitPort\nbind_addresses: ["0.0.0.0"]\nrtc:\n  tcp_port: 7881\n  node_ip: ${lanIp ?? '127.0.0.1'}\n'
             '${withRedis ? 'redis:\n  address: 127.0.0.1:$redisPort\n' : ''}keys:\n  $apiKey: $apiSecret\n');
       await _spawn(EnginePart.livekit, (await which('livekit-server'))!, ['--config', cfg.path], healthy: () => _ok('http://127.0.0.1:$livekitPort'));
     }
@@ -454,7 +472,7 @@ class VoiceEngine extends ChangeNotifier {
       'name': name ?? identity,
       'nbf': now - 10,
       'exp': now + ttl.inSeconds,
-      'video': {'room': room, 'roomJoin': room.isNotEmpty, 'roomCreate': sipAdmin, 'canPublish': true, 'canSubscribe': true, 'canPublishData': true},
+      'video': {'room': room, 'roomJoin': room.isNotEmpty, 'roomCreate': sipAdmin, 'roomAdmin': sipAdmin, 'canPublish': true, 'canSubscribe': true, 'canPublishData': true},
       if (sipAdmin) 'sip': {'admin': true, 'call': true},
     });
     final mac = await Hmac.sha256().calculateMac(utf8.encode('$head.$body'), secretKey: SecretKey(utf8.encode(apiSecret)));

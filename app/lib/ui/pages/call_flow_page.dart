@@ -4,6 +4,8 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/abilities.dart';
+import '../../services/agent_templates.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
@@ -22,6 +24,8 @@ const _cardW = 230.0, _cardH = 118.0;
 
 class _CallFlowPageState extends State<CallFlowPage> {
   List<Map<String, Object?>> agents = [];
+  List<Map<String, Object?>> lines = [];
+  int? lineFrom; // dragging a link from a phone line
   Map<String, Offset> pos = {};
   int? linkFrom; // dragging a new link from this agent
   Offset? linkEnd;
@@ -38,9 +42,11 @@ class _CallFlowPageState extends State<CallFlowPage> {
     final rows = await s.db.all('agents', where: "handles IN ('incoming', 'handoff', 'human')", orderBy: 'id');
     final layout = (jsonDecode(await s.db.setting('flow.layout') ?? '{}') as Map).cast<String, dynamic>();
     final mc = int.tryParse(await s.db.setting('calls.max') ?? '');
+    final ls = await s.db.all('lines', orderBy: 'id');
     if (!mounted) return;
     setState(() {
       agents = rows;
+      lines = ls;
       setMax = mc;
       pos = {for (final e in layout.entries) e.key: Offset((e.value[0] as num).toDouble(), (e.value[1] as num).toDouble())};
       // New cards: the answering agent on the left, the rest in a column to the right.
@@ -48,7 +54,7 @@ class _CallFlowPageState extends State<CallFlowPage> {
       for (final a in rows) {
         final k = '${a['id']}';
         if (pos.containsKey(k)) continue;
-        pos[k] = a['handles'] == 'incoming' ? const Offset(230, 160) : Offset(560 + (i ~/ 4) * 280, 20 + (i % 4) * 150.0);
+        pos[k] = a['handles'] == 'incoming' ? const Offset(270, 160) : Offset(600 + (i ~/ 4) * 300, 20 + (i % 4) * 150.0);
         if (a['handles'] != 'incoming') i++;
       }
     });
@@ -83,6 +89,83 @@ class _CallFlowPageState extends State<CallFlowPage> {
     await _load();
   }
 
+  int? _lineAgent(Map<String, Object?> line) {
+    try {
+      return ((jsonDecode('${line['config'] ?? '{}'}') as Map)['agentId'] as num?)?.toInt();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _setLineAgent(Map<String, Object?> line, int agentId) async {
+    final s = context.read<AppState>();
+    final cfg = (jsonDecode('${line['config'] ?? '{}'}') as Map).cast<String, dynamic>()..['agentId'] = agentId;
+    await s.db.update('lines', line['id'] as int, {'config': jsonEncode(cfg)});
+    await s.log('Calls to ${line['number']} now answered by ${agents.firstWhere((a) => a['id'] == agentId)['name']}');
+    await _load();
+  }
+
+  /// A phone line: drag its dot to the agent that should answer calls on it.
+  Widget _lineCard(int i, Offset o) {
+    final l = lines[i];
+    return Positioned(
+      left: o.dx,
+      top: o.dy,
+      child: Container(
+        width: 170,
+        height: 52,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(color: LL.navy, borderRadius: BorderRadius.circular(LL.r)),
+        child: Stack(clipBehavior: Clip.none, children: [
+          Row(children: [
+            const Icon(Icons.call, color: LL.amber, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${l['number'] ?? l['label']}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 12.5), overflow: TextOverflow.ellipsis),
+                Text('${l['label']}', style: const TextStyle(color: LL.navText, fontSize: 11), overflow: TextOverflow.ellipsis),
+              ]),
+            ),
+          ]),
+          Positioned(right: -22, top: 26 - 22, child: _dot(onStart: () => setState(() {
+                lineFrom = i;
+                linkEnd = o + const Offset(170, 26);
+              }), onEnd: () async {
+                final to = linkEnd == null ? null : _at(linkEnd!);
+                setState(() {
+                  lineFrom = null;
+                  linkEnd = null;
+                });
+                if (to != null && to['handles'] != 'human') await _setLineAgent(l, to['id'] as int);
+              })),
+        ]),
+      ),
+    );
+  }
+
+  /// A big, easy-to-grab dot to drag a link from.
+  Widget _dot({required VoidCallback onStart, required Future<void> Function() onEnd}) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (_) => onStart(),
+        onPanUpdate: (d) => setState(() => linkEnd = (linkEnd ?? Offset.zero) + d.delta),
+        onPanEnd: (_) => onEnd(),
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Tooltip(
+              message: 'Drag to connect',
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(color: LL.amber, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)]),
+                child: const Icon(Icons.add, size: 12, color: LL.navy),
+              ),
+            ),
+          ),
+        ),
+      );
+
   Map<String, Object?>? _at(Offset p) {
     for (final a in agents.reversed) {
       final o = pos['${a['id']}']!;
@@ -110,11 +193,20 @@ class _CallFlowPageState extends State<CallFlowPage> {
       }
     }
     final start = const Offset(20, 185);
+    // Phone lines down the left; each one links to the agent that answers it.
+    Offset linePos(int i) => Offset(20, 40 + i * 110.0);
+    final lineEdges = <(Offset, Offset)>[];
+    for (var i = 0; i < lines.length; i++) {
+      final to = _lineAgent(lines[i]) ?? entry?['id'];
+      final pb = to == null ? null : pos['$to'];
+      if (pb != null) lineEdges.add((linePos(i) + const Offset(170, 26), pb + const Offset(0, _cardH / 2)));
+    }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       PageHead('Call flow',
-          description: 'Who answers, and who a call can be passed to. Drag the cards; drag from a card’s dot to another card to link them; tap a link to remove it.',
+          description: 'Who answers each line, and who a call can be passed to. Drag a card to move it. Drag from an orange + dot onto another card to connect them. Tap a line between cards to remove it.',
           actions: [
-            Btn('Add AI agent', icon: Icons.smart_toy_outlined, onPressed: () => _add(human: false)),
+            Btn('Set up a team', icon: Icons.auto_awesome, kind: BtnKind.amber, onPressed: _setupTeam),
+            Btn('Add AI agent', icon: Icons.smart_toy_outlined, onPressed: _pickRole),
             Btn('Add person', icon: Icons.person_add_alt, kind: BtnKind.primary, onPressed: () => _add(human: true)),
           ]),
       Panel(
@@ -142,8 +234,22 @@ class _CallFlowPageState extends State<CallFlowPage> {
             child: GestureDetector(
               onTapUp: (d) => _tapEdge(d.localPosition, edges),
               child: Stack(children: [
-                Positioned.fill(child: CustomPaint(painter: _Edges(edges: edges, start: start, entry: entry == null ? null : pos['${entry['id']}'], color: LL.amber, line: c.muted, linkFrom: linkFrom == null ? null : pos['$linkFrom']! + const Offset(_cardW, _cardH / 2), linkEnd: linkEnd))),
-                Positioned(left: start.dx, top: start.dy - 22, child: const _Start()),
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _Edges(
+                      edges: edges,
+                      start: start,
+                      entry: lines.isEmpty && entry != null ? pos['${entry['id']}'] : null,
+                      lineEdges: lineEdges,
+                      color: LL.amber,
+                      line: c.muted,
+                      linkFrom: lineFrom != null ? linePos(lineFrom!) + const Offset(170, 26) : (linkFrom == null ? null : pos['$linkFrom']! + const Offset(_cardW, _cardH / 2)),
+                      linkEnd: linkEnd,
+                    ),
+                  ),
+                ),
+                if (lines.isEmpty) Positioned(left: start.dx, top: start.dy - 22, child: const _Start()),
+                for (var i = 0; i < lines.length; i++) _lineCard(i, linePos(i)),
                 for (final a in agents) _card(a),
               ]),
             ),
@@ -196,32 +302,33 @@ class _CallFlowPageState extends State<CallFlowPage> {
                 style: TextStyle(fontSize: 12, color: c.muted),
               ),
               const Spacer(),
-              Muted(human ? 'Rings ${_access(a)['number'] ?? 'no number yet'}' : '${count('tools', 'system')} · ${count('skills', 'skill')}', size: 11),
+              Muted(
+                human
+                    ? [if (acc['device'] != null) 'Rings their app', if ('${acc['number'] ?? ''}'.isNotEmpty) 'Rings ${acc['number']}'].join(' · ').ifEmpty('Add a number or paired phone')
+                    : [
+                        ...[for (final ab in (acc['abilities'] is List ? acc['abilities'] as List : (entry ? ['message'] : const []))) Abilities.labels[ab]?.split(' ').skip(1).join(' ')].nonNulls,
+                        count('tools', 'system'),
+                      ].join(' · '),
+                size: 11,
+              ),
             ]),
             if (!human)
               Positioned(
-                right: -26,
+                right: -40,
                 top: _cardH / 2 - 22,
-                child: GestureDetector(
-                  onPanStart: (_) => setState(() {
+                child: _dot(
+                  onStart: () => setState(() {
                     linkFrom = a['id'] as int;
                     linkEnd = o + const Offset(_cardW, _cardH / 2);
                   }),
-                  onPanUpdate: (d) => setState(() => linkEnd = (linkEnd ?? Offset.zero) + d.delta),
-                  onPanEnd: (_) async {
+                  onEnd: () async {
                     final to = linkEnd == null ? null : _at(linkEnd!);
-                    final from = a;
                     setState(() {
                       linkFrom = null;
                       linkEnd = null;
                     });
-                    if (to != null && to['id'] != from['id']) await _setLinks(from, {..._links(from), to['id'] as int});
+                    if (to != null && to['id'] != a['id']) await _setLinks(a, {..._links(a), to['id'] as int});
                   },
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(color: LL.amber, shape: BoxShape.circle, border: Border.all(color: c.panel, width: 3)),
-                  ),
                 ),
               ),
           ]),
@@ -256,22 +363,126 @@ class _CallFlowPageState extends State<CallFlowPage> {
     setState(() => setMax = n);
   }
 
-  Future<void> _add({required bool human}) async {
+  Future<int> _create(RoleTemplate t) async {
     final s = context.read<AppState>();
     final id = await s.db.insert('agents', {
-      'name': human ? 'Manager' : 'New agent',
-      'role': human ? 'Person' : 'Specialist',
+      'name': t.name,
+      'role': t.role,
       'greeting': '',
-      'instructions': human ? '' : 'You are a friendly specialist on the phone. Be brief, warm and accurate.',
+      'instructions': t.person ? '' : 'You are ${t.name}. ${t.instructions}',
       'language': 'English',
-      'handles': human ? 'human' : 'handoff',
-      'transfer_when': human ? 'The caller asks for a person or a manager.' : '',
-      'access': jsonEncode(human ? {} : {'tools': [], 'skills': []}),
+      'voice': t.voice,
+      'handles': t.person ? 'human' : 'handoff',
+      'transfer_when': t.when,
+      // Specialists start with no connected systems (fast, focused); documents and skills stay available.
+      'access': jsonEncode(t.person ? {} : {'tools': [], 'abilities': t.abilities}),
       'enabled': 1,
     });
+    await s.log('Added ${t.person ? 'person' : 'agent'} ${t.name} (${t.role}) to the call flow');
+    return id;
+  }
+
+  Future<void> _add({required bool human}) async {
+    final id = await _create(human
+        ? const RoleTemplate('Manager', 'Person', 'The caller asks for a person or a manager.', '', person: true)
+        : const RoleTemplate('New agent', 'Specialist', '', 'Be brief, warm and accurate.'));
     await _load();
     final a = agents.firstWhere((a) => a['id'] == id);
     if (mounted) await _edit(a);
+  }
+
+  /// Add one agent from a ready-made role (or a blank one).
+  Future<void> _pickRole() async {
+    final roles = <RoleTemplate>[
+      ...extraRoles,
+      for (final b in businessTemplates)
+        for (final r in b.roles)
+          if (!r.answers && !r.person) r,
+    ];
+    final picked = await showDialog<RoleTemplate?>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: const Text('Add an AI agent'),
+        children: [
+          SimpleDialogOption(onPressed: () => Navigator.pop(c, const RoleTemplate('New agent', 'Specialist', '', 'Be brief, warm and accurate.')), child: const Text('Blank agent — I’ll write its job')),
+          const Divider(),
+          for (final r in roles)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(c, r),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${r.role} · ${r.name}', style: const TextStyle(fontWeight: FontWeight.w600)),
+                Muted(r.when, size: 12),
+              ]),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    final id = await _create(picked);
+    await _load();
+    final a = agents.firstWhere((a) => a['id'] == id);
+    if (mounted) await _edit(a);
+  }
+
+  /// A whole team for a kind of business: receptionist, specialists and a person, already linked.
+  Future<void> _setupTeam() async {
+    final s = context.read<AppState>();
+    final b = await showDialog<BusinessTemplate?>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: const Text('What kind of business?'),
+        children: [
+          for (final b in businessTemplates)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(c, b),
+              child: Row(children: [
+                Text(b.icon, style: const TextStyle(fontSize: 22)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(b.label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    Muted(b.roles.map((r) => r.role).join(' · '), size: 12),
+                  ]),
+                ),
+              ]),
+            ),
+        ],
+      ),
+    );
+    if (b == null) return;
+    final entry = agents.where((a) => a['handles'] == 'incoming').firstOrNull;
+    final ids = <int>[];
+    final people = <int>[];
+    for (final r in b.roles) {
+      if (r.answers) {
+        if (entry != null) {
+          // The agent that answers keeps its name and greeting; it gets the receptionist's job.
+          await s.db.update('agents', entry['id'] as int, {
+            'role': r.role,
+            'instructions': '${entry['instructions']}\n\n${r.instructions}'.trim(),
+            'access': jsonEncode({..._access(entry), 'abilities': r.abilities}),
+          });
+        }
+        continue;
+      }
+      if (agents.any((a) => a['name'] == r.name && a['role'] == r.role)) continue;
+      final id = await _create(r);
+      (r.person ? people : ids).add(id);
+    }
+    // Links: the receptionist reaches everyone; specialists can go back to it or to the people.
+    if (entry != null) {
+      final cur = _links(entry);
+      await s.db.update('agents', entry['id'] as int, {
+        'access': jsonEncode({..._access((await s.db.all('agents', where: 'id = ?', args: [entry['id']])).first), 'passTo': {...cur, ...ids, ...people}.toList()}),
+      });
+      for (final id in ids) {
+        final row = (await s.db.all('agents', where: 'id = ?', args: [id])).first;
+        await s.db.update('agents', id, {'access': jsonEncode({..._access(row), 'passTo': [entry['id'], ...people]})});
+      }
+    }
+    await s.log('Set up a ${b.label} team in the call flow');
+    await _load();
+    s.toast('Team added. Tap a card to adjust it; add phone numbers for the people.');
   }
 
   Future<void> _edit(Map<String, Object?> a) async {
@@ -296,8 +507,9 @@ class _Start extends StatelessWidget {
 }
 
 class _Edges extends CustomPainter {
-  _Edges({required this.edges, required this.start, required this.entry, required this.color, required this.line, this.linkFrom, this.linkEnd});
+  _Edges({required this.edges, required this.start, required this.entry, required this.color, required this.line, this.linkFrom, this.linkEnd, this.lineEdges = const []});
   final List<(Offset, Offset, int, int)> edges;
+  final List<(Offset, Offset)> lineEdges;
   final Offset start;
   final Offset? entry, linkFrom, linkEnd;
   final Color color, line;
@@ -335,6 +547,9 @@ class _Edges extends CustomPainter {
       ..strokeWidth = 2
       ..style = PaintingStyle.stroke;
     if (entry != null) _curve(canvas, start + const Offset(150, 0), entry! + const Offset(0, _cardH / 2), Paint()..color = color..strokeWidth = 2.5..style = PaintingStyle.stroke);
+    for (final e in lineEdges) {
+      _curve(canvas, e.$1, e.$2, Paint()..color = color..strokeWidth = 2.5..style = PaintingStyle.stroke);
+    }
     for (final e in edges) {
       _curve(canvas, e.$1, e.$2, p);
     }
@@ -368,9 +583,12 @@ class _AgentEditorState extends State<_AgentEditor> {
   })();
   late String? voice = widget.agent['voice'] as String?;
   late bool enabled = widget.agent['enabled'] == 1;
-  List<Map<String, Object?>> servers = [], skills = [], docs = [];
+  List<Map<String, Object?>> servers = [], skills = [], docs = [], devices = [];
 
   bool get human => widget.agent['handles'] == 'human';
+  Set<String> get abilities => access['abilities'] is List
+      ? {for (final v in access['abilities'] as List) '$v'}
+      : (widget.agent['handles'] == 'incoming' ? {'message'} : <String>{});
   bool get entry => widget.agent['handles'] == 'incoming';
 
   @override
@@ -381,9 +599,11 @@ class _AgentEditorState extends State<_AgentEditor> {
       final sv = await s.db.all('mcp_servers', orderBy: 'id');
       final sk = await s.db.all('skills', orderBy: 'id');
       final dc = await s.db.all('knowledge', orderBy: 'id');
+      final dv = await s.db.all('devices', orderBy: 'id');
       if (mounted) {
         setState(() {
           servers = sv;
+          devices = dv;
           skills = sk;
           docs = [for (final d in dc) if (d['name'] != 'Past conversations' && !'${d['name']}'.startsWith('MCP: ') && !'${d['name']}'.startsWith('Skill: ')) d];
         });
@@ -466,6 +686,16 @@ class _AgentEditorState extends State<_AgentEditor> {
                     ),
                   if (human) ...[
                     const SizedBox(height: 12),
+                    Field(
+                      label: 'Ring their LocalAILine app',
+                      hint: 'A phone paired with this computer. They answer in the app; if not, their number is rung.',
+                      child: Dropdown(
+                        value: '${access['device'] ?? ''}',
+                        items: {'': 'Don’t use the app', for (final d in devices) '${d['id']}': '${d['name']}'},
+                        onChanged: (v) => setState(() => v.isEmpty ? access.remove('device') : access['device'] = int.parse(v)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Field(label: 'Their phone number', hint: 'Ava rings this number, briefs them, then connects the caller.', child: TextField(controller: number, decoration: const InputDecoration(hintText: '+44 7700 900123'))),
                   ] else ...[
                     if (entry) Field(label: 'First thing callers hear', child: TextField(controller: greeting, maxLines: 2)),
@@ -478,6 +708,17 @@ class _AgentEditorState extends State<_AgentEditor> {
                     const SizedBox(height: 4),
                     const Muted('Less is faster: give each agent only what its job needs.', size: 12),
                     const SizedBox(height: 10),
+                    Eyebrow('Can do on calls'),
+                    const SizedBox(height: 6),
+                    Wrap(spacing: 6, runSpacing: 6, children: [
+                      for (final e in Abilities.labels.entries)
+                        FilterChip(
+                          label: Text(e.value, style: const TextStyle(fontSize: 12)),
+                          selected: abilities.contains(e.key),
+                          onSelected: (on) => setState(() => access['abilities'] = (on ? {...abilities, e.key} : (abilities..remove(e.key))).toList()),
+                        ),
+                    ]),
+                    const SizedBox(height: 12),
                     _choose('tools', 'Connected systems', servers),
                     _choose('skills', 'Skills', skills),
                     _choose('docs', 'Documents', docs),
@@ -504,4 +745,8 @@ class _AgentEditorState extends State<_AgentEditor> {
       ),
     );
   }
+}
+
+extension on String {
+  String ifEmpty(String other) => isEmpty ? other : this;
 }

@@ -236,9 +236,21 @@ class HostServer {
 
   /// Rings every connected device that has "ring me" on. The first answer wins;
   /// with no answer within [timeout], Ava answers.
-  Future<RingAnswer> ring({required String callId, required String from, required String number, required String line, Duration timeout = const Duration(seconds: 20)}) async {
+  Future<RingAnswer> ring({
+    required String callId,
+    required String from,
+    required String number,
+    required String line,
+    Duration timeout = const Duration(seconds: 20),
+    int? onlyDevice,
+    Map<String, Object?>? join,
+  }) async {
     final targets = <LiveDevice>[];
     for (final d in live.values) {
+      if (onlyDevice != null) {
+        if (d.id == onlyDevice) targets.add(d);
+        continue;
+      }
       final rows = await db.all('devices', where: 'id = ?', args: [d.id]);
       if (rows.isNotEmpty && rows.first['ring'] == 1) targets.add(d);
     }
@@ -248,7 +260,7 @@ class HostServer {
       if (id == callId && !done.isCompleted) done.complete(a);
     };
     for (final d in targets) {
-      d.send({'type': 'ring', 'callId': callId, 'from': from, 'number': number, 'line': line, 'seconds': timeout.inSeconds});
+      d.send({'type': 'ring', 'callId': callId, 'from': from, 'number': number, 'line': line, 'seconds': timeout.inSeconds, 'join': ?join});
     }
     final answer = await done.future.timeout(timeout, onTimeout: () => RingAnswer(null, null, 'ai'));
     _ringAnswer = null;

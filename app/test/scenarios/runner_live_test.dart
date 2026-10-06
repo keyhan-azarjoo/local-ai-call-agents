@@ -275,6 +275,11 @@ class Harness {
       // The caller said goodbye, but the assistant just asked something: they'd answer it.
       if (ended && !(text.trim().endsWith('?') && extra++ < 2)) break;
     }
+    // The voice engine reports the end of the call (no transcript: no summary needed here).
+    final end = await http.postUrl(Uri.parse('http://127.0.0.1:$port/api/call-ended?token=$key'));
+    end.headers.contentType = ContentType.json;
+    end.write(jsonEncode({'room': room, 'transcript': [], 'answered': true, 'number': number}));
+    await (await end.close()).drain<void>();
     return (turns: turns, passedTo: passedTo, hungUp: hungUp);
   }
 
@@ -295,7 +300,8 @@ class Harness {
         '${c['wrong'] == null ? '' : 'Mistake to make: ${c['wrong']}\n'}'
         'How you talk: ${c['style_text'] ?? 'Natural and brief.'}\n'
         'Rules: speak like a real phone caller, ONE or TWO short sentences, no lists, no stage directions. Answer the question the assistant just asked. '
-        'If asked to confirm details that are right, say yes; if something is wrong, correct it. '
+        'If asked to confirm details that are right, say yes. If the assistant suggests or reads back a day, time, number of people, item or detail that is NOT in your facts, '
+        'say no and give the right one from your facts — never accept a wrong suggestion. '
         'If asked something not in your facts (e.g. allergies, special requests, email) say no / not needed. '
         'When your goal is done (they clearly confirmed it) or clearly cannot be done, say a short goodbye and end with [END]. '
         'If the assistant keeps repeating itself or does not help after several tries, say goodbye and [END]. Output only what you say.';

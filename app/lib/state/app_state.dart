@@ -14,6 +14,7 @@ import '../services/auth.dart';
 import '../services/abilities.dart';
 import '../services/agent_loop.dart';
 import '../services/agent_templates.dart';
+import '../services/apps/app_data.dart' show parseDate, withDay;
 import '../services/apps/apps_manager.dart';
 import '../services/catalog.dart';
 import '../services/tool_results.dart';
@@ -514,6 +515,7 @@ class AppState extends ChangeNotifier {
         '${check == null ? '' : '; before offering a time, call ${check.fnName} to see what is free (that only looks, it does not book)'}'
         '${book == null ? '' : '; save a booking with ${book.fnName}'}${order == null ? '' : '; save an order with ${order.fnName}'}. '
         '${order == null ? '' : _orderHow(order, book)}'
+        'Ask the caller which day and time they want; never suggest a day or time they did not ask for. '
         'Collect the details (no phone number given? use the number of this call), read them back ONCE, and as soon as the caller says yes, call the tool in that same reply. '
         'Only say it is booked or placed after the tool answered "Done"; if it answers with a problem (e.g. that time is taken), tell the caller and offer what is free. '
         'Never repeat a confirmation you already gave: if they ask again, just say yes, it is booked, in a few words.'
@@ -715,6 +717,18 @@ class AppState extends ChangeNotifier {
         // On a call, someone's own bookings are found and cancelled by the number they're calling
         // from, not by the number they say: only they can cancel theirs.
         if (callerNumber != null && RegExp(r'^(find|cancel|change)_my_').hasMatch(b.tool.name)) args = {...args, 'phone': callerNumber};
+        // Checked one day, saving another (small models drift): ask the model to make sure, once.
+        if (callerNumber != null && b.tool.name.startsWith('check_')) _lastCheck[callerNumber] = parseDate('${args['date'] ?? ''}') ?? '';
+        if (callerNumber != null && b.tool.name.startsWith('add_') && args['date'] != null) {
+          final checked = _lastCheck[callerNumber];
+          final saving = parseDate('${args['date']}') ?? '${args['date']}';
+          if (checked != null && checked.isNotEmpty && checked != saving && _dayDoubted.add('$callerNumber $saving')) {
+            return Future.value((
+              text: 'Not saved yet: you checked ${withDay(checked)} but are saving ${withDay(saving)}. Which day did the caller ask for? Call again with that date.',
+              isError: true,
+            ));
+          }
+        }
         // Small models put their own name in as the customer's.
         final own = agentName?.trim().toLowerCase() ?? '';
         if (own.isNotEmpty && RegExp(r'^(add|change_my)_').hasMatch(b.tool.name)) {
@@ -885,6 +899,7 @@ class AppState extends ChangeNotifier {
     final room = '${b['room'] ?? ''}';
     _activeCalls.remove(room);
     _onCall.remove(room);
+    _lastCheck.remove('${b['number'] ?? ''}');
     final turns = [for (final t in (b['transcript'] as List? ?? []).cast<Map>()) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': '${t['text']}'}];
     final answered = turns.any((t) => t['who'] == 'them');
     final pickedUp = b['answered'] == true;
@@ -1256,6 +1271,10 @@ class AppState extends ChangeNotifier {
 
   /// Who is on each call now (room → agent id) and what they were told when it was passed over.
   final _onCall = <String, ({int agentId, String brief, String from})>{};
+
+  /// The last day checked on each call (by caller number), to catch a booking saved on another day.
+  final _lastCheck = <String, String>{};
+  final _dayDoubted = <String>{};
 
   /// The agents a call can be passed between: the one answering calls, and those set up for hand-offs.
   /// Adds an agent (or a real person) to the call flow from a ready-made role.
@@ -2150,7 +2169,7 @@ class AppState extends ChangeNotifier {
             ChatMessage('system', '${await _voiceSystem(mode, lang, flow!.agent)}${flow.brief}${flow.team}${abilityRules(abilitiesOf(flow.agent))}${await builtAppRules(abilitiesOf(flow.agent), scopes)}'),
             ...convo,
             ChatMessage('assistant', spokenText(full.split('[transfer').first).trim()),
-            ChatMessage('user', '(You have just taken over the call. Greet the caller in one short sentence as ${target['name']}, show you know what they need from the brief, and carry on.)'),
+            ChatMessage('user', '(You have just taken over the call. Greet the caller in one short sentence as ${target['name']}, show you know what they need from the brief, and carry on: if the brief already has what you need, use your tools now in this same reply (check, or save once they have agreed) — never just say you will check.)'),
           ],
           scopes: scopes,
           access: access,

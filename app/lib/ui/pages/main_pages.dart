@@ -13,6 +13,7 @@ import '../widgets.dart';
 import 'devices_section.dart';
 import 'engine_pages.dart';
 import 'knowledge_page.dart';
+import 'test_runs_section.dart';
 
 /// Loads rows from the database and rebuilds whenever AppState notifies.
 class Rows extends StatelessWidget {
@@ -223,6 +224,7 @@ class _CallsPageState extends State<CallsPage> {
           onChanged: (v) => setState(() => filter = v),
         ),
         const SizedBox(height: 14),
+        if (filter == 'test') ...[const TestRunsSection(), const SizedBox(height: 14)],
         Rows('calls',
             where: filter == 'all' ? null : 'direction = ?',
             args: filter == 'all' ? null : [filter],

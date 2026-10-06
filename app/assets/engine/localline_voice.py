@@ -745,7 +745,7 @@ class Ava(Agent):
             reader.cancel()
 
 
-def build_session(stt_: WhisperStreamingSTT, vad, model: str) -> AgentSession:
+def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool = False) -> AgentSession:
     llm = (AppLLM if os.environ.get("LL_APP_URL") else openai.LLM)(
         base_url=os.environ.get("LL_LLM_BASE", "http://127.0.0.1:11434/v1"),
         api_key=os.environ.get("LL_LLM_KEY", "local"),
@@ -768,7 +768,9 @@ def build_session(stt_: WhisperStreamingSTT, vad, model: str) -> AgentSession:
             "preemptive_generation": {"enabled": True, "preemptive_tts": True},
             # "vad" keeps barge-in local ("adaptive" calls LiveKit Cloud).
             # Interrupt only on the caller's real words: Ava's own voice is filtered out by the hearing.
-            "interruption": {"enabled": True, "mode": "vad", "min_duration": 0.4, "min_words": 1, "resume_false_interruption": True},
+            # On the phone, "okay" / "yeah" / "mm" while she speaks is listening, not interrupting.
+            "interruption": {"enabled": True, "mode": "vad", "min_duration": 0.6 if phone_call else 0.4, "min_words": 3 if phone_call else 1,
+                             "resume_false_interruption": True},
         },
     )
 
@@ -810,7 +812,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # On a phone call the far end cancels its own echo; Ava's voice isn't in the room.
     stt_.echo_check = not phone_call
     model = mode if os.environ.get("LL_APP_URL") else os.environ.get("LL_LLM_MODEL", "qwen3:4b-instruct")
-    session = build_session(stt_, vad, model)
+    session = build_session(stt_, vad, model, phone_call=ctx.room.name.startswith("pstn"))
     session.tts._language = language  # noqa: SLF001
     lang = language if language != "auto" else "en"
 
@@ -928,6 +930,8 @@ async def entrypoint(ctx: JobContext) -> None:
 
         ctx.room.on("participant_attributes_changed", check)
         ctx.room.on("participant_connected", check)
+        # The call failed before anyone answered (busy, refused…): stop waiting.
+        ctx.room.on("participant_disconnected", lambda *_: None if answered.is_set() else ctx.shutdown("call failed"))
         check()
         try:
             await asyncio.wait_for(answered.wait(), timeout=75)

@@ -1,0 +1,134 @@
+--- a/pkg/sip/media_port.go	2026-10-06 12:33:53
++++ b/pkg/sip/media_port.go	2026-10-06 12:31:08
+@@ -16,6 +16,8 @@
+ 
+ import (
+ 	"bytes"
++	"crypto/rand"
++	"encoding/binary"
+ 	"errors"
+ 	"fmt"
+ 	"io"
+@@ -477,6 +479,13 @@
+ 			return nil, err
+ 		}
+ 		conn = c
++	}
++	// LocalAILine: behind a home router the outside port differs from ours; ask STUN from this
++	// very socket and offer that port, so the other side's audio finds its way back.
++	externalPort := 0
++	if srv := os.Getenv("LIVEKIT_SIP_MEDIA_STUN"); srv != "" {
++		externalPort = stunMappedPort(conn, srv)
++		log.Infow("media port mapped by STUN", "local", conn.LocalAddr().String(), "external", externalPort)
+ 	}
+ 	var localCrypto []srtp.Profile
+ 	if opts.Encryption != sdp.EncryptionNone {
+@@ -487,16 +496,17 @@
+ 		}
+ 	}
+ 	p := &mediaPort{
+-		log:         log,
+-		opts:        opts,
+-		mon:         mon,
+-		externalIP:  opts.IP,
+-		timeoutKick: make(chan struct{}, 1),
+-		port:        newUDPConn(log, conn, opts.SymmetricRTP),
+-		stats:       opts.Stats,
+-		codecs:      opts.Codecs,
+-		encryption:  opts.Encryption,
+-		localCrypto: localCrypto,
++		log:          log,
++		opts:         opts,
++		mon:          mon,
++		externalIP:   opts.IP,
++		externalPort: externalPort,
++		timeoutKick:  make(chan struct{}, 1),
++		port:         newUDPConn(log, conn, opts.SymmetricRTP),
++		stats:        opts.Stats,
++		codecs:       opts.Codecs,
++		encryption:   opts.Encryption,
++		localCrypto:  localCrypto,
+ 	}
+ 	// Explicitly set sample rate. We manually create resamplers to include in latency
+ 	p.audioOut = msdk.NewWriteCloserSwitch[msdk.PCM16Sample](targetSampleRate)
+@@ -519,6 +529,7 @@
+ 	opts           *MediaOptions
+ 	mon            *stats.CallMonitor
+ 	externalIP     netip.Addr
++	externalPort   int
+ 	port           *udpConn
+ 	mediaReceived  core.Fuse
+ 	packetCount    atomic.Uint64
+@@ -729,6 +740,54 @@
+ 	return p.port.LocalAddr().(*net.UDPAddr).Port
+ }
+ 
++// sdpPort is the port the other side should send to (the outside port when known).
++func (p *mediaPort) sdpPort() int {
++	if p.externalPort > 0 {
++		return p.externalPort
++	}
++	return p.Port()
++}
++
++// stunMappedPort asks a STUN server, from conn itself, which outside port it appears on.
++func stunMappedPort(conn UDPConn, server string) int {
++	ua, err := net.ResolveUDPAddr("udp4", server)
++	if err != nil {
++		return 0
++	}
++	req := make([]byte, 20)
++	binary.BigEndian.PutUint16(req[0:], 1)
++	binary.BigEndian.PutUint32(req[4:], 0x2112A442)
++	_, _ = rand.Read(req[8:20])
++	buf := make([]byte, 1500)
++	defer conn.SetReadDeadline(time.Time{})
++	for try := 0; try < 3; try++ {
++		if _, err := conn.WriteToUDPAddrPort(req, ua.AddrPort()); err != nil {
++			return 0
++		}
++		_ = conn.SetReadDeadline(time.Now().Add(700 * time.Millisecond))
++		n, _, err := conn.ReadFromUDPAddrPort(buf)
++		if err != nil || n < 20 {
++			continue
++		}
++		for i := 20; i+4 <= n; {
++			t := binary.BigEndian.Uint16(buf[i:])
++			l := int(binary.BigEndian.Uint16(buf[i+2:]))
++			if i+4+l > n {
++				break
++			}
++			v := buf[i+4 : i+4+l]
++			if t == 0x0020 && l >= 8 {
++				return int(binary.BigEndian.Uint16(v[2:]) ^ 0x2112)
++			}
++			if t == 0x0001 && l >= 8 {
++				return int(binary.BigEndian.Uint16(v[2:]))
++			}
++			i += 4 + l + (4-l%4)%4
++		}
++	}
++	return 0
++}
++
+ func (p *mediaPort) RemoteAddr() netip.AddrPort {
+ 	dst := p.port.dst.Load()
+ 	if dst == nil {
+@@ -781,7 +840,7 @@
+ 		return p.offer.SDP.Marshal()
+ 	}
+ 
+-	offer, err := sdp.NewOfferWith(p.codecs, p.externalIP, p.Port(), p.encryption, sdp.WithLocalProfiles(p.localCrypto))
++	offer, err := sdp.NewOfferWith(p.codecs, p.externalIP, p.sdpPort(), p.encryption, sdp.WithLocalProfiles(p.localCrypto))
+ 	if err != nil {
+ 		return nil, err
+ 	}
+@@ -802,7 +861,7 @@
+ 	isReinvite := p.negotiated != nil
+ 	p.mu.RUnlock()
+ 	p.reportPeerCodecs(offer.MediaDesc, isReinvite)
+-	answer, mc, err := offer.Answer(p.externalIP, p.Port(), p.encryption, sdp.WithLocalProfiles(p.localCrypto))
++	answer, mc, err := offer.Answer(p.externalIP, p.sdpPort(), p.encryption, sdp.WithLocalProfiles(p.localCrypto))
+ 	if err != nil {
+ 		return nil, SDPError{Err: err}
+ 	}

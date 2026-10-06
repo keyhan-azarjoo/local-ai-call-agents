@@ -44,6 +44,9 @@ class VoiceEngine extends ChangeNotifier {
 
   static const redisPort = 6390;
 
+  /// Calls are set up over TLS (needs the local certificate).
+  bool sipTls = false;
+
   /// LiveKit's phone (SIP) service: built from source once (needs Go), kept with the app's data.
   Future<String?> sipBinary() async {
     for (final f in [p.join(dataDir, 'bin', 'livekit-sip'), p.join(Platform.environment['HOME'] ?? '', 'go', 'bin', 'livekit-sip')]) {
@@ -52,26 +55,41 @@ class VoiceEngine extends ChangeNotifier {
     return which('livekit-sip');
   }
 
-  /// Builds the phone service: `brew install opus libsoxr pkg-config redis`, then `go install`.
-  Future<void> installPhone() async {
+  /// Builds the phone service from LiveKit SIP's source, with our patch (each call's audio
+  /// port learns its outside port by STUN, so calls work behind home routers).
+  static const sipVersion = 'v1.17.0';
+
+  Future<void> installPhone({required String patch}) async {
     final brew = await which('brew');
     final go = await which('go');
     if (brew == null || go == null) throw Exception('Phone calling needs Homebrew and Go: brew install go');
-    Future<void> run(String exe, List<String> args, {Map<String, String> env = const {}}) async {
+    final env = {
+      'PKG_CONFIG_PATH': '/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig',
+      'PATH': '/opt/homebrew/bin:/usr/local/bin:${Platform.environment['PATH']}',
+    };
+    Future<String> run(String exe, List<String> args, {String? dir}) async {
       _log('\$ ${p.basename(exe)} ${args.join(' ')}');
-      final pr = await Process.start(exe, args, environment: env);
-      pr.stdout.transform(utf8.decoder).listen((l) => _log(l.trim()));
+      final pr = await Process.start(exe, args, environment: env, workingDirectory: dir);
+      final out = StringBuffer();
+      pr.stdout.transform(utf8.decoder).listen((l) {
+        out.write(l);
+        _log(l.trim());
+      });
       pr.stderr.transform(utf8.decoder).listen((l) => _log(l.trim()));
       if (await pr.exitCode != 0) throw Exception('Install step failed: ${p.basename(exe)} ${args.take(2).join(' ')}');
+      return out.toString();
     }
 
     await run(brew, ['install', 'opus', 'libsoxr', 'pkg-config', 'redis']);
+    final info = jsonDecode(await run(go, ['mod', 'download', '-json', 'github.com/livekit/sip@$sipVersion'])) as Map;
+    final src = Directory(p.join(Directory.systemTemp.path, 'localailine-sip-${DateTime.now().millisecondsSinceEpoch}'));
+    await run('/bin/cp', ['-R', '${info['Dir']}', src.path]);
+    await run('/bin/chmod', ['-R', 'u+w', src.path]);
+    final patchFile = File(p.join(src.path, 'localailine.patch'))..writeAsStringSync(patch);
+    await run('/usr/bin/patch', ['-p1', '-i', patchFile.path], dir: src.path);
     final bin = Directory(p.join(dataDir, 'bin'))..createSync(recursive: true);
-    await run(go, ['install', 'github.com/livekit/sip/cmd/livekit-sip@latest'], env: {
-      'GOBIN': bin.path,
-      'PKG_CONFIG_PATH': '/opt/homebrew/lib/pkgconfig:/usr/local/lib/pkgconfig',
-      'PATH': '/opt/homebrew/bin:/usr/local/bin:${Platform.environment['PATH']}',
-    });
+    await run(go, ['build', '-o', p.join(bin.path, 'livekit-sip'), './cmd/livekit-sip'], dir: src.path);
+    await src.delete(recursive: true);
     _log('Phone calling installed.');
   }
 
@@ -211,7 +229,8 @@ class VoiceEngine extends ChangeNotifier {
     final pr = await Process.start(exe, args, environment: env, workingDirectory: dataDir);
     _procs[part] = pr;
     _savePids();
-    final file = File(p.join(dataDir, 'voice-engine.log')).openWrite(mode: part == EnginePart.livekit ? FileMode.write : FileMode.append);
+    // One log for all parts, always appended (it's cleared when the engine starts).
+    final file = File(p.join(dataDir, 'voice-engine.log')).openWrite(mode: FileMode.append);
     void out(String s) {
       file.write(s.replaceAll(RegExp(r'^', multiLine: true), '[${part.name}] '));
       for (final l in const LineSplitter().convert(s)) {
@@ -270,6 +289,10 @@ class VoiceEngine extends ChangeNotifier {
   Future<void> start() async {
     problem = null;
     _killStale();
+    if (_procs.isEmpty) {
+      final f = File(p.join(dataDir, 'voice-engine.log'));
+      if (f.existsSync() && f.lengthSync() > 0) f.renameSync('${f.path}.old');
+    }
     final miss = await missing();
     if (miss.isNotEmpty) {
       problem = 'Missing: ${miss.join(', ')}';
@@ -302,10 +325,19 @@ class VoiceEngine extends ChangeNotifier {
       await _spawn(EnginePart.livekit, (await which('livekit-server'))!, ['--config', cfg.path], healthy: () => _ok('http://127.0.0.1:$livekitPort'));
     }
     if (withRedis && sipBin != null && state[EnginePart.sip] != PartState.running) {
+      // Calls are set up over TLS: home routers' "SIP ALG" rewrites plain call setup and the
+      // other side's audio never arrives. A local self-signed certificate is enough for that.
+      final crt = p.join(dataDir, 'sip.crt'), key = p.join(dataDir, 'sip.key');
+      if (!File(crt).existsSync() || !File(key).existsSync()) {
+        await Process.run('/usr/bin/openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', crt, '-days', '3650', '-subj', '/CN=localailine']);
+      }
+      final tls = File(crt).existsSync() ? 'tls:\n  port: 5061\n  port_listen: 5061\n  certs:\n    - cert_file: "$crt"\n      key_file: "$key"\n' : '';
       final cfg = File(p.join(dataDir, 'sip.yaml'))
         ..writeAsStringSync('api_key: $apiKey\napi_secret: $apiSecret\nws_url: $livekitUrl\nredis:\n  address: 127.0.0.1:$redisPort\n'
-            'sip_port: 5060\nrtp_port: 52000-52500\nuse_external_ip: true\nlogging:\n  level: info\n');
-      await _spawn(EnginePart.sip, sipBin, ['--config', cfg.path], healthy: () async => log.any((l) => l.contains('[sip]') && l.contains('sip signaling listening')));
+            'sip_port: 5060\nrtp_port: 52000-52500\nuse_external_ip: true\n${tls}logging:\n  level: info\n');
+      sipTls = tls.isNotEmpty;
+      // Each call's audio port asks STUN for its outside port (home routers renumber ports).
+      await _spawn(EnginePart.sip, sipBin, ['--config', cfg.path], env: {'LIVEKIT_SIP_MEDIA_STUN': 'global.stun.twilio.com:3478'}, healthy: () async => log.any((l) => l.contains('[sip]') && l.contains('sip signaling listening')));
     }
     if (state[EnginePart.whisper] != PartState.running) {
       await _spawn(

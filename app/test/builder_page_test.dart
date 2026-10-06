@@ -35,7 +35,7 @@ void main() {
 
   testWidgets('builder page: list, wizard, build, detail', (t) async {
     await t.runAsync(fonts);
-    t.view.physicalSize = const Size(1200, 1100);
+    t.view.physicalSize = const Size(1200, 1500);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
 
@@ -92,11 +92,22 @@ void main() {
     await shot('1-list');
     expect(find.text('Luigi’s'), findsOneWidget);
     expect(find.text('Run'), findsOneWidget);
+    expect(find.text('Use this'), findsNWidgets(10));
+    expect(find.text('Describe your own'), findsOneWidget);
 
     // Wizard: describe.
     s.apps.newJob();
     await shot('2-describe');
     expect(find.text('What do you want?'), findsOneWidget);
+
+    // Wizard: questions + style.
+    s.apps.job!
+      ..request = 'I have a restaurant'
+      ..questions = ['Do customers order at the table?']
+      ..stage = 'questions';
+    s.apps.editPlan(s.apps.job!, AppSpec.fromJson(restaurant));
+    await shot('2b-questions');
+    expect(find.text('Elegant'), findsOneWidget);
 
     // Wizard: plan.
     final j = s.apps.job!
@@ -127,7 +138,8 @@ void main() {
     await t.tap(find.text('Open'));
     await shot('5-detail');
     expect(find.text('Ava can use this app'), findsOneWidget);
-    expect(find.text('ADD SOMETHING'), findsOneWidget);
+    expect(find.text('Change it by describing'), findsOneWidget);
+    expect(find.text('WEBSITE STYLE'), findsOneWidget);
     expect(appId, greaterThan(0));
   });
 }

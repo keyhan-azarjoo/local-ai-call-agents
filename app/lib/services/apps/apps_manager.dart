@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 import '../../data/db.dart';
 import '../mcp/mcp_manager.dart';
@@ -11,6 +12,8 @@ import 'app_builder.dart';
 import 'app_data.dart';
 import 'app_server.dart';
 import 'app_spec.dart';
+import 'app_styles.dart';
+import 'app_templates.dart';
 
 enum AppRun { stopped, running, paused }
 
@@ -53,6 +56,9 @@ class BuildJob {
   String? error;
   bool cancelled = false;
   Future<void> Function()? save;
+
+  /// The website's look (see [siteStyles]); null = suggested from the request.
+  String? style;
 
   List<PictureNotes> get notes => [for (final p in pictures) ?p.$2];
 }
@@ -109,6 +115,9 @@ class AppsManager extends ChangeNotifier {
     throw BuildError('No free port for the app.');
   }
 
+  /// Pictures uploaded to an app.
+  String filesDir(int id) => '${File(db.path).parent.path}/apps/$id/files';
+
   Future<void> _status(int id, AppRun r) async {
     await db.update('apps', id, {'status': r.name});
     notifyListeners();
@@ -119,7 +128,7 @@ class AppsManager extends ChangeNotifier {
     if (a == null) return;
     var srv = _servers[id];
     if (srv == null || !srv.running) {
-      srv = AppServer(data: AppData(db, id, a.spec), pin: a.pin);
+      srv = AppServer(data: AppData(db, id, a.spec), pin: a.pin, filesDir: filesDir(id), onSpecChanged: (spec) => saveSpec(id, spec, fromSite: true));
       try {
         await srv.start(a.port);
       } on SocketException {
@@ -161,6 +170,8 @@ class AppsManager extends ChangeNotifier {
     }
     await db.raw.delete('app_rows', where: 'app_id = ?', whereArgs: [id]);
     await db.delete('apps', id);
+    final files = Directory(filesDir(id)).parent;
+    if (files.existsSync()) files.deleteSync(recursive: true);
     await log('Deleted app $name');
     notifyListeners();
   }
@@ -173,9 +184,10 @@ class AppsManager extends ChangeNotifier {
   }
 
   /// Saves a changed app and uses it at once (website, data rules, Ava's tools).
-  Future<void> saveSpec(int id, AppSpec spec) async {
+  Future<void> saveSpec(int id, AppSpec spec, {bool fromSite = false}) async {
     await db.update('apps', id, {'spec': jsonEncode(spec.toJson()), 'name': spec.name, 'updated_at': DateTime.now().millisecondsSinceEpoch});
     _servers[id]?.data.spec = spec;
+    if (fromSite) await log('Changed the website of ${spec.name}');
     for (final r in await _avaRows(id)) {
       await db.update('mcp_servers', r.id, {'name': r.secret['role'] == 'manager' ? '${spec.name} (manager)' : spec.name});
       if (runOf(id) != AppRun.stopped) await mcp.connect(r.id);
@@ -247,6 +259,71 @@ class AppsManager extends ChangeNotifier {
     }
   }
 
+  // ---------------- ready-made apps ----------------
+
+  /// Makes an app from a template, with its example data, and starts it.
+  Future<int> createFromTemplate(AppTemplate t, {bool ava = true}) async {
+    final pics = <String, String?>{};
+    final dir = Directory('${File(db.path).parent.path}/apps/_new_${DateTime.now().microsecondsSinceEpoch}')..createSync(recursive: true);
+    // Sample photos, saved into the app (skipped without internet: tidy placeholders instead).
+    Future<Object?> photo(Object? v, {bool big = false}) async {
+      if (v is! String || !v.startsWith('unsplash:')) return v;
+      if (pics.containsKey(v)) return pics[v];
+      try {
+        final r = await http
+            .get(Uri.parse('https://images.unsplash.com/photo-${v.substring(9)}?w=${big ? 2000 : 900}&q=78&fm=jpg&fit=crop'))
+            .timeout(const Duration(seconds: 20));
+        if (r.statusCode != 200 || r.bodyBytes.length < 2000) return pics[v] = null;
+        final name = '${v.substring(9).replaceAll(RegExp(r'[^a-z0-9]'), '')}${big ? 'h' : ''}.jpg';
+        await File('${dir.path}/$name').writeAsBytes(r.bodyBytes);
+        return pics[v] = '/files/$name';
+      } catch (_) {
+        return pics[v] = null;
+      }
+    }
+
+    final site = Map<String, Object?>.of((t.spec['site'] as Map?)?.cast<String, Object?>() ?? {});
+    site['hero'] = await photo(site['hero'], big: true);
+    final rows = <String, List<Map<String, Object?>>>{};
+    await Future.wait([
+      for (final e in t.rows.entries)
+        () async {
+          rows[e.key] = [
+            for (final r in e.value) {for (final f in r.entries) f.key: await photo(f.value)},
+          ];
+        }(),
+    ]);
+    final spec = AppSpec.fromJson({...t.spec, 'site': site, 'features': {'website': true, 'ava': ava}});
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final id = await db.insert('apps', {
+      'name': spec.name,
+      'request': t.blurb,
+      'spec': jsonEncode(spec.toJson()),
+      'port': await _freePort(),
+      'pin': _pin(),
+      'status': 'stopped',
+      'created_at': now,
+      'updated_at': now,
+    });
+    final files = Directory(filesDir(id));
+    files.parent.createSync(recursive: true);
+    if (files.existsSync()) files.deleteSync(recursive: true);
+    dir.renameSync(files.path);
+    final data = AppData(db, id, spec);
+    // In template order: tables others link to come first.
+    for (final key in t.rows.keys) {
+      for (final r in rows[key]!) {
+        try {
+          await data.add(key, {for (final f in r.entries) if (f.value != null) f.key: f.value}, manager: true);
+        } on AppDataError catch (_) {}
+      }
+    }
+    await log('Created app ${spec.name} from the ${t.name} template');
+    await start(id);
+    if (ava) await connectAva(id);
+    return id;
+  }
+
   // ---------------- building ----------------
 
   BuildJob newJob() {
@@ -305,7 +382,7 @@ class AppsManager extends ChangeNotifier {
   }
 
   Future<void> makePlan(BuildJob j) async {
-    if (await _busy(j, 'Making a plan…', () async => j.plan = await builder.plan(j.request, j.answers, j.features, j.notes))) {
+    if (await _busy(j, 'Making a plan…', () async => j.plan = await builder.plan(j.request, j.answers, j.features, j.notes, style: j.style ?? suggestStyle(j.request)))) {
       j.stage = 'plan';
       notifyListeners();
     }
@@ -508,6 +585,31 @@ class AppsManager extends ChangeNotifier {
         }
         return builder.changeLook(spec, req);
       });
+
+  /// One sentence about any part of the app ("make it darker", "add a gallery",
+  /// "add photos to the menu"): the AI picks the part, then changes only that part.
+  Future<String?> changeAnything(int id, String request) => change(id, 'Working on “$request”…', (spec) async {
+        final r = await builder.route(spec, request);
+        return switch (r.kind) {
+          'look' => builder.changeLook(spec, request),
+          'site' => builder.changeSite(spec, request),
+          'table' => () async {
+              final fields = await builder.changeTable(spec, r.target!, request);
+              return spec.copyWith(tables: [for (final t in spec.tables) t.id == r.target ? t.copyWith(fields: fields) : t]).repaired();
+            }(),
+          'page' => () async {
+              final blocks = await builder.changePage(spec, r.target!, request);
+              return spec.copyWith(pages: [for (final p in spec.pages) p.id == r.target ? p.copyWith(blocks: blocks) : p]);
+            }(),
+          _ => builder.addPart(spec, request),
+        };
+      });
+
+  /// A new style picked by hand (no AI needed).
+  Future<void> setStyle(int id, String style, {String? accent}) async {
+    final s = (await app(id))!.spec;
+    await saveSpec(id, s.copyWith(site: {...s.site, 'style': style}, theme: accent ?? ''));
+  }
 
   Future<void> removePart(int id, {String? table, String? page}) async {
     final a = await app(id);

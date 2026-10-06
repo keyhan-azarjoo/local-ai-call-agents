@@ -195,6 +195,7 @@ class AppData {
         return v.map((x) => x is Map ? '${x['qty']} × ${names[f.link]?[x['id']] ?? x['id']}' : (names[f.link]?[x] ?? '$x')).join(', ');
       }
       if (f.type == 'yesno') return v == true ? 'yes' : 'no';
+      if (f.type == 'image') return ''; // pictures mean nothing to the AI
       return '$v';
     }
 

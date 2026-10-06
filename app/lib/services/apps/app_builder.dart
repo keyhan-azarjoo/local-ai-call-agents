@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import '../ollama.dart' show ChatMessage;
 import 'app_spec.dart';
+import 'app_styles.dart';
 
 /// Sends messages to the AI and returns its whole reply. [json]: answer must be JSON.
 typedef AskModel = Future<String> Function(List<ChatMessage> messages, {bool json, String? model});
@@ -124,7 +125,7 @@ class AppBuilder {
 
   // ---------------- plan ----------------
 
-  static const _planFormat = '{"name":"short app name","summary":"one sentence",\n'
+  static const _planFormat = '{"name":"short app name","summary":"one sentence","tagline":"a short, warm slogan for the website",\n'
       ' "tables":[{"id":"snake_case","title":"Title","purpose":"what it stores","kind":"list" or "single","access":"see" | "add" | "see+add" | "none"}],\n'
       ' "pages":[{"id":"snake_case","title":"Title","purpose":"what customers do on this page"}]}';
 
@@ -155,7 +156,7 @@ class AppBuilder {
     return null;
   }
 
-  Future<AppSpec> plan(String request, Map<String, String> answers, Features features, List<PictureNotes> pics) async {
+  Future<AppSpec> plan(String request, Map<String, String> answers, Features features, List<PictureNotes> pics, {String style = 'modern'}) async {
     final qa = answers.entries.where((e) => e.value.trim().isNotEmpty).map((e) => 'Q: ${e.key}\nA: ${e.value}').join('\n');
     final j = await askJson(
       'The user wants this app:\n"$request"\n${qa.isEmpty ? '' : '\nTheir answers:\n$qa\n'}${_pictures(pics)}\n'
@@ -163,7 +164,7 @@ class AppBuilder {
       'Make a small plan. JSON:\n$_planFormat\n$_planRules',
       check: (j) => _checkPlan(j, features.website, '$request\n$qa'),
     );
-    return _fromPlan(j, features, pics);
+    return _fromPlan(j, features, pics, style: style);
   }
 
   /// The plan again, changed the way the user asked.
@@ -174,8 +175,8 @@ class AppBuilder {
       'Return the whole changed plan in the same JSON format:\n$_planFormat\n$_planRules',
       check: (j) => _checkPlan(j, current.features.website, change),
     );
-    final next = _fromPlan(j, current.features, const []);
-    return next.copyWith().withLook(current);
+    final next = _fromPlan(j, current.features, const [], style: current.style);
+    return next.copyWith(site: {...current.site, if (next.site['tagline'] != null) 'tagline': next.site['tagline']!}, theme: current.theme);
   }
 
   static Map<String, Object?> _planJson(AppSpec s) => {
@@ -185,21 +186,25 @@ class AppBuilder {
         'pages': [for (final p in s.pages) {'id': p.id, 'title': p.title, 'purpose': p.purpose}],
       };
 
-  AppSpec _fromPlan(Map<String, dynamic> j, Features features, List<PictureNotes> pics) {
+  AppSpec _fromPlan(Map<String, dynamic> j, Features features, List<PictureNotes> pics, {String style = 'modern'}) {
     final look = pics.where((p) => p.kind == 'website' || p.kind == 'logo').firstOrNull ?? pics.where((p) => p.accent != null).firstOrNull;
+    // A picture of a website decides the style: dark → bold, serif → elegant, rounded → warm.
+    final fromPicture = look == null || look.kind != 'website'
+        ? null
+        : (look.dark ? 'bold' : (look.font == 'serif' ? 'elegant' : (look.font == 'rounded' ? 'warm' : null)));
     return AppSpec.fromJson({
       ...j,
       'features': features.toJson(),
       if (!features.website) 'pages': const [],
-      'theme': look?.accent ?? '#1F6FEB',
-      'look': {'dark': look?.dark ?? false, 'font': look?.font ?? 'sans'},
+      'theme': look?.accent ?? '',
+      'site': {'style': fromPicture ?? style, 'tagline': ?(j['tagline'] as Object?)?.toString()},
     });
   }
 
   // ---------------- tables ----------------
 
   static const _fieldFormat = '{"fields":[{"id":"snake_case","label":"Label","type":"text","required":true}]}\n'
-      'Types: text, longtext, number, money, yesno, date, time, datetime, email, phone,\n'
+      'Types: text, longtext, number, money, yesno, date, time, datetime, email, phone, image (a photo),\n'
       ' choice (add "options":["A","B"]),\n'
       ' link (one record of another table: add "link":"table_id"),\n'
       ' links (several records of another table: add "link":"table_id", and "qty":true when each has a quantity, like food in an order).\n'
@@ -214,6 +219,7 @@ class AppBuilder {
       'JSON:\n$_fieldFormat\n'
       'Rules: 2 to 10 fields. The first field is the name or title of a record. No "id" field. '
       '${others.isEmpty ? '' : 'Other tables you can link to: $others. '}'
+      '${t.access.see && !t.single ? 'Customers browse these, so add a "description" (longtext) and a "photo" (image) field. ' : ''}'
       'Only link from a record that uses others (an order links to the food and the table it is for); never link back (food does not link to orders or tables). '
       '${t.access.add ? 'Customers fill this in, so ask them only what is needed. ' : ''}'
       'Example for bookings of a bike shop: {"fields":[{"id":"customer_name","label":"Your name","type":"text","required":true},'
@@ -244,7 +250,8 @@ class AppBuilder {
     final single = spec.tables.where((t) => t.access.see && t.single).map((t) => t.id).join(', ');
     final add = spec.tables.where((t) => t.access.add).map((t) => t.id).join(', ');
     return '{"blocks":[ ...blocks... ]}\nBlocks you can use:\n'
-        '{"type":"text","text":"# Heading\\nA short friendly paragraph"}\n'
+        '{"type":"hero","title":"A big, inviting headline","text":"One sentence under it","button":"Button text","link":"page id the button opens"}  (a big banner; use it first)\n'
+        '{"type":"text","text":"## Heading\\nA short friendly paragraph"}\n'
         '${see.isEmpty ? '' : '{"type":"list","table":"one of: $see","title":"...","search":true}  (cards with a search box)\n'}'
         '${single.isEmpty ? '' : '{"type":"info","table":"one of: $single","title":"..."}  (shows the one record)\n'}'
         '${add.isEmpty ? '' : '{"type":"form","table":"one of: $add","title":"...","submit":"button text","thanks":"message after sending"}\n'}'
@@ -263,7 +270,7 @@ class AppBuilder {
     final j = await askJson(
       'App plan:\n${spec.outline()}\n'
       'Now design the customer page "${p.id}" (${p.purpose}). JSON:\n${_blockFormat(spec)}\n'
-      'Rules: 1 to 5 blocks, start with a short welcoming text block. Write texts for customers, in the language the user wrote in.'
+      'Rules: 2 to 5 blocks. Start with a "hero" block. Pages: ${spec.pages.map((x) => x.id).join(', ')}. Write warm, professional texts for customers, in the language the user wrote in.'
       '${needForm ? ' This page must have a "form" block for ${adds.map((t) => '"${t.id}"').join(' or ')}.' : ''}',
       check: (j) {
         final base = _checkBlocks(j);
@@ -323,18 +330,63 @@ class AppBuilder {
     return next.copyWith(pages: [for (final x in next.pages) x.id == p.id ? x.copyWith(blocks: blocks) : x]);
   }
 
-  /// New colours and font from a sentence ("make it dark green") and/or a picture's notes.
+  /// A new style and colour from a sentence ("make it dark and luxurious") and/or a picture's notes.
   Future<AppSpec> changeLook(AppSpec spec, String change) async {
     final j = await askJson(
-      'An app now looks like this: main colour ${spec.theme}, ${spec.dark ? 'dark' : 'light'} background, ${spec.font} font.\n'
-      'The user wants: "$change"\nJSON: {"accent":"#rrggbb","dark":true or false,"font":"sans" | "serif" | "rounded"}',
+      'A website now uses the style "${spec.style}" with main colour ${spec.theme.isEmpty ? styleOf(spec.style).accent : spec.theme}.\n'
+      'Styles: ${siteStyles.map((s) => '"${s.id}" (${s.about})').join('; ')}.\n'
+      'The user wants: "$change"\nJSON: {"style":"one of the style ids","accent":"#rrggbb main colour"}',
+      check: (j) => siteStyles.any((s) => s.id == j['style']) ? null : 'Pick "style" from: ${siteStyles.map((s) => s.id).join(', ')}.',
     );
     final accent = '${j['accent'] ?? ''}';
-    return AppSpec.fromJson({
-      ...spec.toJson(),
-      if (RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(accent)) 'theme': accent,
-      'look': {'dark': j['dark'] == true, 'font': j['font'] ?? spec.font},
-    });
+    return spec.copyWith(
+      site: {...spec.site, 'style': j['style'] as String},
+      theme: RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(accent) ? accent : spec.theme,
+    );
+  }
+
+  /// New website details (tagline, about, contact, footer) from a sentence.
+  Future<AppSpec> changeSite(AppSpec spec, String change) async {
+    const keys = ['name', 'tagline', 'about', 'address', 'phone', 'email', 'footer', 'currency'];
+    final now = {'name': spec.name, for (final k in keys.skip(1)) k: spec.site[k] ?? ''};
+    final j = await askJson(
+      'The website of "${spec.name}" (${spec.summary}) has these details:\n${jsonEncode(now)}\n'
+      'The user wants: "$change"\nReturn all details after the change, same JSON keys.',
+    );
+    final site = {...spec.site};
+    for (final k in keys.skip(1)) {
+      final v = '${j[k] ?? now[k]}'.trim();
+      v.isEmpty ? site.remove(k) : site[k] = v;
+    }
+    final name = '${j['name'] ?? ''}'.trim();
+    return spec.copyWith(name: name.isEmpty ? null : name, site: site);
+  }
+
+  /// Which part a change is about: look, site details, one table, one page, or something new.
+  Future<({String kind, String? target})> route(AppSpec spec, String request) async {
+    // "Add a page about…" / "a new gallery page" is always something new.
+    final r = request.toLowerCase();
+    if (RegExp(r'\b(add|create|make|new|another)\b[^.]*\bpage\b').hasMatch(r) && !spec.pages.any((p) => r.contains('${p.title.toLowerCase()} page'))) {
+      return (kind: 'add', target: null);
+    }
+    final j = await askJson(
+      'App plan:\n${spec.outline()}\n'
+      'The user asks: "$request"\n'
+      'Which ONE part should change? JSON {"kind":"look" | "site" | "table" | "page" | "add","target":"table or page id, if any"}\n'
+      '- look: colours, style, dark/light, fonts, "more modern/luxurious/fun"\n'
+      '- site: the business name, slogan/tagline, about text, address, phone, email, currency\n'
+      '- table: the information kept for one table (add or remove fields, e.g. "add a photo to the menu", "orders need a phone number")\n'
+      '- page: what one EXISTING page shows or says (texts, order of sections, headings)\n'
+      '- add: a new page or a new kind of data that does not exist yet',
+      check: (j) {
+        final k = j['kind'];
+        if (!const ['look', 'site', 'table', 'page', 'add'].contains(k)) return '"kind" must be look, site, table, page or add.';
+        if (k == 'table' && spec.table(slug(j['target'])) == null) return 'Give "target": one of ${spec.tables.map((t) => t.id).join(', ')}.';
+        if (k == 'page' && spec.page(slug(j['target'])) == null) return 'Give "target": one of ${spec.pages.map((p) => p.id).join(', ')}.';
+        return null;
+      },
+    );
+    return (kind: j['kind'] as String, target: j['target'] == null ? null : slug(j['target']));
   }
 
   // ---------------- example data ----------------

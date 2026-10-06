@@ -15,6 +15,9 @@ import 'app_web.dart';
 /// - `/mcp`: what customers may do (callers can use it without approval)
 /// - `/mcp/manager`: the rest, for the owner (needs the manager PIN)
 class AppServer {
+  /// Every tool call from an assistant (tests and diagnostics): app, tool, arguments, answer.
+  static void Function(String app, String tool, Map<String, dynamic> args, String result, bool error)? onToolCall;
+
   AppServer({required this.data, required this.pin, this.filesDir, this.onSpecChanged, this.readPicture});
   final AppData data;
   String pin;
@@ -54,7 +57,8 @@ class AppServer {
       if (path == '/app.js') return _send(req, 200, appJs, 'application/javascript');
       if (path.startsWith('/mcp')) return await _mcp(req, manager: path == '/mcp/manager');
       if (path.startsWith('/files/')) return await _file(req, path.substring(7));
-      if (paused) {
+      if (paused && !(_isManager(req) && path.startsWith('/api/'))) {
+        // The manager still sees and handles what came in; customers see "paused".
         if (path.startsWith('/api/')) return _json(req, 503, {'error': 'This app is paused right now.'});
         return _send(req, 503, pausedHtml(spec), 'text/html');
       }
@@ -299,9 +303,12 @@ class AppServer {
         final args = (p['arguments'] as Map?)?.cast<String, dynamic>() ?? {};
         try {
           if (paused) throw AppDataError('${spec.name} is paused right now.');
-          result = {'content': [{'type': 'text', 'text': await callTool('${p['name']}', args, manager: manager)}]};
+          final text = await callTool('${p['name']}', args, manager: manager);
+          result = {'content': [{'type': 'text', 'text': text}]};
+          onToolCall?.call(spec.name, '${p['name']}', args, text, false);
         } on AppDataError catch (e) {
           result = {'content': [{'type': 'text', 'text': e.message}], 'isError': true};
+          onToolCall?.call(spec.name, '${p['name']}', args, e.message, true);
         }
       default:
         error = {'code': -32601, 'message': 'Unknown method $method'};
@@ -343,6 +350,11 @@ class AppServer {
           'phone': {'type': 'string', 'description': 'The caller\'s phone number'},
           'name': {'type': 'string', 'description': 'Their name, if given'},
         }, const ['phone'], readOnly: true));
+        out.add(AppTool('change_my_${t.id}', 'Changes one of the caller\'s own $what in $app (a new time or day, more people, other items…) instead of making a new one. Give only what changes. Only works for their phone number.', {
+          'id': {'type': 'integer', 'description': 'Its id, from find_my_${t.id} (leave out if they have only one)'},
+          'phone': {'type': 'string', 'description': 'The caller\'s phone number'},
+          for (final f in fields) if (f.type != 'phone' && !f.managerOnly) f.id: _schema(f),
+        }, const ['phone'], auto: true));
         out.add(AppTool('cancel_my_${t.id}', 'Cancels one of the caller\'s own $what in $app, after they confirmed which one. Only works for their phone number.', {
           'id': {'type': 'integer', 'description': 'Its id, from find_my_${t.id} (leave out if they have only one)'},
           'phone': {'type': 'string', 'description': 'The caller\'s phone number'},
@@ -350,7 +362,7 @@ class AppServer {
       }
       if (add && !t.single) {
         out.add(AppTool('add_${t.id}', manager ? 'Adds a record to the $what of $app.$about' : 'Adds a new record to the $what of $app (e.g. a customer order or booking).$about',
-            {for (final f in fields) f.id: _schema(f)}, [for (final f in fields) if (f.required) f.id], auto: !manager));
+            {for (final f in fields) f.id: _schema(f)}, [for (final f in fields) if (f.required && f.when == null) f.id], auto: !manager));
       }
       if (manager) {
         if (t.single) {
@@ -366,6 +378,14 @@ class AppServer {
   }
 
   Map<String, Object?> _schema(FieldSpec f) {
+    final s = _schemaOf(f);
+    final w = f.when;
+    if (w == null) return s;
+    final on = spec.tables.expand((t) => t.fields).where((x) => x.id == w.key).firstOrNull?.label ?? w.key;
+    return {...s, 'description': '${s['description']} — only for $on ${w.value.join(' / ')}${f.required ? ' (then required)' : ''}'};
+  }
+
+  Map<String, Object?> _schemaOf(FieldSpec f) {
     final target = f.link == null ? null : spec.table(f.link!)?.title.toLowerCase();
     return switch (f.type) {
       'number' || 'money' => {'type': 'number', 'description': f.label},
@@ -391,8 +411,9 @@ class AppServer {
 
   /// A customer's own bookings/orders: found and cancelled only with their phone number.
   Future<String> _mine(String name, Map<String, dynamic> args) async {
-    final cancel = name.startsWith('cancel_my_');
-    final t = spec.table(name.substring(cancel ? 10 : 8))!;
+    final change = name.startsWith('change_my_');
+    final cancel = name.startsWith('cancel_my_') || change;
+    final t = spec.table(name.substring(change ? 10 : cancel ? 10 : 8))!;
     final phoneF = t.fields.firstWhere((f) => f.type == 'phone');
     final phone = '${args['phone'] ?? ''}';
     if (phone.replaceAll(RegExp(r'\D'), '').length < 6) throw AppDataError('Ask for their phone number first.');
@@ -414,16 +435,20 @@ class AppServer {
     final id = (args['id'] as num?)?.toInt() ?? int.tryParse('${args['id'] ?? ''}');
     var r = id == null ? null : await data.get(t.id, id, manager: true);
     if (r != null && !samePhone(r[phoneF.id], phone)) {
-      throw AppDataError('That $what is under a different phone number, so it can\'t be cancelled from this number. Tell the caller to call from the number they booked with.');
+      throw AppDataError('That $what is under a different phone number, so it can\'t be ${change ? 'changed' : 'cancelled'} from this number. Tell the caller to call from the number they booked with.');
     }
     if (r == null || !mine.any((m) => m['id'] == r!['id'])) {
-      if (mine.isEmpty) throw AppDataError('No $what found for the phone number $phone, so there is nothing to cancel. Tell the caller.');
+      if (mine.isEmpty) throw AppDataError('No $what found for the phone number $phone, so there is nothing to ${change ? 'change' : 'cancel'}. Tell the caller.');
       if (mine.length > 1) {
         throw AppDataError('They have ${mine.length}: ask which one, then call again with its id.\n${await data.describe(t.id, mine)}');
       }
       r = mine.single;
     }
     final rid = r['id'] as int;
+    if (change) {
+      await data.change(t.id, rid, {for (final e in args.entries) if (e.key != 'id' && e.key != 'phone' && e.value != null && '${e.value}'.isNotEmpty) e.key: e.value});
+      return 'Done. Changed (the old details are replaced):\n${await data.describe(t.id, [(await data.get(t.id, rid, manager: true))!])}';
+    }
     final status = shape?.statusField ?? t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
     final cancelled = status?.options.where((o) => RegExp(r'cancel', caseSensitive: false).hasMatch(o)).firstOrNull;
     if (status != null && cancelled != null) {
@@ -434,24 +459,27 @@ class AppServer {
     return 'Cancelled. ${await data.describe(t.id, [r])}';
   }
 
+  static final _placeholder = RegExp(r'^(guest|customer|caller|client|unknown|n/?a|none|name|user|walk.?in|anonymous|patient|student|test|tbc|\?+|-+)(\s*\d*)?$', caseSensitive: false);
+
   Future<String> callTool(String name, Map<String, dynamic> args, {required bool manager}) async {
     final tool = mcpTools(manager: manager).where((t) => t.name == name).firstOrNull;
     if (tool == null) throw AppDataError('Unknown tool $name.');
-    if (name.startsWith('find_my_') || name.startsWith('cancel_my_')) return _mine(name, args);
+    if (RegExp(r'^(find|cancel|change)_my_').hasMatch(name)) return _mine(name, args);
     final verb = name.substring(0, name.indexOf('_'));
     final t = spec.table(name.substring(verb.length + 1))!;
     switch (verb) {
       case 'check':
         final b = BookingShape.of(spec, t)!;
-        final date = '${args['date'] ?? ''}'.trim(), time = '${args['time'] ?? ''}'.trim();
-        if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date)) throw AppDataError('Give the date as YYYY-MM-DD (today is ${DateTime.now().toIso8601String().substring(0, 10)}).');
+        final date = parseDate('${args['date'] ?? ''}') ?? (throw AppDataError('Give the date as YYYY-MM-DD (today is ${withDay(DateTime.now().toIso8601String().substring(0, 10))}).'));
+        final time = parseTime('${args['time'] ?? ''}') ?? (throw AppDataError('Give the time as HH:MM, 24-hour (7pm = 19:00).'));
         final guests = (args['guests'] as num?)?.toInt() ?? int.tryParse('${args['guests'] ?? ''}') ?? 0;
         final a = await data.availability(b, date, time, guests: guests);
         String show(Map<String, Object?> r) => '${r[b.resources.labelField] ?? r['id']}${b.seatsField != null ? ' (${r[b.seatsField!.id]} seats)' : ''}';
         final what = b.resources.title.toLowerCase();
+        final on = withDay(date);
         return a.free.isEmpty
-            ? 'Nothing is free at $time on $date${guests > 0 ? ' for $guests' : ''}. Offer another time.'
-            : 'Free $what at $time on $date${guests > 0 ? ' for $guests' : ''}: ${a.free.map(show).join(', ')}. '
+            ? 'Nothing is free at $time on $on${guests > 0 ? ' for $guests' : ''}. Offer another time.'
+            : 'Free $what at $time on $on${guests > 0 ? ' for $guests' : ''}: ${a.free.map(show).join(', ')}. '
                 '${a.taken.isEmpty ? '' : 'Booked: ${a.taken.map(show).join(', ')}. '}A booking lasts ${data.bookingMinutes} minutes. '
                 'This only checked — NOTHING IS BOOKED YET. Once you have the caller\'s name and phone and they agree, call add_${t.id} to book '
                 '(you may leave the ${b.resourceField.label.toLowerCase()} out: the best free one is given).';
@@ -462,6 +490,23 @@ class AppServer {
         final r = await data.single(t.id, manager: manager);
         return r.isEmpty ? 'Not set yet.' : data.describe(t.id, [r]);
       case 'add':
+        if (!manager) {
+          // A made-up name ("Guest", "Caller") means the name was never asked.
+          for (final f in t.fields.where((f) => f.type == 'text' && RegExp(r'name|student|patient', caseSensitive: false).hasMatch('${f.id} ${f.label}'))) {
+            final v = '${args[f.id] ?? ''}'.trim();
+            if (v.isNotEmpty && _placeholder.hasMatch(v)) throw AppDataError('Ask the caller for their ${f.label.toLowerCase().replaceFirst('your ', '')} first ("$v" is not a name), then save it.');
+          }
+        }
+        if (!manager) {
+          // Saved already in this call (the caller corrected something, or the AI saved twice): change that one.
+          final shape = BookingShape.of(spec, t);
+          final prev = await data.recentByPhone(t, '${args[t.fields.where((f) => f.type == 'phone').firstOrNull?.id] ?? ''}',
+              date: shape == null ? null : parseDate('${args[shape.dateField.id] ?? ''}'));
+          if (prev != null) {
+            await data.change(t.id, prev, args);
+            return 'Done. Updated the one saved earlier in this call (not a second one):\n${await data.describe(t.id, [(await data.get(t.id, prev, manager: false))!])}';
+          }
+        }
         final id = await data.add(t.id, args, manager: manager, via: 'phone');
         return 'Done. Added to ${t.title.toLowerCase()} with id $id:\n${await data.describe(t.id, [(await data.get(t.id, id, manager: manager))!])}';
       case 'set':

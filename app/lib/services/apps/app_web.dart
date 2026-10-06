@@ -806,10 +806,16 @@ async function formBlock(b, t, page, state) {
   state.forms = state.forms || {};
   state.forms[t.id] = Object.fromEntries(inputs.map((i) => [i.f.id, i]));
   if (fc) new IntersectionObserver((e) => { inView = e[0].isIntersecting; fc.classList.toggle('show', !inView && $('span', fc).textContent !== ''); }).observe(n);
+  // Fields that only apply in some cases (an address only for delivery) show when they do.
+  const applies = (f, body) => !f.when || Object.entries(f.when).every(([k, vals]) => vals.some((v) => String(v).toLowerCase() === String(body[k] ?? '').toLowerCase()));
+  const values = () => { const body = {}; for (const i of inputs) body[i.f.id] = i.get(); return body; };
+  const showWhen = () => { const body = values(); for (const i of inputs) if (i.f.when) i.node.style.display = applies(i.f, body) ? '' : 'none'; };
+  if (inputs.some((i) => i.f.when)) { ['click', 'input', 'change'].forEach((ev) => form.addEventListener(ev, () => setTimeout(showWhen))); showWhen(); }
   form.onsubmit = async (e) => {
     e.preventDefault();
-    const body = {}; for (const i of inputs) body[i.f.id] = i.get();
-    const missing = inputs.find((i) => i.f.required && (body[i.f.id] === '' || body[i.f.id] === null || (Array.isArray(body[i.f.id]) && !body[i.f.id].length)));
+    const body = values();
+    for (const i of inputs) if (!applies(i.f, body)) delete body[i.f.id];
+    const missing = inputs.find((i) => i.f.required && applies(i.f, body) && (body[i.f.id] === '' || body[i.f.id] === null || body[i.f.id] === undefined || (Array.isArray(body[i.f.id]) && !body[i.f.id].length)));
     const msg = $('.msg', form);
     if (missing) { msg.innerHTML = '<div class="err">Please fill in “' + esc(missing.f.label) + '”.</div>'; return; }
     if (cartF && !body[cartF.id].length) { msg.innerHTML = '<div class="err">Choose at least one item first.</div>'; return; }

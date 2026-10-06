@@ -14,8 +14,8 @@ class AppTemplate {
   final Map<String, List<Map<String, Object?>>> rows;
 }
 
-Map<String, Object?> _f(String id, String label, String type, {bool req = false, List<String>? options, String? link, bool qty = false, bool manager = false}) =>
-    {'id': id, 'label': label, 'type': type, if (req) 'required': true, 'options': ?options, 'link': ?link, if (qty) 'qty': true, if (manager) 'manager_only': true};
+Map<String, Object?> _f(String id, String label, String type, {bool req = false, List<String>? options, String? link, bool qty = false, bool manager = false, Map<String, List<String>>? when}) =>
+    {'id': id, 'label': label, 'type': type, if (req) 'required': true, 'options': ?options, 'link': ?link, if (qty) 'qty': true, if (manager) 'manager_only': true, 'when': ?when};
 
 Map<String, Object?> _t(String id, String title, String purpose, String access, List<Map<String, Object?>> fields, {bool single = false}) =>
     {'id': id, 'title': title, 'purpose': purpose, 'kind': single ? 'single' : 'list', 'access': access, 'fields': fields};
@@ -29,7 +29,7 @@ Map<String, Object?> _text(String text) => {'type': 'text', 'text': text};
 final _hours = _t('opening_hours', 'Opening hours', 'When you are open', 'see', [_f('opens', 'Opens', 'time'), _f('closes', 'Closes', 'time'), _f('days', 'Days', 'text')], single: true);
 
 final appTemplates = <AppTemplate>[
-  AppTemplate('restaurant', 'Restaurant', 'Menu with photos, online orders with table choice, reservations and opening hours.', {
+  AppTemplate('restaurant', 'Restaurant', 'Menu with photos, orders for collection, delivery or to your table, reservations and opening hours.', {
     'name': 'Trattoria Bella',
     'summary': 'Guests browse the menu, order to their table and book ahead.',
     'site': {'style': 'elegant', 'tagline': 'Wood-fired pizza & handmade pasta', 'hero': 'unsplash:1414235077428-338989a2e8c0', 'about': 'A family trattoria serving the food of Naples since 1998: slow-proved dough, fresh pasta every morning and wine from small Italian growers.', 'address': '12 Harbour Street', 'phone': '020 7946 0123', 'currency': '£'},
@@ -40,9 +40,14 @@ final appTemplates = <AppTemplate>[
         _f('vegetarian', 'Vegetarian', 'yesno'), _f('spicy', 'Spicy', 'yesno'),
       ]),
       _t('dining_tables', 'Tables', 'Tables in the restaurant', 'see', [_f('number', 'Table', 'text', req: true), _f('seats', 'Seats', 'number'), _f('area', 'Area', 'choice', options: ['Inside', 'Terrace', 'Window'])]),
-      _t('orders', 'Orders', 'Food orders from guests', 'add', [
-        _f('name', 'Your name', 'text', req: true), _f('table', 'Your table', 'link', link: 'dining_tables', req: true), _f('items', 'Your order', 'links', link: 'menu_items', qty: true, req: true),
-        _f('notes', 'Notes for the kitchen', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Preparing', 'Served', 'Paid', 'Cancelled'], manager: true),
+      _t('orders', 'Orders', 'Food orders: collection, delivery or to a table', 'add', [
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true),
+        _f('type', 'Collection or delivery', 'choice', options: ['Collection', 'Delivery', 'Dine-in'], req: true),
+        _f('address', 'Delivery address', 'text', req: true, when: {'type': ['Delivery']}), _f('postcode', 'Postcode', 'text', req: true, when: {'type': ['Delivery']}),
+        _f('table', 'Your table', 'link', link: 'dining_tables', req: true, when: {'type': ['Dine-in']}),
+        _f('ready_at', 'Ready / delivered at', 'time'),
+        _f('items', 'Your order', 'links', link: 'menu_items', qty: true, req: true),
+        _f('notes', 'Notes for the kitchen (allergies…)', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Preparing', 'Ready', 'Out for delivery', 'Done', 'Cancelled'], manager: true),
       ]),
       _t('reservations', 'Reservations', 'Table bookings', 'add', [
         _f('name', 'Name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true),
@@ -57,7 +62,7 @@ final appTemplates = <AppTemplate>[
         _list('menu_items', 'Our menu'), _info('opening_hours', 'Visit us'),
       ]},
       {'id': 'order', 'title': 'Order', 'blocks': [
-        _hero('Order to your table', 'Pick your dishes, choose your table and we’ll bring it over.'),
+        _hero('Order online', 'Pick your dishes, then collect them, have them delivered, or eat in and we’ll bring them to your table.'),
         _list('menu_items', 'Menu'), _form('orders', 'Your order', 'Send to the kitchen', 'Thank you! The kitchen has your order and it will be with you shortly.'),
       ]},
       {'id': 'book', 'title': 'Book a table', 'blocks': [
@@ -131,6 +136,50 @@ final appTemplates = <AppTemplate>[
     'opening_hours': [{'opens': '09:00', 'closes': '19:00', 'days': 'Monday – Saturday'}],
   }),
 
+  AppTemplate('barber', 'Barber shop', 'Cuts and prices, your barbers, and booking a chair at a time that’s free.', {
+    'name': 'Kings Cut Barbers',
+    'summary': 'Clients see cuts and prices, pick a barber and book a free time.',
+    'site': {'style': 'bold', 'tagline': 'Sharp fades, classic cuts, hot towel shaves', 'hero': 'unsplash:1503951914875-452162b0f3f1', 'about': 'A proper neighbourhood barber: walk-ins welcome, bookings guaranteed, and the kettle is always on.', 'address': '7 Market Lane', 'phone': '020 7946 0789', 'currency': '£', 'booking_minutes': '30'},
+    'tables': [
+      _t('services', 'Cuts & prices', 'Haircuts, beard work and prices', 'see', [
+        _f('name', 'Service', 'text', req: true), _f('category', 'Category', 'choice', options: ['Haircuts', 'Beard', 'Shaves', 'Kids']),
+        _f('description', 'Description', 'longtext'), _f('duration', 'Minutes', 'number'), _f('price', 'Price', 'money'),
+      ]),
+      _t('barbers', 'Our barbers', 'The barbers', 'see', [_f('name', 'Name', 'text', req: true), _f('speciality', 'Speciality', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image')]),
+      _t('appointments', 'Appointments', 'Booked chairs', 'add', [
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('service', 'Service', 'link', link: 'services', req: true),
+        _f('barber', 'Barber', 'link', link: 'barbers'), _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true), _f('notes', 'Anything we should know?', 'longtext'),
+        _f('status', 'Status', 'choice', options: ['Booked', 'Done', 'Cancelled', 'No-show'], manager: true),
+      ]),
+      _hours,
+    ],
+    'pages': [
+      {'id': 'home', 'title': 'Home', 'blocks': [_hero('Look sharp', 'Fades, scissor cuts, beard trims and hot towel shaves by barbers who care.', button: 'Book a chair', link: 'book'), _list('services', 'Cuts & prices'), _info('opening_hours', 'Opening hours')]},
+      {'id': 'team', 'title': 'Barbers', 'blocks': [_hero('Meet the barbers', 'Pick your favourite or take whoever is free.'), _list('barbers', 'Barbers', search: false)]},
+      {'id': 'book', 'title': 'Book', 'blocks': [
+        _hero('Book a chair', 'See which barber is free, pick a time, and you’re in.'),
+        {'type': 'availability', 'table': 'appointments', 'title': 'Find a free barber'},
+        _form('appointments', 'Your appointment', 'Book my chair', 'You’re booked! See you soon.'),
+      ]},
+    ],
+  }, {
+    'services': [
+      {'name': 'Skin fade', 'category': 'Haircuts', 'description': 'Clean skin fade blended into any length on top.', 'duration': 30, 'price': 22},
+      {'name': 'Classic cut', 'category': 'Haircuts', 'description': 'Scissor or clipper cut, wash and style.', 'duration': 30, 'price': 18},
+      {'name': 'Buzz cut', 'category': 'Haircuts', 'description': 'One length all over.', 'duration': 15, 'price': 12},
+      {'name': 'Beard trim', 'category': 'Beard', 'description': 'Shape-up with clippers, razor line and beard oil.', 'duration': 15, 'price': 10},
+      {'name': 'Cut & beard', 'category': 'Beard', 'description': 'Any haircut plus a full beard trim.', 'duration': 45, 'price': 28},
+      {'name': 'Hot towel shave', 'category': 'Shaves', 'description': 'Traditional straight-razor shave with hot towels.', 'duration': 30, 'price': 20},
+      {'name': 'Kids cut', 'category': 'Kids', 'description': 'Under 12s.', 'duration': 20, 'price': 12},
+    ],
+    'barbers': [
+      {'name': 'Tony', 'speciality': 'Fades & skin fades', 'bio': 'Twenty years behind the chair.'},
+      {'name': 'Jay', 'speciality': 'Beards & hot towel shaves', 'bio': 'Razor work and beard sculpting.'},
+      {'name': 'Ali', 'speciality': 'Classic scissor cuts', 'bio': 'Old-school cuts, done properly.'},
+    ],
+    'opening_hours': [{'opens': '09:00', 'closes': '19:00', 'days': 'Monday – Saturday'}],
+  }),
+
   AppTemplate('gym', 'Gym & fitness classes', 'Class timetable, trainers, memberships and class sign-ups.', {
     'name': 'Forge Fitness',
     'summary': 'Members see classes and sign up; the manager runs the timetable.',
@@ -144,7 +193,7 @@ final appTemplates = <AppTemplate>[
       _t('trainers', 'Trainers', 'Coaches', 'see', [_f('name', 'Name', 'text', req: true), _f('speciality', 'Speciality', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image')]),
       _t('memberships', 'Memberships', 'Plans and prices', 'see', [_f('name', 'Plan', 'text', req: true), _f('description', 'What you get', 'longtext'), _f('price', 'Price per month', 'money')]),
       _t('signups', 'Sign-ups', 'Class bookings', 'add', [
-        _f('name', 'Your name', 'text', req: true), _f('email', 'Email', 'email', req: true), _f('class', 'Class', 'link', link: 'classes', req: true), _f('date', 'Date', 'date', req: true),
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('class', 'Class', 'link', link: 'classes', req: true), _f('date', 'Date', 'date', req: true),
         _f('status', 'Status', 'choice', options: ['Booked', 'Attended', 'No-show', 'Cancelled'], manager: true),
       ]),
     ],
@@ -256,7 +305,7 @@ final appTemplates = <AppTemplate>[
         _f('price', 'Per night', 'money'), _f('sea_view', 'Sea view', 'yesno'), _f('photo', 'Photo', 'image'),
       ]),
       _t('bookings', 'Bookings', 'Booking requests', 'add', [
-        _f('name', 'Your name', 'text', req: true), _f('email', 'Email', 'email', req: true), _f('phone', 'Phone', 'phone'), _f('room', 'Room', 'link', link: 'rooms', req: true),
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('room', 'Room', 'link', link: 'rooms', req: true),
         _f('check_in', 'Check-in', 'date', req: true), _f('check_out', 'Check-out', 'date', req: true), _f('guests', 'Guests', 'number', req: true), _f('requests', 'Requests', 'longtext'),
         _f('status', 'Status', 'choice', options: ['Requested', 'Confirmed', 'Checked in', 'Cancelled'], manager: true),
       ]),
@@ -313,7 +362,7 @@ final appTemplates = <AppTemplate>[
         _f('level', 'Level', 'choice', options: ['Primary', 'GCSE', 'A-level', 'Adults']), _f('schedule', 'When', 'text'), _f('description', 'About', 'longtext'), _f('price', 'Per term', 'money'), _f('photo', 'Photo', 'image'),
       ]),
       _t('enrolments', 'Enrolments', 'Students who signed up', 'add', [
-        _f('student', 'Student name', 'text', req: true), _f('parent', 'Parent / guardian', 'text'), _f('email', 'Email', 'email', req: true), _f('phone', 'Phone', 'phone'),
+        _f('student', 'Student name', 'text', req: true), _f('parent', 'Parent / guardian', 'text'), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'),
         _f('course', 'Course', 'link', link: 'courses', req: true), _f('notes', 'Anything we should know?', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Confirmed', 'Waiting list', 'Cancelled'], manager: true),
       ]),
     ],
@@ -341,7 +390,7 @@ final appTemplates = <AppTemplate>[
         _f('description', 'About', 'longtext'), _f('price', 'Ticket', 'money'), _f('photo', 'Poster', 'image'), _f('sold_out', 'Sold out', 'yesno'),
       ]),
       _t('tickets', 'Ticket requests', 'Ticket orders', 'add', [
-        _f('name', 'Your name', 'text', req: true), _f('email', 'Email', 'email', req: true), _f('event', 'Event', 'link', link: 'events', req: true), _f('quantity', 'Tickets', 'number', req: true),
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('event', 'Event', 'link', link: 'events', req: true), _f('quantity', 'Tickets', 'number', req: true),
         _f('status', 'Status', 'choice', options: ['Requested', 'Paid', 'Sent', 'Cancelled'], manager: true),
       ]),
     ],

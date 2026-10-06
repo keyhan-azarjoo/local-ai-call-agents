@@ -94,7 +94,7 @@ void main() {
     await shot('1-list');
     expect(find.text('Trattoria Bella'), findsNWidgets(2)); // your app + the template card
     expect(find.text('Run'), findsOneWidget);
-    expect(find.text('Use this'), findsNWidgets(10));
+    expect(find.text('Use this'), findsNWidgets(appTemplates.length));
     expect(find.text('Describe your own'), findsOneWidget);
 
     // Wizard: describe.

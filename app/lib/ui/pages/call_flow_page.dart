@@ -363,24 +363,7 @@ class _CallFlowPageState extends State<CallFlowPage> {
     setState(() => setMax = n);
   }
 
-  Future<int> _create(RoleTemplate t) async {
-    final s = context.read<AppState>();
-    final id = await s.db.insert('agents', {
-      'name': t.name,
-      'role': t.role,
-      'greeting': '',
-      'instructions': t.person ? '' : 'You are ${t.name}. ${t.instructions}',
-      'language': 'English',
-      'voice': t.voice,
-      'handles': t.person ? 'human' : 'handoff',
-      'transfer_when': t.when,
-      // Specialists start with no connected systems (fast, focused); documents and skills stay available.
-      'access': jsonEncode(t.person ? {} : {'tools': [], 'abilities': t.abilities}),
-      'enabled': 1,
-    });
-    await s.log('Added ${t.person ? 'person' : 'agent'} ${t.name} (${t.role}) to the call flow');
-    return id;
-  }
+  Future<int> _create(RoleTemplate t) => context.read<AppState>().addRole(t);
 
   Future<void> _add({required bool human}) async {
     final id = await _create(human
@@ -450,37 +433,7 @@ class _CallFlowPageState extends State<CallFlowPage> {
       ),
     );
     if (b == null) return;
-    final entry = agents.where((a) => a['handles'] == 'incoming').firstOrNull;
-    final ids = <int>[];
-    final people = <int>[];
-    for (final r in b.roles) {
-      if (r.answers) {
-        if (entry != null) {
-          // The agent that answers keeps its name and greeting; it gets the receptionist's job.
-          await s.db.update('agents', entry['id'] as int, {
-            'role': r.role,
-            'instructions': '${entry['instructions']}\n\n${r.instructions}'.trim(),
-            'access': jsonEncode({..._access(entry), 'abilities': r.abilities}),
-          });
-        }
-        continue;
-      }
-      if (agents.any((a) => a['name'] == r.name && a['role'] == r.role)) continue;
-      final id = await _create(r);
-      (r.person ? people : ids).add(id);
-    }
-    // Links: the receptionist reaches everyone; specialists can go back to it or to the people.
-    if (entry != null) {
-      final cur = _links(entry);
-      await s.db.update('agents', entry['id'] as int, {
-        'access': jsonEncode({..._access((await s.db.all('agents', where: 'id = ?', args: [entry['id']])).first), 'passTo': {...cur, ...ids, ...people}.toList()}),
-      });
-      for (final id in ids) {
-        final row = (await s.db.all('agents', where: 'id = ?', args: [id])).first;
-        await s.db.update('agents', id, {'access': jsonEncode({..._access(row), 'passTo': [entry['id'], ...people]})});
-      }
-    }
-    await s.log('Set up a ${b.label} team in the call flow');
+    await s.setUpTeam(b);
     await _load();
     s.toast('Team added. Tap a card to adjust it; add phone numbers for the people.');
   }

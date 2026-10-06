@@ -13,6 +13,7 @@ import '../data/db.dart';
 import '../services/auth.dart';
 import '../services/abilities.dart';
 import '../services/agent_loop.dart';
+import '../services/agent_templates.dart';
 import '../services/apps/apps_manager.dart';
 import '../services/catalog.dart';
 import '../services/tool_results.dart';
@@ -512,13 +513,14 @@ class AppState extends ChangeNotifier {
     return ' You answer for $name. Its system is where bookings and orders are kept'
         '${check == null ? '' : '; before offering a time, call ${check.fnName} to see what is free (that only looks, it does not book)'}'
         '${book == null ? '' : '; save a booking with ${book.fnName}'}${order == null ? '' : '; save an order with ${order.fnName}'}. '
+        '${order == null ? '' : _orderHow(order, book)}'
         'Collect the details (no phone number given? use the number of this call), read them back ONCE, and as soon as the caller says yes, call the tool in that same reply. '
         'Only say it is booked or placed after the tool answered "Done"; if it answers with a problem (e.g. that time is taken), tell the caller and offer what is free. '
         'Never repeat a confirmation you already gave: if they ask again, just say yes, it is booked, in a few words.'
         '${tools.any((t) => t.tool.name.startsWith('find_my_')) ? ' When someone asks about, wants to change or cancel their own booking or order: ask their name and phone number, '
             'call the find_my_ tool, and tell them what you found (day, time, people). To cancel: ask their name and the number they booked with ONCE '
             '(the system also checks it is the number they are calling from), confirm which booking, then call the cancel_my_ tool; '
-            'to change one, cancel it and make the new booking. If nothing is found, say you can\'t find a booking under this number. '
+            'to change one (new time, day, people, items), call the change_my_ tool with only what changes — never make a second booking. If nothing is found, say you can\'t find a booking under this number. '
             'Never guess or assume details of someone\'s booking (time, table, people): look them up first.' : ''}'
         ' When you say you will check something, call the tool in that same reply — never just say "let me check".';
   }
@@ -712,7 +714,16 @@ class AppState extends ChangeNotifier {
         if (b.serverId == Abilities.serverId) return Abilities.run(db, b.tool.name, args, agent: agentName);
         // On a call, someone's own bookings are found and cancelled by the number they're calling
         // from, not by the number they say: only they can cancel theirs.
-        if (callerNumber != null && RegExp(r'^(find|cancel)_my_').hasMatch(b.tool.name)) args = {...args, 'phone': callerNumber};
+        if (callerNumber != null && RegExp(r'^(find|cancel|change)_my_').hasMatch(b.tool.name)) args = {...args, 'phone': callerNumber};
+        // Small models put their own name in as the customer's.
+        final own = agentName?.trim().toLowerCase() ?? '';
+        if (own.isNotEmpty && RegExp(r'^(add|change_my)_').hasMatch(b.tool.name)) {
+          for (final e in args.entries) {
+            if (RegExp(r'name|student|patient').hasMatch(e.key) && '${e.value}'.trim().toLowerCase() == own) {
+              return Future.value((text: 'Ask the caller for their name first ("${e.value}" is your own name), then save it.', isError: true));
+            }
+          }
+        }
         return mcp.callCached(b.serverId, b.tool.name, args, readOnly: b.tool.readOnly);
       },
       onText: onText == null && cancelled == null
@@ -1247,6 +1258,73 @@ class AppState extends ChangeNotifier {
   final _onCall = <String, ({int agentId, String brief, String from})>{};
 
   /// The agents a call can be passed between: the one answering calls, and those set up for hand-offs.
+  /// Adds an agent (or a real person) to the call flow from a ready-made role.
+  Future<int> addRole(RoleTemplate t) async {
+    final id = await db.insert('agents', {
+      'name': t.name,
+      'role': t.role,
+      'greeting': '',
+      'instructions': t.person ? '' : 'You are ${t.name}. ${t.instructions}',
+      'language': 'English',
+      'voice': t.voice,
+      'handles': t.person ? 'human' : 'handoff',
+      'transfer_when': t.when,
+      // Specialists start with no connected systems (fast, focused); documents and skills stay available.
+      'access': jsonEncode(t.person ? {} : {'tools': [], 'abilities': t.abilities}),
+      'enabled': 1,
+    });
+    await log('Added ${t.person ? 'person' : 'agent'} ${t.name} (${t.role}) to the call flow');
+    return id;
+  }
+
+  /// A whole team for a kind of business: receptionist, specialists and a person, already linked.
+  Future<void> setUpTeam(BusinessTemplate b) async {
+    Map<String, dynamic> access(Map<String, Object?> a) {
+      try {
+        return (jsonDecode('${a['access'] ?? '{}'}') as Map).cast<String, dynamic>();
+      } catch (_) {
+        return {};
+      }
+    }
+
+    final agents = await db.all('agents', orderBy: 'id');
+    final entry = agents.where((a) => a['handles'] == 'incoming').firstOrNull;
+    final ids = <int>[], people = <int>[];
+    for (final r in b.roles) {
+      if (r.answers) {
+        if (entry != null) {
+          // The agent that answers keeps its name and greeting; it gets the receptionist's job.
+          await db.update('agents', entry['id'] as int, {
+            'role': r.role,
+            'instructions': '${entry['instructions']}\n\n${r.instructions}'.trim(),
+            'access': jsonEncode({...access(entry), 'abilities': r.abilities}),
+          });
+        }
+        continue;
+      }
+      if (agents.any((a) => a['name'] == r.name && a['role'] == r.role)) continue;
+      (r.person ? people : ids).add(await addRole(r));
+    }
+    // Links: the receptionist reaches everyone; specialists can go back to it or to the people.
+    if (entry != null) {
+      final row = (await db.all('agents', where: 'id = ?', args: [entry['id']])).first;
+      final l = access(row)['passTo'];
+      final cur = l is List
+          ? {for (final v in l) (v as num).toInt()}
+          : {
+              for (final a in agents)
+                if (a['id'] != entry['id'] && ('${a['transfer_when'] ?? ''}'.trim().isNotEmpty || a['handles'] == 'incoming')) a['id'] as int,
+            };
+      await db.update('agents', entry['id'] as int, {'access': jsonEncode({...access(row), 'passTo': {...cur, ...ids, ...people}.toList()})});
+      for (final id in ids) {
+        final r = (await db.all('agents', where: 'id = ?', args: [id])).first;
+        await db.update('agents', id, {'access': jsonEncode({...access(r), 'passTo': [entry['id'], ...people]})});
+      }
+    }
+    await log('Set up a ${b.label} team in the call flow');
+    notifyListeners();
+  }
+
   Future<List<Map<String, Object?>>> callTeam() async => db.all('agents', where: "enabled = 1 AND handles IN ('incoming', 'handoff', 'human')", orderBy: 'id');
 
   /// What an agent can do on calls (take messages, book, take orders). The answering agent can
@@ -1260,11 +1338,31 @@ class AppState extends ChangeNotifier {
     return agent['handles'] == 'incoming' ? {'message'} : const {};
   }
 
+  static final _yes = RegExp(r"^\W*(yes|yeah|yep|yup|sure|ok(ay)?|please do|please|go ahead|correct|that'?s (right|correct|fine|perfect|great|it)|book it|perfect|sounds (good|great)|absolutely|definitely|do it|confirm(ed)?|lovely|great)\b", caseSensitive: false);
+  static final _proposal = RegExp(
+      r"\b(book|reserve|confirm|proceed|place (the|your|this) order|go ahead|save (it|that)|shall i|should i|would you like me to|want me to|is (that|this|everything) (all )?(right|correct|ok))\b[^?]*\?",
+      caseSensitive: false);
+
+  /// The assistant offered to save a booking/order and the caller said yes: save it with the app now.
+  Future<({bool ok, String text})?> _saveOnYes(List<ChatMessage> convo, Set<String> scopes, String? callerNumber) async {
+    if (convo.length < 2 || convo.last.role != 'user' || convo[convo.length - 2].role != 'assistant' || !llmReady) return null;
+    final yes = convo.last.content.trim();
+    if (!_yes.hasMatch(yes) || yes.length > 120 || RegExp(r"\b(no|not|but|change|instead|wait|actually|cancel)\b", caseSensitive: false).hasMatch(yes)) return null;
+    if (!_proposal.hasMatch(convo[convo.length - 2].content) || !_askedForNew(convo)) return null;
+    final tools = await builtAppTools(scopes);
+    final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
+    final tool = RegExp(r'\border', caseSensitive: false).hasMatch(said) && !RegExp(r'\b(table for|book a table|reservation)\b', caseSensitive: false).hasMatch(said)
+        ? _appToolFor(tools, 'order') ?? _appToolFor(tools, 'booking')
+        : _appToolFor(tools, 'booking') ?? _appToolFor(tools, 'order');
+    if (tool == null) return null;
+    return commitWith(toolLoop, modelTarget, tool, convo, (args) => mcp.call(tool.serverId, tool.tool.name, args), callerNumber: callerNumber);
+  }
+
   /// The caller asked for a new booking/order in this call (not about an existing one, not cancelling).
   static bool _askedForNew(List<ChatMessage> convo) {
     final asked = [for (final m in convo.reversed.where((m) => m.role == 'user').take(6)) m.content].join(' ');
     return RegExp(r'\b(book|reserv|table for|order|appointment|i.?d like|can i (get|have))', caseSensitive: false).hasMatch(asked) &&
-        !RegExp(r'\bcancel', caseSensitive: false).hasMatch(asked);
+        !RegExp(r'\b(cancel|change|move|reschedul|my (booking|reservation|appointment|table|order|stay))', caseSensitive: false).hasMatch(asked);
   }
 
   static final _confirmed = RegExp(r'\b(confirmed|saved|booked|placed|reserved|passed (it )?on|i.ll (let them know|pass that on|make sure they get))\b', caseSensitive: false);
@@ -1560,6 +1658,43 @@ class AppState extends ChangeNotifier {
     final best = tools.firstWhere((t) => t.fnName == ranked.first.$1);
     // Changes always need the tool; reading needs it only when it clearly matches.
     return ranked.first.$2 >= (best.tool.readOnly ? 0.55 : 0.42);
+  }
+
+  /// The app refused what was saved after the fact: say it to the caller as a person would.
+  static String _problemForCaller(String text) {
+    final first = spokenText(text.split('\n').first);
+    final ask = RegExp(r'^Ask the caller for (?:their )?(.+?) first', caseSensitive: false).firstMatch(first);
+    if (ask != null) return 'Sorry, before I can save that, could I have your ${ask[1]}?';
+    final req = RegExp(r'^(.+?) is required(?: for (.+?))?\.', caseSensitive: false).firstMatch(first);
+    if (req != null) return 'Sorry, before I can save that, could I have the ${req[1]!.toLowerCase().replaceFirst('your ', '')}?';
+    return 'Sorry, I have to correct that: $first';
+  }
+
+  /// What an order needs, from the order tool itself (e.g. collection, delivery with the address, or a table).
+  static String _orderHow(ToolBinding order, ToolBinding? book) {
+    final props = ((order.tool.inputSchema['properties'] as Map?) ?? {}).cast<String, dynamic>();
+    final choice = props.entries.where((e) => (e.value as Map)['enum'] is List && !(e.value as Map).containsKey('manager')).firstOrNull;
+    final only = [for (final e in props.entries) if ('${(e.value as Map)['description']}'.contains('only for')) '${(e.value as Map)['description']}'.replaceFirst(RegExp(r' \(then required\)'), '')];
+    return 'An order of food or products is NOT a ${book == null ? 'booking' : 'table booking'}: never check tables for it. '
+        'For an order get the items with quantities${choice == null ? '' : ', ask ${(choice.value as Map)['description']} (${((choice.value as Map)['enum'] as List).join(' / ')})'}'
+        '${only.isEmpty ? '' : ' (${only.join('; ')})'}, the name and phone, read it back with the total once, then save it. ';
+  }
+
+  /// [t] (so far) is only what was already said in [sent].
+  static bool _saidAlready(String sent, String t) {
+    String norm(String x) => x.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    final a = norm(sent), b = norm(t);
+    return b.isEmpty || a.contains(b);
+  }
+
+  /// How much of the start of [t] only repeats [sent] (whole sentences).
+  static int _repeatedStart(String sent, String t) {
+    var cut = 0;
+    for (final m in RegExp(r'[.!?]+\s+').allMatches(t)) {
+      if (!_saidAlready(sent, t.substring(0, m.end))) break;
+      cut = m.end;
+    }
+    return cut;
   }
 
   static int _ackTurn = 0;
@@ -1879,6 +2014,17 @@ class AppState extends ChangeNotifier {
         chunk({'content': line});
         sent = line;
       }
+      // The caller just said yes to saving it; small models often ask again instead of saving: save it now.
+      if (routed == null && mode != 'owner' && !gone) {
+        final pre = await _saveOnYes(convo, scopes, callerNumber).catchError((_) => null);
+        if (pre != null) {
+          if (pre.ok) saved = true;
+          final last = messages.removeLast();
+          messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: ${pre.ok
+              ? 'the caller said yes and it is now SAVED: ${pre.text.split('\n').take(3).join(' ')} Tell them in one or two short sentences that it is done (the day and time, or what was ordered and the total). Do not ask to confirm again and do not save it again.'
+              : 'you tried to save it, but the system said: ${pre.text.split('\n').first} Tell the caller and ask for what is missing, or offer what is free.'})'));
+        }
+      }
       final full = routed != null ? sent : await agentReply(
         messages,
         target: live ? null : multilingual,
@@ -1891,7 +2037,7 @@ class AppState extends ChangeNotifier {
         callerNumber: callerNumber,
         onEvent: (e) {
           usedTool = true;
-          if (e.ok && (e.binding.serverId == Abilities.serverId || RegExp(r'^(add_|cancel_my_)').hasMatch(e.binding.tool.name))) saved = true;
+          if (e.ok && (e.binding.serverId == Abilities.serverId || RegExp(r'^(add_|cancel_my_|change_my_)').hasMatch(e.binding.tool.name))) saved = true;
         },
         approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later
         onToolStart: (_) => fill(),
@@ -1903,9 +2049,12 @@ class AppState extends ChangeNotifier {
           // Passing the call to a teammate: never said aloud.
           final m = _transfer.firstMatch(t);
           if (m != null) {
-            passTo = (name: m.group(1)!.trim(), brief: (m.group(2) ?? '').trim());
-            t = t.substring(0, m.start);
+            final name = m.group(1)!.trim();
+            // Only a real teammate: small models sometimes write [transfer: …] with a sentence in it.
+            if (flow?.others.any((a) => '${a['name']}'.toLowerCase() == name.toLowerCase()) ?? false) passTo = (name: name, brief: (m.group(2) ?? '').trim());
           }
+          final cut = t.toLowerCase().indexOf('[transfer');
+          if (cut >= 0) t = t.substring(0, cut);
           t = spokenText(t);
           // Nobody listens to a minute-long answer: stop at a sentence end and offer the rest.
           if (t.length > _maxSpoken && passTo == null) {
@@ -1922,6 +2071,7 @@ class AppState extends ChangeNotifier {
       // "Let me check…" and nothing checked: check now and say the answer in the same turn.
       if (routed == null && !gone && unfinished(full, usedTool: usedTool, acted: saved) && (live || multilingual is! LocalTarget)) {
         var more = '';
+        var skip = -1;
         await agentReply(
           [...messages, ChatMessage('assistant', spokenText(full)), ChatMessage('user', '(Go ahead: use your tools now and tell me the result in one or two sentences. Don\'t say you will check again.)')],
           scopes: scopes,
@@ -1932,21 +2082,29 @@ class AppState extends ChangeNotifier {
           cancelled: () => gone,
           approve: (_, _) async => false,
           onEvent: (e) {
-            if (e.ok && (e.binding.serverId == Abilities.serverId || RegExp(r'^(add_|cancel_my_)').hasMatch(e.binding.tool.name))) saved = true;
+            if (e.ok && (e.binding.serverId == Abilities.serverId || RegExp(r'^(add_|cancel_my_|change_my_)').hasMatch(e.binding.tool.name))) saved = true;
           },
           onText: (t) {
             if (t.isEmpty) {
               more = '';
+              skip = -1;
               return;
             }
             t = spokenText(t.split('[transfer').first);
-            if (t.length > more.length) {
-              chunk({'content': '${more.isEmpty ? ' ' : ''}${t.substring(more.length)}'});
-              more = t;
+            // Small models often start by saying the last answer again: hold it back while it's only
+            // a repeat, then say just the new part.
+            if (skip < 0) {
+              if (_saidAlready(sent, t)) return;
+              skip = _repeatedStart(sent, t);
+            }
+            final fresh = t.substring(skip);
+            if (fresh.length > more.length) {
+              chunk({'content': '${more.isEmpty ? ' ' : ''}${fresh.substring(more.length)}'});
+              more = fresh;
             }
           },
         );
-        sent += ' $more';
+        if (more.isNotEmpty) sent += ' $more';
       }
       await saveTask(full);
       // Said it's done but didn't save it (small models do that): save it now, into the business's
@@ -1956,7 +2114,7 @@ class AppState extends ChangeNotifier {
         if (c == null) {
           if (flow != null) unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', full)], '${flow.agent['name']}'));
         } else if (!c.ok && !gone) {
-          final fix = ' Sorry, I have to correct that: ${spokenText(c.text.split('\n').first)}';
+          final fix = ' ${_problemForCaller(c.text)}';
           chunk({'content': fix});
           sent += fix;
         } else {

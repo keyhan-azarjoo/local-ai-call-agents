@@ -38,6 +38,88 @@ int? _minutes(Object? hhmm) {
 
 String _hhmm(int m) => '${(m ~/ 60 % 24).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
 
+const _numberWords = {'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10', 'twelve': '12', 'dozen': '12', 'half': '6'};
+const _filler = {'the', 'a', 'an', 'of', 'and', 'with', 'for', 'my', 'please', 'some', 'box', 'boxes', 'bottle', 'bottles', 'x', 'pack', 'one', 'order', 'standard', 'normal', 'regular', 'just'};
+
+Set<String> _words(String s) => {
+      for (var w in s.toLowerCase().replaceAll(RegExp(r"[’']"), '').replaceAll('&', ' and ').split(RegExp(r'[^a-z0-9à-ÿ]+')))
+        if (w.isNotEmpty && !_filler.contains(w)) (w = _numberWords[w] ?? w).length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.substring(0, w.length - 1) : w,
+    };
+
+/// The one label that clearly matches what was said (most words in common), or null.
+int? bestMatch(String said, Map<int, String> labels) {
+  final q = _words(said);
+  if (q.isEmpty) return null;
+  final scored = [
+    for (final e in labels.entries)
+      (e.key, () {
+        final l = _words(e.value);
+        final common = q.intersection(l).length;
+        // Words in common, then covering more of what was said, then fewer extra words in the name.
+        return l.isEmpty || common == 0 ? 0.0 : common / (q.length < l.length ? q.length : l.length) + 0.5 * common / q.length - 0.2 * (l.length - common) / l.length;
+      }()),
+  ]..sort((a, b) => b.$2.compareTo(a.$2));
+  if (scored.isEmpty || scored.first.$2 < 0.5) return null;
+  if (scored.length > 1 && (scored.first.$2 - scored[1].$2).abs() < 0.05) return null;
+  return scored.first.$1;
+}
+
+/// "2026-10-10" → "Saturday 2026-10-10" (small models get weekdays wrong on their own).
+String withDay(String ymd) {
+  final d = DateTime.tryParse(ymd.length >= 10 ? ymd.substring(0, 10) : ymd);
+  if (d == null) return ymd;
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  return '${days[d.weekday - 1]} $ymd';
+}
+
+/// "19:30", "7:30pm", "7 pm", "7.30 p.m.", "noon" → "HH:MM" (null if it isn't a time).
+String? parseTime(String raw) {
+  final s = raw.trim().toLowerCase().replaceAll('.', ':').replaceAll(RegExp(r'\s+'), ' ');
+  if (s == 'noon' || s == 'midday') return '12:00';
+  if (s == 'midnight') return '00:00';
+  final m = RegExp(r'^(\d{1,2})(?::(\d{2}))?(?::\d{2})?\s*(a:?m:?|p:?m:?)?$').firstMatch(s);
+  if (m == null) return null;
+  var h = int.parse(m[1]!);
+  final min = int.parse(m[2] ?? '0');
+  final ap = m[3]?.replaceAll(':', '');
+  if (m[2] == null && ap == null) return null; // a bare "7": too unclear
+  if (ap == 'pm' && h < 12) h += 12;
+  if (ap == 'am' && h == 12) h = 0;
+  if (h > 23 || min > 59) return null;
+  return '${h.toString().padLeft(2, '0')}:${min.toString().padLeft(2, '0')}';
+}
+
+/// "2026-10-10", "10/10/2026" (day first), "today", "tomorrow", "Saturday" (the next one) → "YYYY-MM-DD".
+String? parseDate(String raw, {DateTime? now}) {
+  final s = raw.trim().toLowerCase();
+  now ??= DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  String ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  var m = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})').firstMatch(s);
+  if (m != null) {
+    final d = DateTime(int.parse(m[1]!), int.parse(m[2]!), int.parse(m[3]!));
+    return d.month == int.parse(m[2]!) ? ymd(d) : null;
+  }
+  m = RegExp(r'^(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})$').firstMatch(s);
+  if (m != null) {
+    final y = int.parse(m[3]!) < 100 ? 2000 + int.parse(m[3]!) : int.parse(m[3]!);
+    final d = DateTime(y, int.parse(m[2]!), int.parse(m[1]!));
+    return d.month == int.parse(m[2]!) ? ymd(d) : null;
+  }
+  if (s == 'today') return ymd(today);
+  if (s == 'tomorrow') return ymd(today.add(const Duration(days: 1)));
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  final w = days.indexWhere((d) => s.replaceFirst(RegExp(r'^(this|next|on)\s+'), '') == d);
+  if (w >= 0) {
+    var d = today.add(const Duration(days: 1));
+    while (d.weekday != w + 1) {
+      d = d.add(const Duration(days: 1));
+    }
+    return ymd(d);
+  }
+  return null;
+}
+
 class AppDataError implements Exception {
   AppDataError(this.message);
   final String message;
@@ -102,6 +184,7 @@ class AppData {
     if (via != null) clean['_via'] = via;
     final shape = BookingShape.of(spec, t);
     if (shape != null) await _holdResource(shape, clean);
+    if (shape == null) await _holdStay(t, clean);
     final now = DateTime.now().millisecondsSinceEpoch;
     return db.raw.insert('app_rows', {'app_id': appId, 'tbl': t.id, 'data': jsonEncode(clean), 'created_at': now, 'updated_at': now});
   }
@@ -175,6 +258,29 @@ class AppData {
     }
   }
 
+  /// A stay (a room from check-in to check-out, no times): the room must be free for those nights.
+  Future<void> _holdStay(TableSpec t, Map<String, Object?> clean) async {
+    final dates = t.fields.where((f) => f.type == 'date').toList();
+    final res = t.fields.where((f) => f.type == 'link' && BookingShape._bookable.hasMatch('${f.id} ${f.link}')).firstOrNull;
+    if (dates.length < 2 || res == null || t.fields.any((f) => f.type == 'time')) return;
+    final from = '${clean[dates[0].id] ?? ''}', to = '${clean[dates[1].id] ?? ''}', want = clean[res.id];
+    if (from.isEmpty || to.isEmpty || want == null) return;
+    if (to.compareTo(from) <= 0) throw AppDataError('${dates[1].label} must be after ${dates[0].label.toLowerCase()}.');
+    final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+    final rooms = await list(res.link!, manager: true);
+    final label = spec.table(res.link!)!.labelField;
+    final taken = <Object?>{};
+    for (final r in await list(t.id, manager: true)) {
+      if (status != null && RegExp(r'cancel|no.?show|declin|reject', caseSensitive: false).hasMatch('${r[status.id] ?? ''}')) continue;
+      final a = '${r[dates[0].id] ?? ''}', b = '${r[dates[1].id] ?? ''}';
+      if (a.isNotEmpty && b.isNotEmpty && from.compareTo(b) < 0 && to.compareTo(a) > 0) taken.add(r[res.id]);
+    }
+    if (!taken.contains(want)) return;
+    final name = rooms.where((r) => r['id'] == want).firstOrNull?[label] ?? want;
+    final free = [for (final r in rooms) if (!taken.contains(r['id'])) '${r[label]}'];
+    throw AppDataError('$name is already booked for some of those nights ($from to $to). ${free.isEmpty ? 'Nothing else is free then.' : 'Free then: ${free.join(', ')}.'}');
+  }
+
   /// The day plan: every resource and its bookings, for the website (no names) or the manager.
   Future<Map<String, Object?>> dayPlan(BookingShape b, String date, {required bool manager}) async {
     final hours = spec.tables.where((t) => t.single).expand((t) => [t]).toList();
@@ -207,6 +313,60 @@ class AppData {
           },
       ],
     };
+  }
+
+  /// A customer changes their own booking or order (a new time, more people…): never onto a
+  /// taken table; with the old table busy then, the best free one is given.
+  Future<void> change(String table, int id, Map<String, dynamic> values) async {
+    final t = _table(table);
+    final r = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND id = ?', whereArgs: [appId, t.id, id]);
+    if (r.isEmpty) throw AppDataError('No ${t.title.toLowerCase()} record with id $id.');
+    final old = (jsonDecode(r.first['data'] as String) as Map).cast<String, Object?>();
+    final clean = await _clean(t, values, manager: false, partial: true)..removeWhere((k, v) => v == null);
+    final merged = {...old, ...clean};
+    final shape = BookingShape.of(spec, t);
+    if (shape != null && merged[shape.dateField.id] != null && merged[shape.timeField.id] != null) {
+      final res = shape.resourceField.id;
+      final a = await availability(shape, '${merged[shape.dateField.id]}', '${merged[shape.timeField.id]}',
+          guests: (merged[shape.guestsField?.id] as num?)?.toInt() ?? 0, ignore: id);
+      final what = shape.resources.title.toLowerCase();
+      String names() => a.free.take(8).map((x) => '${x[shape.resources.labelField] ?? x['id']}').join(', ');
+      if (clean[res] != null) {
+        if (!a.free.any((x) => x['id'] == clean[res])) throw AppDataError('That one is not free then. ${a.free.isEmpty ? 'Nothing is free then.' : 'Free $what then: ${names()}.'}');
+      } else if (!a.free.any((x) => x['id'] == merged[res])) {
+        if (a.free.isEmpty) throw AppDataError('Sorry, nothing is free at ${merged[shape.timeField.id]} on ${withDay('${merged[shape.dateField.id]}')}. Try another time.');
+        clean[res] = a.free.first['id'];
+      }
+    }
+    // Fields that no longer apply (a table on what is now a delivery) go.
+    final out = {...old, ...clean};
+    for (final f in t.fields.where((f) => f.when != null)) {
+      if (!f.appliesTo(out)) out.remove(f.id);
+    }
+    await db.raw.update('app_rows', {'data': jsonEncode(out), 'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// What this phone number saved by phone in the last [minutes] (not cancelled): a second save
+  /// in the same call is a correction of the first. For bookings, only one on the same day.
+  Future<int?> recentByPhone(TableSpec t, String phone, {String? date, int minutes = 20}) async {
+    final phoneF = t.fields.where((f) => f.type == 'phone').firstOrNull;
+    String last9(Object? x) {
+      final d = '${x ?? ''}'.replaceAll(RegExp(r'\D'), '');
+      return d.length < 9 ? d : d.substring(d.length - 9);
+    }
+    if (phoneF == null || last9(phone).length < 9) return null;
+    final shape = BookingShape.of(spec, t);
+    final since = DateTime.now().subtract(Duration(minutes: minutes)).millisecondsSinceEpoch;
+    final rows = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND created_at > ?', whereArgs: [appId, t.id, since], orderBy: 'id DESC');
+    for (final r in rows) {
+      final d = (jsonDecode(r['data'] as String) as Map).cast<String, Object?>();
+      if (d['_via'] != 'phone' || last9(d[phoneF.id]) != last9(phone)) continue;
+      final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+      if (status != null && RegExp(r'cancel', caseSensitive: false).hasMatch('${d[status.id] ?? ''}')) continue;
+      if (shape != null && date != null && d[shape.dateField.id] != date) continue;
+      return r['id'] as int;
+    }
+    return null;
   }
 
   Future<void> update(String table, int id, Map<String, dynamic> values) async {
@@ -258,13 +418,19 @@ class AppData {
   Future<Map<String, Object?>> _clean(TableSpec t, Map<String, dynamic> values, {required bool manager, required bool partial}) async {
     final out = <String, Object?>{};
     final byKey = {for (final e in values.entries) slug(e.key, fallback: e.key): e.value};
-    for (final f in t.fields) {
+    // Fields that only apply in some cases (an address only for delivery) come last, once the rest is known.
+    final ordered = [...t.fields.where((f) => f.when == null), ...t.fields.where((f) => f.when != null)];
+    for (final f in ordered) {
       if (f.managerOnly && !manager) continue;
       final has = byKey.containsKey(f.id) || byKey.containsKey(slug(f.label));
       final raw = byKey[f.id] ?? byKey[slug(f.label)];
       final empty = raw == null || (raw is String && raw.trim().isEmpty) || (raw is List && raw.isEmpty);
+      if (!partial && !f.appliesTo(out)) continue; // e.g. a table for a delivery order: not kept
       if (empty) {
-        if (f.required && !partial) throw AppDataError('${f.label} is required.');
+        if (f.required && !partial) {
+          final w = f.when;
+          throw AppDataError(w == null ? '${f.label} is required.' : '${f.label} is required for ${w.value.join(' / ')}.');
+        }
         if (has && partial) out[f.id] = null;
         continue;
       }
@@ -293,6 +459,15 @@ class AppData {
         final hit = f.options.where((o) => o.toLowerCase() == '$s'.toLowerCase()).firstOrNull;
         if (hit == null) throw AppDataError('${f.label} must be one of: ${f.options.join(', ')}.');
         return hit;
+      case 'time':
+        return parseTime('$s') ?? (throw AppDataError('${f.label}: give the time as HH:MM (e.g. 19:30), not "$s".'));
+      case 'date':
+        return parseDate('$s') ?? (throw AppDataError('${f.label}: give the date as YYYY-MM-DD, not "$s".'));
+      case 'datetime':
+        final m = RegExp(r'^(.*?)[ T,]+(\S+(\s*[ap]\.?m\.?)?)$', caseSensitive: false).firstMatch('$s'.trim());
+        final d = parseDate(m?.group(1) ?? '$s'), t = m == null ? null : parseTime(m.group(2)!);
+        if (d == null || t == null) throw AppDataError('${f.label}: give it as YYYY-MM-DD HH:MM, not "$s".');
+        return '$d $t';
       case 'email':
         if (!'$s'.contains('@')) throw AppDataError('${f.label} must be an email address.');
         return '$s';
@@ -334,6 +509,9 @@ class AppData {
     if (hit != null) return hit['id'] as int;
     final asInt = v is int ? v : int.tryParse(name);
     if (asInt != null && rows.any((r) => r['id'] == asInt)) return asInt;
+    // As people say it: "women's cut and blow-dry", "a box of six eggs", "the MOT".
+    final best = bestMatch(name, {for (final r in rows) r['id'] as int: label(r)});
+    if (best != null) return best;
     throw AppDataError('${f.label}: "$v" was not found in ${target.title.toLowerCase()}. '
         'Choose one of: ${rows.take(30).map(label).join(', ')}.');
   }
@@ -354,7 +532,30 @@ class AppData {
       }
       if (f.type == 'yesno') return v == true ? 'yes' : 'no';
       if (f.type == 'image') return ''; // pictures mean nothing to the AI
+      if (f.type == 'date' || f.type == 'datetime') return withDay('$v');
       return '$v';
+    }
+
+    // An order's total, from the prices of what's in it.
+    final prices = <String, Map<int, num>>{};
+    for (final f in t.fields.where((f) => f.type == 'links' && f.qty)) {
+      final target = spec.table(f.link!)!;
+      final money = target.fields.where((x) => x.type == 'money').firstOrNull;
+      if (money != null) prices[f.id] = {for (final r in await list(target.id, manager: true)) if (r[money.id] is num) r['id'] as int: r[money.id] as num};
+    }
+    String? total(Map<String, Object?> r) {
+      num sum = 0;
+      var any = false;
+      for (final e in prices.entries) {
+        for (final x in (r[e.key] as List? ?? [])) {
+          if (x is Map && e.value[x['id']] != null) {
+            sum += e.value[x['id']]! * ((x['qty'] as num?) ?? 1);
+            any = true;
+          }
+        }
+      }
+      final cur = spec.site['currency'] ?? '';
+      return any ? 'Total: $cur${sum.toStringAsFixed(sum == sum.roundToDouble() ? 0 : 2)}' : null;
     }
 
     if (rows.isEmpty) return 'No ${t.title.toLowerCase()} yet.';
@@ -365,6 +566,8 @@ class AppData {
         final v = show(f, r[f.id]);
         if (v.isNotEmpty) parts.add('${f.label}: $v');
       }
+      final tot = total(r);
+      if (tot != null) parts.add(tot);
       return parts.join(' · ');
     }).join('\n');
   }

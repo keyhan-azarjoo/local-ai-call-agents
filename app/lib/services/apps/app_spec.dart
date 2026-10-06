@@ -55,9 +55,21 @@ bool _bool(Object? v) => v == true || '$v'.toLowerCase() == 'true' || '$v' == '1
 String _str(Object? v) => v == null ? '' : '$v'.trim();
 
 class FieldSpec {
-  FieldSpec({required this.id, required this.label, required this.type, this.required = false, this.options = const [], this.link, this.managerOnly = false, this.qty = false});
+  FieldSpec({required this.id, required this.label, required this.type, this.required = false, this.options = const [], this.link, this.managerOnly = false, this.qty = false, this.when});
   final String id, label, type;
   final bool required, managerOnly;
+
+  /// Only asked for when another field has one of these values (e.g. address: {'type': ['Delivery']});
+  /// [required] then means required in that case.
+  final MapEntry<String, List<String>>? when;
+
+  /// Whether this field applies, given the other values of the record.
+  bool appliesTo(Map<String, Object?> values) {
+    final w = when;
+    if (w == null) return true;
+    final v = '${values[w.key] ?? ''}'.toLowerCase();
+    return w.value.any((o) => o.toLowerCase() == v);
+  }
 
   /// For `choice`.
   final List<String> options;
@@ -77,6 +89,7 @@ class FieldSpec {
         'link': ?link,
         if (managerOnly) 'manager_only': true,
         if (qty) 'qty': true,
+        if (when != null) 'when': {when!.key: when!.value},
       };
 
   static FieldSpec? fromJson(Object? j) {
@@ -101,11 +114,20 @@ class FieldSpec {
       link: link == null || _str(link).isEmpty ? null : slug(link),
       managerOnly: _bool(j['manager_only'] ?? j['managerOnly'] ?? j['admin_only']),
       qty: _bool(j['qty'] ?? j['quantity']),
+      when: _when(j['when'] ?? j['show_if'] ?? j['only_if']),
     );
   }
 
+  static MapEntry<String, List<String>>? _when(Object? w) {
+    if (w is! Map || w.isEmpty) return null;
+    final e = w.entries.first;
+    final vals = e.value is List ? [for (final v in e.value as List) _str(v)] : [_str(e.value)];
+    vals.removeWhere((v) => v.isEmpty);
+    return vals.isEmpty ? null : MapEntry(slug(e.key), vals);
+  }
+
   FieldSpec copyWith({String? type, String? link, bool clearLink = false, bool? qty}) => FieldSpec(
-      id: id, label: label, type: type ?? this.type, required: required, options: options, link: clearLink ? null : (link ?? this.link), managerOnly: managerOnly, qty: qty ?? this.qty);
+      id: id, label: label, type: type ?? this.type, required: required, options: options, link: clearLink ? null : (link ?? this.link), managerOnly: managerOnly, qty: qty ?? this.qty, when: when);
 }
 
 /// Who, besides the manager, may use a table: website visitors and phone callers.

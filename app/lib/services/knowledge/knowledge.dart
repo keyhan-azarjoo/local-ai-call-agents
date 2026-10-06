@@ -327,14 +327,29 @@ class KnowledgeService extends ChangeNotifier {
     }
   }
 
+  /// The embedding model didn't answer: don't wait on it again for a minute.
+  DateTime? _embedDownUntil;
+
   Future<List<Float32List>> _embed(List<String> texts) async {
+    if (_embedDownUntil != null && DateTime.now().isBefore(_embedDownUntil!)) throw Exception('The embedding model is not answering.');
+    try {
+      return await _embedNow(texts);
+    } on TimeoutException {
+      _embedDownUntil = DateTime.now().add(const Duration(minutes: 1));
+      rethrow;
+    }
+  }
+
+  Future<List<Float32List>> _embedNow(List<String> texts) async {
     final out = <Float32List>[];
     for (var i = 0; i < texts.length; i += 32) {
       final batch = texts.sublist(i, math.min(i + 32, texts.length));
+      // A stuck embedding model must never hold up a call: give up and answer without it.
+      final limit = Duration(seconds: 12 + batch.length ~/ 2);
       var r = await _c.post(Uri.parse('$ollama/api/embed'),
-          body: jsonEncode({'model': embedModel, 'input': batch, 'keep_alive': '30m', 'truncate': true}));
+          body: jsonEncode({'model': embedModel, 'input': batch, 'keep_alive': '30m', 'truncate': true})).timeout(limit);
       if (r.statusCode == 404 && await ensureModel()) {
-        r = await _c.post(Uri.parse('$ollama/api/embed'), body: jsonEncode({'model': embedModel, 'input': batch, 'keep_alive': '30m', 'truncate': true}));
+        r = await _c.post(Uri.parse('$ollama/api/embed'), body: jsonEncode({'model': embedModel, 'input': batch, 'keep_alive': '30m', 'truncate': true})).timeout(limit);
       }
       if (r.statusCode != 200) throw Exception('Embedding failed (${r.statusCode}): ${r.body}');
       for (final v in (jsonDecode(r.body) as Map)['embeddings'] as List) {

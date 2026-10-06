@@ -52,9 +52,17 @@ void main() {
     if (all.isEmpty) return;
 
     final h = await Harness.boot(env['SCEN_MODEL'] ?? 'qwen3:4b-instruct');
+    h.liveFile = File('${out.parent.path}/live.json');
+    final before = done.length;
+    final passedBefore = out.existsSync() ? out.readAsLinesSync().where((l) => l.contains('"pass":true')).length : 0;
     var pass = 0, n = 0;
     for (final s in all) {
       n++;
+      h.live.clear();
+      h.showLive({
+        'id': s['id'], 'app': s['app'], 'intent': s['intent'], 'setup': s['setup'], 'style': s['style'], 'goal': s['goal'] ?? '',
+        'done': before + n - 1, 'total': before + all.length, 'passed': passedBefore + pass, 'turns': [], 'tools': [],
+      });
       final t0 = DateTime.now();
       Map<String, Object?> r;
       try {
@@ -81,6 +89,16 @@ class Harness {
   final http = HttpClient();
   late int baseAgents;
   String? current;
+
+  /// What is happening now, for the app's Calls → Tests view (live.json next to the results).
+  final live = <String, Object?>{};
+  File? liveFile;
+  void showLive([Map<String, Object?> more = const {}]) {
+    live.addAll(more);
+    try {
+      liveFile?.writeAsStringSync(jsonEncode(live), flush: true);
+    } catch (_) {}
+  }
 
   static Future<Harness> boot(String model) async {
     final dir = Directory.systemTemp.createTempSync('scen');
@@ -241,6 +259,7 @@ class Harness {
     final cfg = jsonDecode(await _get('http://127.0.0.1:$port/api/voice-config?room=$room&mode=caller&token=$key')) as Map;
     final greeting = '${cfg['greeting']}';
     final turns = <Map<String, String>>[{'role': 'assistant', 'content': greeting}];
+    showLive({'turns': ['AI: $greeting']});
     final passedTo = <String>[];
     var hungUp = false, ended = false, extra = 0;
     final maxTurns = (c['max_turns'] as num?)?.toInt() ?? 10;
@@ -253,6 +272,7 @@ class Harness {
       if (said.isEmpty && extra > 0) said = 'Yes, please.';
       if (said.isEmpty) break;
       turns.add({'role': 'user', 'content': said});
+      showLive({'turns': [for (final t in turns) '${t['role'] == 'user' ? 'CALLER' : 'AI'}: ${t['content']}']});
       if (env['SCEN_DEBUG'] != null) print('  CALLER: $said');
       final rq = await http.postUrl(Uri.parse('http://127.0.0.1:$port/v1/chat/completions?token=$key'));
       rq.headers.contentType = ContentType.json;
@@ -270,6 +290,7 @@ class Harness {
       if (text.contains('[hangup]') && _farewell.hasMatch(text)) hungUp = true;
       text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
       turns.add({'role': 'assistant', 'content': text});
+      showLive({'turns': [for (final t in turns) '${t['role'] == 'user' ? 'CALLER' : 'AI'}: ${t['content']}']});
       if (env['SCEN_DEBUG'] != null) print('  AI: $text');
       if (hungUp || passedTo.any((p) => p.startsWith('person#'))) break;
       // The caller said goodbye, but the assistant just asked something: they'd answer it.
@@ -393,8 +414,12 @@ class Harness {
       }
       final auditFrom = DateTime.now().millisecondsSinceEpoch;
       final used = <String>[];
-      AppServer.onToolCall = (app, tool, args, result, error) => used.add('$tool(${jsonEncode(args)}) → ${error ? 'ERROR ' : ''}${result.split('\n').first}');
+      AppServer.onToolCall = (app, tool, args, result, error) {
+        used.add('$tool(${jsonEncode(args)}) → ${error ? 'ERROR ' : ''}${result.split('\n').first}');
+        showLive({'tools': used});
+      };
       final t0 = DateTime.now();
+      showLive({'goal': st['goal'] ?? '', 'call': steps.take(si + 1).where((x) => (x['do'] ?? 'call') == 'call').length, 'calls': steps.where((x) => (x['do'] ?? 'call') == 'call').length, 'turns': [], 'tools': used});
       final r = await call({...st, 'style_text': st['style_text'] ?? sc['style_text']}, numbers[who]!, '${sc['id']}-$si', {...sc, 'app': curApp});
       final audit = [for (final a in await s.db.raw.query('audit', where: 'at >= ?', whereArgs: [auditFrom])) '${a['what']}'];
       final saidDigits = _digits(r.turns.where((t) => t['role'] == 'user').map((t) => t['content']).join(' '));

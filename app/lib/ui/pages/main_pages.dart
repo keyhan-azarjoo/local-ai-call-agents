@@ -96,6 +96,7 @@ class HomePage extends StatelessWidget {
             _Action(Icons.mic_none_rounded, 'Talk to Ava', 'Try her as a caller, or give her instructions.', () => s.go(PageId.talk)),
             _Action(Icons.smart_toy_outlined, 'Change what Ava says', 'Greeting, instructions, voice.', () => s.editAgent(null)),
           ]),
+          const TestRunBanner(),
           const SizedBox(height: 16),
           Rows('calls', builder: (context, calls) => Section(
                 title: 'Latest calls',
@@ -212,7 +213,7 @@ class CallsPage extends StatefulWidget {
 }
 
 class _CallsPageState extends State<CallsPage> {
-  String filter = 'all';
+  late String filter = context.read<AppState>().callsFilter;
   @override
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const PageHead('Calls', description: 'Every call is kept on this computer only.'),
@@ -221,7 +222,7 @@ class _CallsPageState extends State<CallsPage> {
         Segmented(
           value: filter,
           options: const {'all': 'All', 'incoming': 'Incoming', 'outgoing': 'Made by AI', 'test': 'Tests'},
-          onChanged: (v) => setState(() => filter = v),
+          onChanged: (v) => setState(() => filter = context.read<AppState>().callsFilter = v),
         ),
         const SizedBox(height: 14),
         if (filter == 'test') ...[const TestRunsSection(), const SizedBox(height: 14)],

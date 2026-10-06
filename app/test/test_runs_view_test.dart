@@ -25,6 +25,8 @@ void main() {
       s = AppState(dbPath: '${tmp.path}/t.db');
       s.db = await Db.open(path: '${tmp.path}/t.db');
       Directory('${tmp.path}/test-runs').createSync();
+      File('${tmp.path}/test-runs/live.json').writeAsStringSync('{"id":"barber-0200","app":"barber","intent":"book","setup":"team","style":"chatty","goal":"Book a skin fade on Saturday at 10am.","done":150,"total":1272,"passed":101,'
+          '"turns":["AI: Hi, thanks for calling Kings Cut Barbers.","CALLER: Hi, a skin fade on Saturday at 10am please."],"tools":["check_appointments({}) → Free our barbers at 10:00 on Saturday: Tony, Jay, Ali."]}');
       final src = File('test/scenarios/out/results.jsonl');
       File('${tmp.path}/test-runs/results.jsonl').writeAsStringSync(src.existsSync()
           ? src.readAsLinesSync().take(40).join('\n')
@@ -58,7 +60,8 @@ void main() {
     ));
     await shot('runs-1-list');
     expect(find.textContaining('test scenarios passed'), findsOneWidget);
-    await t.tap(find.byType(InkWell).at(4));
+    expect(find.textContaining('Testing now: barber'), findsOneWidget);
+    expect(find.textContaining('skin fade on Saturday at 10am please'), findsOneWidget);
     await t.tap(find.textContaining('restaurant ·').first);
     await shot('runs-2-conversation');
     expect(find.text('Caller'), findsWidgets);
@@ -66,3 +69,4 @@ void main() {
     await settle();
   });
 }
+

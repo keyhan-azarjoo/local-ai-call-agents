@@ -1121,6 +1121,15 @@ class AppState extends ChangeNotifier {
       ..showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  /// Which calls the Calls page shows first ('all', 'test'…).
+  String callsFilter = 'all';
+
+  /// Calls → Tests (the phone-call test runs).
+  void openTests() {
+    callsFilter = 'test';
+    go(PageId.calls);
+  }
+
   void go(PageId p) {
     page = p;
     notifyListeners();

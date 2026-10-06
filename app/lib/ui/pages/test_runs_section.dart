@@ -93,6 +93,7 @@ class _TestRunsSectionState extends State<TestRunsSection> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       start,
       const SizedBox(height: 12),
+      const LiveTestPanel(),
       Panel(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
@@ -369,4 +370,137 @@ class _TestCallDialogState extends State<TestCallDialog> {
           ),
         ),
       );
+}
+
+
+/// What the test run is doing right now (written by the scenario runner after every turn).
+Map<String, dynamic>? readLiveTest(AppState s) {
+  final f = File('${File(s.db.path).parent.path}/test-runs/live.json');
+  try {
+    if (!f.existsSync() || DateTime.now().difference(f.lastModifiedSync()) > const Duration(minutes: 4)) return null;
+    return (jsonDecode(f.readAsStringSync()) as Map).cast<String, dynamic>();
+  } catch (_) {
+    return null;
+  }
+}
+
+/// The call being tested right now, line by line.
+class LiveTestPanel extends StatefulWidget {
+  const LiveTestPanel({super.key});
+  @override
+  State<LiveTestPanel> createState() => _LiveTestPanelState();
+}
+
+class _LiveTestPanelState extends State<LiveTestPanel> {
+  Map<String, dynamic>? live;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _read();
+    _tick = Timer.periodic(const Duration(seconds: 2), (_) => _read());
+  }
+
+  void _read() {
+    if (!mounted) return;
+    final l = readLiveTest(context.read<AppState>());
+    if (jsonEncode(l) != jsonEncode(live)) setState(() => live = l);
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = live;
+    if (l == null) return const SizedBox.shrink();
+    final turns = (l['turns'] as List? ?? []).cast<Object?>();
+    final tools = (l['tools'] as List? ?? []).cast<Object?>();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Panel(
+        borderColor: context.c.blueInk,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Testing now: ${l['app']} · ${'${l['intent']}'.replaceAll('journey_', '').replaceAll('_', ' ')}', style: displayStyle(context, 18))),
+            Pill('${l['done']} of ${l['total']} done · ${l['passed']} passed', tone: Tone.blue),
+          ]),
+          const SizedBox(height: 4),
+          Muted('${l['id']} · agents: ${l['setup']} · caller: ${'${l['style'] ?? ''}'.replaceAll('_', ' ')}${(l['calls'] as num? ?? 1) > 1 ? ' · call ${l['call']} of ${l['calls']}' : ''}', mono: true, size: 12),
+          if ('${l['goal'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Muted('The caller wants to: ${l['goal']}', size: 13)),
+          const SizedBox(height: 12),
+          for (final t in turns) if ('$t'.trim() != 'AI:') _bubble(context, '$t'),
+          if (tools.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Eyebrow('What the AI did in the app'),
+            const SizedBox(height: 4),
+            for (final t in tools) Padding(padding: const EdgeInsets.only(bottom: 3), child: SelectableText('$t', style: TextStyle(fontFamily: LL.mono, fontSize: 11.5, color: '$t'.contains('ERROR') ? context.c.redInk : context.c.muted))),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// On the home page: a test run is going (or has results) — one tap to watch it.
+class TestRunBanner extends StatefulWidget {
+  const TestRunBanner({super.key});
+  @override
+  State<TestRunBanner> createState() => _TestRunBannerState();
+}
+
+class _TestRunBannerState extends State<TestRunBanner> {
+  Map<String, dynamic>? live;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _read();
+    _tick = Timer.periodic(const Duration(seconds: 3), (_) => _read());
+  }
+
+  void _read() {
+    if (!mounted) return;
+    final l = readLiveTest(context.read<AppState>());
+    if (jsonEncode(l) != jsonEncode(live)) setState(() => live = l);
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = live;
+    if (l == null) return const SizedBox.shrink();
+    final last = (l['turns'] as List? ?? []).lastOrNull;
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Panel(
+        borderColor: context.c.blueInk,
+        child: Row(children: [
+          const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Test calls running: ${l['done']} of ${l['total']} done, ${l['passed']} passed', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              const SizedBox(height: 2),
+              Muted('Now: ${l['app']} · ${'${l['intent']}'.replaceAll('journey_', '').replaceAll('_', ' ')}${last == null ? '' : ' — $last'}', size: 12.5),
+            ]),
+          ),
+          const SizedBox(width: 12),
+          Btn('Watch', kind: BtnKind.primary, onPressed: () => context.read<AppState>().openTests()),
+        ]),
+      ),
+    );
+  }
 }

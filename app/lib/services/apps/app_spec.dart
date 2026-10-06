@@ -19,11 +19,13 @@ const fieldTypes = <String, String>{
   'links': 'several records from another table',
   'email': 'email address',
   'phone': 'phone number',
+  'image': 'photo',
 };
 
 /// Model words that mean one of our types.
 const _typeAliases = <String, String>{
-  'string': 'text', 'str': 'text', 'name': 'text', 'url': 'text', 'image': 'text', 'shorttext': 'text',
+  'string': 'text', 'str': 'text', 'name': 'text', 'url': 'text', 'shorttext': 'text',
+  'photo': 'image', 'picture': 'image', 'img': 'image', 'imageurl': 'image', 'image_url': 'image', 'logo': 'image', 'thumbnail': 'image',
   'textarea': 'longtext', 'description': 'longtext', 'long_text': 'longtext', 'notes': 'longtext',
   'int': 'number', 'integer': 'number', 'float': 'number', 'decimal': 'number', 'double': 'number', 'quantity': 'number',
   'price': 'money', 'currency': 'money', 'amount': 'money',
@@ -185,7 +187,8 @@ class Block {
     if (j is! Map) return null;
     var type = slug(j['type'], fallback: 'text');
     type = switch (type) {
-      'text' || 'heading' || 'paragraph' || 'markdown' || 'html' || 'intro' || 'hero' => 'text',
+      'hero' || 'banner' || 'header' || 'cover' => 'hero',
+      'text' || 'heading' || 'paragraph' || 'markdown' || 'html' || 'intro' => 'text',
       'list' || 'table' || 'grid' || 'cards' || 'search' || 'catalog' || 'menu' => 'list',
       'form' || 'create' || 'add' || 'booking' || 'order' || 'input' => 'form',
       'info' || 'details' || 'single' || 'record' || 'hours' => 'info',
@@ -193,7 +196,15 @@ class Block {
     };
     if (type.isEmpty) return null;
     final out = <String, Object?>{'type': type};
-    if (type == 'text') {
+    if (type == 'hero') {
+      final title = _str(j['title'] ?? j['heading'] ?? j['text']);
+      if (title.isEmpty) return null;
+      out['title'] = title;
+      for (final k in const ['text', 'button', 'link', 'image']) {
+        final v = _str(j[k == 'text' ? 'text' : k] ?? (k == 'text' ? j['subtitle'] : null));
+        if (v.isNotEmpty && !(k == 'text' && v == title)) out[k] = k == 'link' ? slug(v) : v;
+      }
+    } else if (type == 'text') {
       final text = _str(j['text'] ?? j['content'] ?? j['body'] ?? j['title']);
       if (text.isEmpty) return null;
       out['text'] = text.length > 2000 ? text.substring(0, 2000) : text;
@@ -259,8 +270,17 @@ class Features {
 }
 
 class AppSpec {
-  AppSpec({required this.name, this.summary = '', this.tables = const [], this.pages = const [], this.features = const Features(), this.theme = '#1F6FEB', this.dark = false, this.font = 'sans'});
-  final String name, summary, theme;
+  AppSpec({required this.name, this.summary = '', this.tables = const [], this.pages = const [], this.features = const Features(), this.theme = '', this.dark = false, this.font = 'sans', this.site = const {}});
+  final String name, summary;
+
+  /// The user's own main colour; empty = the style's colour.
+  final String theme;
+
+  /// Website details the manager can edit: style, tagline, about, logo, hero, address, phone, email.
+  final Map<String, String> site;
+  String get style => site['style'] ?? 'modern';
+
+  static const siteKeys = ['style', 'tagline', 'about', 'logo', 'hero', 'address', 'phone', 'email', 'footer', 'currency'];
 
   /// The look: dark background, and sans / serif / rounded letters.
   final bool dark;
@@ -277,6 +297,7 @@ class AppSpec {
         if (summary.isNotEmpty) 'summary': summary,
         'theme': theme,
         'look': {'dark': dark, 'font': font},
+        'site': site,
         'features': features.toJson(),
         'tables': [for (final t in tables) t.toJson()],
         'pages': [for (final p in pages) p.toJson()],
@@ -296,12 +317,20 @@ class AppSpec {
     }
     final theme = _str(j['theme']);
     final look = j['look'] is Map ? j['look'] as Map : const {};
+    final rawSite = j['site'] is Map ? j['site'] as Map : const {};
+    final site = <String, String>{
+      for (final k in siteKeys)
+        if (_str(rawSite[k]).isNotEmpty) k: _str(rawSite[k]).length > 1500 ? _str(rawSite[k]).substring(0, 1500) : _str(rawSite[k]),
+    };
+    if (site['tagline'] == null && _str(j['tagline']).isNotEmpty) site['tagline'] = _str(j['tagline']);
     return AppSpec(
+      site: site,
       dark: look['dark'] == true,
       font: const {'serif', 'rounded'}.contains(look['font']) ? look['font'] as String : 'sans',
       name: _str(j['name']).isEmpty ? 'My app' : _str(j['name']),
       summary: _str(j['summary'] ?? j['description']),
-      theme: RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(theme) ? theme : '#1F6FEB',
+      // #1F6FEB was the old default: let the style choose instead.
+      theme: RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(theme) && theme.toUpperCase() != '#1F6FEB' ? theme : '',
       features: Features.fromJson(j['features']),
       tables: tables.take(12).toList(),
       pages: pages.take(10).toList(),
@@ -310,12 +339,14 @@ class AppSpec {
 
   /// This app with [other]'s colours and font.
   AppSpec withLook(AppSpec other) => AppSpec(
-      name: name, summary: summary, features: features, tables: tables, pages: pages, theme: other.theme, dark: other.dark, font: other.font);
+      name: name, summary: summary, features: features, tables: tables, pages: pages, theme: other.theme, dark: other.dark, font: other.font,
+      site: {...site, 'style': other.style});
 
-  AppSpec copyWith({String? name, String? summary, List<TableSpec>? tables, List<PageSpec>? pages, Features? features}) => AppSpec(
+  AppSpec copyWith({String? name, String? summary, List<TableSpec>? tables, List<PageSpec>? pages, Features? features, Map<String, String>? site, String? theme}) => AppSpec(
       name: name ?? this.name,
       summary: summary ?? this.summary,
-      theme: theme,
+      theme: theme ?? this.theme,
+      site: site ?? this.site,
       dark: dark,
       font: font,
       features: features ?? this.features,
@@ -359,6 +390,12 @@ class AppSpec {
       for (final b in p.blocks) {
         if (b.type == 'text') {
           blocks.add(b);
+          continue;
+        }
+        if (b.type == 'hero') {
+          final d = Map<String, Object?>.of(b.data);
+          if (d['link'] != null && !pages.any((x) => x.id == d['link'])) d.remove('link');
+          blocks.add(Block(d));
           continue;
         }
         final t = byId[resolve(b.table) ?? ''];

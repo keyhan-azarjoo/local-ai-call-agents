@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/apps/app_spec.dart';
+import '../../services/apps/app_styles.dart';
+import '../../services/apps/app_templates.dart';
 import '../../services/apps/apps_manager.dart';
 import '../../services/companion/host_server.dart';
 import '../../services/system.dart';
@@ -43,59 +45,224 @@ class _BuilderPageState extends State<BuilderPage> {
     final job = s.apps.job;
     if (job != null) return _Wizard(job: job, onOpen: (id) => setState(() => openId = id));
     if (openId != null) return _AppDetail(id: openId!, onBack: () => setState(() => openId = null));
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       PageHead('Build an app',
-          description: 'Describe the system you need — a website for your customers, a manager page, and tools Ava can use on calls. '
-              'Your AI plans it and builds it piece by piece, and it runs on this computer.',
-          actions: [Btn('New app', icon: Icons.add, kind: BtnKind.primary, onPressed: () => s.apps.newJob())]),
+          description: 'A website for your customers, a manager page for you, and tools Ava can use on calls — running on this computer. '
+              'Start from a ready-made app, or describe your own and your AI builds it step by step.',
+          actions: [Btn('Describe my own', icon: Icons.auto_fix_high_outlined, kind: BtnKind.primary, onPressed: () => s.apps.newJob())]),
       FutureBuilder(
         future: s.apps.apps(),
         builder: (context, snap) {
           final list = snap.data ?? [];
-          if (snap.hasData && list.isEmpty) {
-            return Panel(
-              child: EmptyState(
-                icon: Icons.auto_fix_high_outlined,
-                title: 'No apps yet',
-                body: 'For example: “I have a restaurant. Customers search the menu, order food and pick a table; I set the tables, opening hours and prices.”',
-                action: Btn('Build my first app', icon: Icons.add, kind: BtnKind.primary, onPressed: () => s.apps.newJob()),
-              ),
-            );
-          }
-          return Column(children: [
+          if (list.isEmpty) return const SizedBox();
+          return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Your apps', style: displayStyle(context, 18)),
+            const SizedBox(height: 10),
             for (final a in list) ...[_appCard(context, s, a), const SizedBox(height: 12)],
+            const SizedBox(height: 18),
           ]);
         },
       ),
+      Text('Start from a ready-made app', style: displayStyle(context, 18)),
+      const SizedBox(height: 4),
+      const Muted('Complete with pages, a manager dashboard, example data and photos. Change anything afterwards — by hand or by telling the AI.'),
+      const SizedBox(height: 14),
+      LayoutBuilder(builder: (context, box) {
+        final cols = box.maxWidth > 1000 ? 4 : (box.maxWidth > 700 ? 3 : 2);
+        return Wrap(spacing: 14, runSpacing: 14, children: [
+          _DescribeCard(width: (box.maxWidth - 14 * (cols - 1)) / cols, onTap: () => s.apps.newJob()),
+          for (final t in appTemplates)
+            _TemplateCard(t: t, width: (box.maxWidth - 14 * (cols - 1)) / cols, busy: creating == t.id, onUse: creating != null ? null : () => _use(s, t)),
+        ]);
+      }),
     ]);
+  }
+
+  String? creating;
+
+  Future<void> _use(AppState s, AppTemplate t) async {
+    setState(() => creating = t.id);
+    try {
+      final id = await s.apps.createFromTemplate(t);
+      if (mounted) setState(() => openId = id);
+      s.toast('${t.name} is ready and running.');
+    } catch (e) {
+      s.toast('Could not create it: $e');
+    } finally {
+      if (mounted) setState(() => creating = null);
+    }
   }
 
   Widget _appCard(BuildContext context, AppState s, BuiltApp a) {
     final spec = a.spec;
+    final st = styleOf(spec.style);
     return Panel(
+      padding: const EdgeInsets.all(14),
       child: Row(children: [
-        LogoBox(accent: true, child: Text(a.name.characters.first.toUpperCase(), style: const TextStyle(fontWeight: FontWeight.w700))),
+        _StyleSwatch(style: st, accent: spec.theme, letter: a.name.characters.first.toUpperCase(), size: 52),
         const SizedBox(width: 14),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Flexible(child: Text(a.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
+              Flexible(child: Text(a.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15.5))),
               const SizedBox(width: 8),
               _RunPill(run: s.apps.runOf(a.id)),
             ]),
             const SizedBox(height: 2),
-            Muted(spec.summary.isEmpty ? a.request : spec.summary),
+            Muted(spec.site['tagline'] ?? (spec.summary.isEmpty ? a.request : spec.summary)),
             const SizedBox(height: 2),
-            Muted('http://localhost:${a.port} · ${spec.tables.length} tables · ${spec.pages.length} pages', mono: true, size: 11.5),
+            Muted('localhost:${a.port} · ${st.name} style · ${spec.tables.length} tables · ${spec.pages.length} pages', mono: true, size: 11.5),
           ]),
         ),
         const SizedBox(width: 12),
+        if (s.apps.runOf(a.id) != AppRun.stopped) ...[
+          Btn('Website', small: true, kind: BtnKind.ghost, icon: Icons.open_in_new, onPressed: () => openExternal('http://localhost:${a.port}')),
+          const SizedBox(width: 6),
+        ],
         _RunControls(app: a),
         const SizedBox(width: 6),
-        Btn('Open', small: true, onPressed: () => setState(() => openId = a.id)),
+        Btn('Open', small: true, kind: BtnKind.primary, onPressed: () => setState(() => openId = a.id)),
       ]),
     );
   }
+}
+
+const _templateIcons = <String, IconData>{
+  'restaurant': Icons.restaurant_outlined,
+  'salon': Icons.content_cut,
+  'gym': Icons.fitness_center,
+  'shop': Icons.storefront_outlined,
+  'clinic': Icons.medical_services_outlined,
+  'hotel': Icons.hotel_outlined,
+  'garage': Icons.car_repair,
+  'tutoring': Icons.school_outlined,
+  'events': Icons.confirmation_number_outlined,
+  'realestate': Icons.home_work_outlined,
+};
+
+Color _hex(String h) => Color(int.parse('FF${h.substring(1)}', radix: 16));
+
+/// A small preview of a website style: its background, colour and letters.
+class _StyleSwatch extends StatelessWidget {
+  const _StyleSwatch({required this.style, this.accent = '', this.letter, this.size = 48});
+  final SiteStyle style;
+  final String accent;
+  final String? letter;
+  final double size;
+  @override
+  Widget build(BuildContext context) {
+    final a = _hex(accent.isEmpty ? style.accent : accent);
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(color: _hex(style.bg), borderRadius: BorderRadius.circular(12), border: Border.all(color: _hex(style.line))),
+      alignment: Alignment.center,
+      child: Container(
+        width: size * .56,
+        height: size * .56,
+        decoration: BoxDecoration(color: a, borderRadius: BorderRadius.circular(style.radius > 10 ? 10 : style.radius.toDouble())),
+        alignment: Alignment.center,
+        child: Text(letter ?? '', style: TextStyle(fontWeight: FontWeight.w700, fontSize: size * .26, color: _hex(SiteStyle.onColor(accent.isEmpty ? style.accent : accent)))),
+      ),
+    );
+  }
+}
+
+class _TemplateCard extends StatelessWidget {
+  const _TemplateCard({required this.t, required this.width, required this.busy, required this.onUse});
+  final AppTemplate t;
+  final double width;
+  final bool busy;
+  final VoidCallback? onUse;
+  @override
+  Widget build(BuildContext context) {
+    final st = styleOf((t.spec['site'] as Map?)?['style'] as String?);
+    final name = t.spec['name'] as String;
+    return SizedBox(
+      width: width,
+      child: Panel(
+        padding: EdgeInsets.zero,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          // A tiny picture of the website in its style.
+          Container(
+            height: 112,
+            decoration: BoxDecoration(
+              color: _hex(st.bg),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(LL.r)),
+              border: Border(bottom: BorderSide(color: context.c.line)),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(width: 14, height: 14, decoration: BoxDecoration(color: _hex(st.accent), borderRadius: BorderRadius.circular(4))),
+                const SizedBox(width: 6),
+                Expanded(child: Text(name, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _hex(st.ink)))),
+                Icon(_templateIcons[t.id] ?? Icons.apps, size: 18, color: _hex(st.muted)),
+              ]),
+              const Spacer(),
+              Text((t.spec['site'] as Map?)?['tagline'] as String? ?? '', maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 15, height: 1.15, fontWeight: FontWeight.w700, color: _hex(st.ink), fontFamily: st.headFont.contains('serif') && !st.headFont.contains('sans') ? 'serif' : null)),
+              const SizedBox(height: 8),
+              Container(width: 54, height: 8, decoration: BoxDecoration(color: _hex(st.accent), borderRadius: BorderRadius.circular(99))),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(t.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14.5)),
+              const SizedBox(height: 3),
+              SizedBox(height: 36, child: Muted(t.blurb, size: 12.5)),
+              const SizedBox(height: 10),
+              Row(children: [
+                Pill(st.name),
+                const Spacer(),
+                busy
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                    : Btn('Use this', small: true, kind: BtnKind.primary, onPressed: onUse),
+              ]),
+            ]),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _DescribeCard extends StatelessWidget {
+  const _DescribeCard({required this.width, required this.onTap});
+  final double width;
+  final VoidCallback onTap;
+  @override
+  Widget build(BuildContext context) => SizedBox(
+        width: width,
+        height: 246,
+        child: Material(
+          color: LL.navy,
+          borderRadius: BorderRadius.circular(LL.r),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(LL.r),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(color: LL.amber, borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.auto_fix_high, color: LL.navy),
+                ),
+                const Spacer(),
+                const Text('Describe your own', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700, fontFamily: LL.display)),
+                const SizedBox(height: 6),
+                const Text('Tell the AI what you need, add a picture of a website you like, and it builds it step by step.',
+                    style: TextStyle(color: LL.navText, fontSize: 12.5, height: 1.4)),
+                const SizedBox(height: 12),
+                const Row(children: [Text('Start', style: TextStyle(color: LL.amber, fontWeight: FontWeight.w600)), SizedBox(width: 6), Icon(Icons.arrow_forward, size: 16, color: LL.amber)]),
+              ]),
+            ),
+          ),
+        ),
+      );
 }
 
 class _RunPill extends StatelessWidget {
@@ -253,6 +420,14 @@ class _WizardState extends State<_Wizard> {
         SwitchRow('A website for customers (and a manager page)', value: j.features.website, onChanged: (v) => setState(() => j.features = Features(website: v, ava: j.features.ava))),
         SwitchRow('Ava can use it in chats and on phone calls (MCP tools)', value: j.features.ava, onChanged: (v) => setState(() => j.features = Features(website: j.features.website, ava: v))),
         SwitchRow('Fill it with example data to start', value: j.exampleData, onChanged: (v) => setState(() => j.exampleData = v)),
+        if (j.features.website) ...[
+          const SizedBox(height: 14),
+          const Eyebrow('Website style'),
+          const SizedBox(height: 4),
+          const Muted('You can change it any time. A website picture you added decides the colours.', size: 12),
+          const SizedBox(height: 10),
+          _StylePicker(value: j.style ?? suggestStyle(j.request), onChanged: (v) => setState(() => j.style = v)),
+        ],
         const SizedBox(height: 16),
         Row(children: [
           Btn('Back', kind: BtnKind.ghost, onPressed: () => setState(() => j.stage = 'describe')),
@@ -406,6 +581,55 @@ class _Steps extends StatelessWidget {
   }
 }
 
+/// The website styles, each with what it looks like and what it suits.
+class _StylePicker extends StatelessWidget {
+  const _StylePicker({required this.value, required this.onChanged, this.accent = ''});
+  final String value, accent;
+  final ValueChanged<String> onChanged;
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        final cols = box.maxWidth > 900 ? 3 : 2;
+        final w = (box.maxWidth - 10 * (cols - 1)) / cols;
+        return Wrap(spacing: 10, runSpacing: 10, children: [
+          for (final st in siteStyles)
+            SizedBox(
+              width: w,
+              child: Material(
+                color: context.c.panel,
+                borderRadius: BorderRadius.circular(LL.r),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(LL.r),
+                  onTap: () => onChanged(st.id),
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(LL.r),
+                      border: Border.all(color: value == st.id ? LL.amber : context.c.line, width: value == st.id ? 2 : 1),
+                    ),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _StyleSwatch(style: st, accent: value == st.id ? accent : '', letter: 'Aa', size: 46),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Row(children: [
+                            Expanded(child: Text(st.name, style: const TextStyle(fontWeight: FontWeight.w600))),
+                            if (value == st.id) const Icon(Icons.check_circle, size: 18, color: LL.amber),
+                          ]),
+                          const SizedBox(height: 2),
+                          Muted(st.about, size: 12),
+                          const SizedBox(height: 4),
+                          Muted('Good for: ${st.goodFor}', size: 11.5),
+                        ]),
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+        ]);
+      });
+}
+
 class _AccessPicker extends StatelessWidget {
   const _AccessPicker({required this.value, required this.onChanged});
   final Access value;
@@ -539,7 +763,6 @@ class _AppDetail extends StatefulWidget {
 }
 
 class _AppDetailState extends State<_AppDetail> {
-  final add = TextEditingController();
   bool showPin = false;
   List<String> lan = [];
 
@@ -577,9 +800,17 @@ class _AppDetailState extends State<_AppDetail> {
                 if (spec.summary.isNotEmpty) Muted(spec.summary),
               ]),
             ),
+            if (run != AppRun.stopped) ...[
+              Btn('Website', small: true, kind: BtnKind.ghost, icon: Icons.open_in_new, onPressed: () => openExternal(local)),
+              const SizedBox(width: 6),
+              Btn('Edit texts & photos', small: true, kind: BtnKind.ghost, icon: Icons.edit_outlined, onPressed: () => openExternal('$local/manage#website')),
+              const SizedBox(width: 6),
+            ],
             _RunControls(app: a),
           ]),
           const SizedBox(height: 16),
+          _ChangeBox(app: a, busy: busy != null, onRun: (f) => _run(s, f)),
+          const SizedBox(height: 14),
           if (busy != null) ...[
             Panel(
               borderColor: LL.amber,
@@ -672,48 +903,21 @@ class _AppDetailState extends State<_AppDetail> {
                 ),
             ]),
           ],
-          const SizedBox(height: 14),
-          Panel(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Eyebrow('Add something'),
-              const SizedBox(height: 8),
-              Row(children: [
-                Expanded(child: TextField(controller: add, decoration: const InputDecoration(hintText: 'e.g. a page where customers leave reviews; a table for staff shifts'))),
-                const SizedBox(width: 10),
-                Btn('Add', kind: BtnKind.primary, onPressed: busy != null
-                    ? null
-                    : () async {
-                        final v = add.text.trim();
-                        if (v.isEmpty) return;
-                        add.clear();
-                        await _run(s, () => s.apps.addPart(a.id, v));
-                      }),
+          if (spec.features.website || spec.pages.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Panel(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Expanded(child: Eyebrow('Website style')),
+                  if (spec.theme.isNotEmpty) TextButton(onPressed: () => s.apps.setStyle(a.id, spec.style), child: const Text('Use the style’s own colour')),
+                ]),
+                const SizedBox(height: 10),
+                _StylePicker(value: spec.style, accent: spec.theme, onChanged: (v) => s.apps.setStyle(a.id, v)),
+                const SizedBox(height: 10),
+                const Muted('Texts, logo, cover photo, contact details and colour can also be edited on the manager page → Design & texts.', size: 12),
               ]),
-            ]),
-          ),
-          const SizedBox(height: 14),
-          Panel(
-            child: Row(children: [
-              Container(width: 28, height: 28, decoration: BoxDecoration(color: _hex(spec.theme), borderRadius: BorderRadius.circular(6))),
-              const SizedBox(width: 12),
-              Expanded(child: Muted('Look: ${spec.dark ? 'dark' : 'light'}, ${spec.font} letters')),
-              Btn('Change the look', small: true, onPressed: busy != null
-                  ? null
-                  : () async {
-                      final v = await _prompt(context, 'Change the look', hint: 'e.g. dark with gold buttons; warm and friendly');
-                      if (v != null && v.isNotEmpty) await _run(s, () => s.apps.changeLook(a.id, v));
-                    }),
-              const SizedBox(width: 6),
-              Btn('Like a picture…', small: true, icon: Icons.image_outlined, onPressed: busy != null
-                  ? null
-                  : () async {
-                      final f = await openFile(acceptedTypeGroups: const [XTypeGroup(label: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp'])]);
-                      if (f == null) return;
-                      final b64 = await _shrink(await f.readAsBytes());
-                      await _run(s, () => s.apps.changeLook(a.id, '', pictureBase64: b64));
-                    }),
-            ]),
-          ),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(children: [
             Muted('Your request: “${a.request.length > 140 ? '${a.request.substring(0, 140)}…' : a.request}”', size: 12),
@@ -740,7 +944,81 @@ class _AppDetailState extends State<_AppDetail> {
       );
 }
 
-Color _hex(String h) => Color(int.parse('FF${h.substring(1)}', radix: 16));
+/// "Describe a change": one sentence about anything; the AI finds the part and changes only that.
+class _ChangeBox extends StatefulWidget {
+  const _ChangeBox({required this.app, required this.busy, required this.onRun});
+  final BuiltApp app;
+  final bool busy;
+  final Future<void> Function(Future<String?> Function()) onRun;
+  @override
+  State<_ChangeBox> createState() => _ChangeBoxState();
+}
+
+class _ChangeBoxState extends State<_ChangeBox> {
+  final ctrl = TextEditingController();
+  static const _examples = [
+    'Make it dark and luxurious',
+    'Add a page with our story and photos',
+    'Orders need a phone number',
+    'Add allergens to the menu',
+    'Change the slogan to “Fresh every day”',
+  ];
+
+  Future<void> _go(AppState s) async {
+    final v = ctrl.text.trim();
+    if (v.isEmpty) return;
+    await widget.onRun(() => s.apps.changeAnything(widget.app.id, v));
+    if (mounted) ctrl.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
+    return Panel(
+      borderColor: LL.amber.withValues(alpha: .6),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.auto_fix_high, size: 20, color: LL.amber),
+          const SizedBox(width: 8),
+          Text('Change it by describing', style: displayStyle(context, 17)),
+        ]),
+        const SizedBox(height: 4),
+        const Muted('Say what you want different — the look, a page, the data, or something new. The AI changes only that part; your data stays.'),
+        const SizedBox(height: 12),
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Expanded(
+            child: TextField(
+              controller: ctrl,
+              minLines: 1,
+              maxLines: 4,
+              enabled: !widget.busy,
+              decoration: const InputDecoration(hintText: 'e.g. “Add a gallery page”, “make the buttons green”, “customers can choose pickup or delivery”'),
+              onSubmitted: (_) => _go(s),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Btn('Make the change', kind: BtnKind.primary, icon: Icons.arrow_forward, onPressed: widget.busy ? null : () => _go(s)),
+        ]),
+        const SizedBox(height: 10),
+        Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          for (final e in _examples) ActionChip(label: Text(e, style: const TextStyle(fontSize: 12)), onPressed: widget.busy ? null : () => setState(() => ctrl.text = e)),
+          ActionChip(
+            avatar: const Icon(Icons.image_outlined, size: 16),
+            label: const Text('Look like a picture…', style: TextStyle(fontSize: 12)),
+            onPressed: widget.busy
+                ? null
+                : () async {
+                    final f = await openFile(acceptedTypeGroups: const [XTypeGroup(label: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp'])]);
+                    if (f == null) return;
+                    final b64 = await _shrink(await f.readAsBytes());
+                    await widget.onRun(() => s.apps.changeLook(widget.app.id, ctrl.text.trim(), pictureBase64: b64));
+                  },
+          ),
+        ]),
+      ]),
+    );
+  }
+}
 
 Future<String?> _prompt(BuildContext context, String title, {String initial = '', String? hint}) {
   final c = TextEditingController(text: initial);

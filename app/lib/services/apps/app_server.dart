@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'dart:math';
+
 import 'app_data.dart';
 import 'app_spec.dart';
+import 'app_styles.dart';
 import 'app_web.dart';
 
 /// Runs one user-built app on this computer: its website (customers at `/`,
@@ -12,9 +15,15 @@ import 'app_web.dart';
 /// - `/mcp`: what customers may do (callers can use it without approval)
 /// - `/mcp/manager`: the rest, for the owner (needs the manager PIN)
 class AppServer {
-  AppServer({required this.data, required this.pin});
+  AppServer({required this.data, required this.pin, this.filesDir, this.onSpecChanged});
   final AppData data;
   String pin;
+
+  /// Where uploaded pictures are kept (null = uploads off).
+  final String? filesDir;
+
+  /// The manager changed the website (texts, pictures, style) on the manager page.
+  final Future<void> Function(AppSpec spec)? onSpecChanged;
   HttpServer? _http;
   bool paused = false;
 
@@ -41,12 +50,13 @@ class AppServer {
       if (path == '/app.css') return _send(req, 200, appCss, 'text/css');
       if (path == '/app.js') return _send(req, 200, appJs, 'application/javascript');
       if (path.startsWith('/mcp')) return await _mcp(req, manager: path == '/mcp/manager');
+      if (path.startsWith('/files/')) return await _file(req, path.substring(7));
       if (paused) {
         if (path.startsWith('/api/')) return _json(req, 503, {'error': 'This app is paused right now.'});
-        return _send(req, 503, pausedHtml(spec.name), 'text/html');
+        return _send(req, 503, pausedHtml(spec), 'text/html');
       }
       if (path.startsWith('/api/')) return await _api(req, path.substring(5));
-      if (path == '/' || path.startsWith('/p/') || path == '/manage') return _send(req, 200, appHtml(spec.name, spec.theme, dark: spec.dark, font: spec.font), 'text/html');
+      if (path == '/' || path.startsWith('/p/') || path == '/manage') return _send(req, 200, appHtml(spec, manager: path == '/manage'), 'text/html');
       return _send(req, 404, 'Not found', 'text/plain');
     } on AppDataError catch (e) {
       return _json(req, 400, {'error': e.message});
@@ -97,6 +107,11 @@ class AppServer {
       await Future.delayed(const Duration(milliseconds: 600)); // slows down guessing
       return _json(req, 403, {'error': 'Wrong PIN.'});
     }
+    if (rest == '_upload' && req.method == 'POST') return _upload(req, manager);
+    if (rest == '_site' && req.method == 'PUT') {
+      if (!manager) return _json(req, 403, {'error': 'Only the manager can do that.'});
+      return _saveSite(req);
+    }
     final parts = rest.split('/');
     if (parts.length < 2 || parts.first != 't') return _json(req, 404, {'error': 'Not found'});
     final t = spec.table(parts[1]);
@@ -128,6 +143,102 @@ class AppServer {
         return _json(req, 200, {'ok': true});
     }
     return _json(req, 405, {'error': 'Not allowed'});
+  }
+
+  // ---------------- pictures ----------------
+
+  static const _types = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp', 'gif': 'image/gif'};
+
+  Future<void> _file(HttpRequest req, String name) async {
+    final dir = filesDir;
+    if (dir == null || !RegExp(r'^[a-z0-9]+\.(jpg|jpeg|png|webp|gif)$').hasMatch(name)) return _send(req, 404, 'Not found', 'text/plain');
+    final f = File('$dir/$name');
+    if (!f.existsSync()) return _send(req, 404, 'Not found', 'text/plain');
+    req.response
+      ..headers.set('Content-Type', _types[name.split('.').last]!)
+      ..headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+    await req.response.addStream(f.openRead());
+    await req.response.close();
+  }
+
+  /// Saves a picture (the page makes it small first). Customers may only upload
+  /// where they can add records with a photo (e.g. a review).
+  Future<void> _upload(HttpRequest req, bool manager) async {
+    final dir = filesDir;
+    if (dir == null) return _json(req, 400, {'error': 'Pictures are not available.'});
+    final customersMay = spec.tables.any((t) => t.access.add && t.fields.any((f) => f.type == 'image' && !f.managerOnly));
+    if (!manager && !customersMay) return _json(req, 403, {'error': 'Only the manager can upload pictures.'});
+    final type = (req.headers.contentType?.mimeType ?? '').toLowerCase();
+    final ext = _types.entries.where((e) => e.value == type).firstOrNull?.key;
+    if (ext == null) return _json(req, 400, {'error': 'Use a JPG, PNG or WebP picture.'});
+    final bytes = <int>[];
+    await for (final chunk in req) {
+      bytes.addAll(chunk);
+      if (bytes.length > (manager ? 12 : 5) * 1024 * 1024) return _json(req, 413, {'error': 'The picture is too big.'});
+    }
+    Directory(dir).createSync(recursive: true);
+    final r = Random.secure();
+    final name = '${List.generate(16, (_) => r.nextInt(36).toRadixString(36)).join()}.${ext == 'jpeg' ? 'jpg' : ext}';
+    await File('$dir/$name').writeAsBytes(bytes);
+    return _json(req, 200, {'url': '/files/$name'});
+  }
+
+  /// The manager's Website settings: name, details, style, colour and page texts.
+  Future<void> _saveSite(HttpRequest req) async {
+    final b = await _body(req);
+    final site = Map<String, String>.of(spec.site);
+    if (b['site'] is Map) {
+      for (final k in AppSpec.siteKeys) {
+        final v = (b['site'] as Map)[k];
+        if (v == null) continue;
+        final t = '$v'.trim();
+        if (t.isEmpty) {
+          site.remove(k);
+        } else {
+          site[k] = t.length > 1500 ? t.substring(0, 1500) : t;
+        }
+      }
+    }
+    if (!siteStyles.any((x) => x.id == site['style'])) site.remove('style');
+    final theme = '${b['theme'] ?? spec.theme}'.trim();
+    final edits = b['pages'] is Map ? (b['pages'] as Map) : const {};
+    final pages = <PageSpec>[];
+    for (final p in spec.pages) {
+      final e = edits[p.id] is Map ? edits[p.id] as Map : const {};
+      final blocks = e['blocks'] is Map ? e['blocks'] as Map : const {};
+      final title = '${e['title'] ?? ''}'.trim();
+      pages.add(p.copyWith(
+        title: title.isEmpty ? null : title,
+        blocks: [for (final (i, bl) in p.blocks.indexed) _editedBlock(bl, blocks['$i'])],
+      ));
+    }
+    final name = '${b['name'] ?? ''}'.trim();
+    final next = spec.copyWith(
+      name: name.isEmpty ? null : (name.length > 80 ? name.substring(0, 80) : name),
+      site: site,
+      theme: RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(theme) ? theme : '',
+      pages: pages,
+    );
+    data.spec = next;
+    await onSpecChanged?.call(next);
+    return _json(req, 200, {'ok': true});
+  }
+
+  static Block _editedBlock(Block b, Object? edit) {
+    if (edit is! Map || edit.isEmpty) return b;
+    final d = Map<String, Object?>.of(b.data);
+    final keys = switch (b.type) { 'hero' => const ['title', 'text', 'button', 'image'], 'text' => const ['text'], _ => const ['title'] };
+    for (final k in keys) {
+      if (!edit.containsKey(k)) continue;
+      final v = '${edit[k] ?? ''}'.trim();
+      if (v.isEmpty && !(b.type == 'text' && k == 'text')) {
+        d.remove(k);
+      } else {
+        d[k] = v.length > 2000 ? v.substring(0, 2000) : v;
+      }
+    }
+    if (b.type == 'hero' && (d['title'] ?? '').toString().isEmpty) return b;
+    return Block(d);
   }
 
   // ---------------- MCP ----------------

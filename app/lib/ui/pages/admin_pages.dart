@@ -261,7 +261,7 @@ class ContactsPage extends StatelessWidget {
   }
 }
 
-const scopes = {'all': 'All callers', 'contacts': 'Contacts only', 'me': 'Only me'};
+const scopes = {'all': 'Phone calls too (callers and calls Ava makes)', 'contacts': 'Calls with my contacts', 'me': 'Only me (chat and Talk)'};
 
 // ============================ Tools (MCP) ============================
 

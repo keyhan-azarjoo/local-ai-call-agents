@@ -66,7 +66,7 @@ class Phone {
     final r = await _c.post(Uri.parse('http://127.0.0.1:${VoiceEngine.livekitPort}/twirp/livekit.SIP/$method'),
         headers: {'Authorization': 'Bearer $jwt', 'Content-Type': 'application/json'}, body: jsonEncode(body));
     final j = r.body.isEmpty ? <String, dynamic>{} : jsonDecode(r.body) as Map<String, dynamic>;
-    if (r.statusCode != 200) throw PhoneError('The phone service said: ${j['msg'] ?? r.body}');
+    if (r.statusCode != 200) throw PhoneError(_reason('${j['msg'] ?? r.body}'));
     return j;
   }
 
@@ -81,13 +81,15 @@ class Phone {
         'numbers': [cfg['number']],
         'auth_username': cfg['sipUser'],
         'auth_password': cfg['sipPass'],
-        'transport': 'SIP_TRANSPORT_TCP', // friendlier to home routers than UDP
+        // Encrypted call setup: routers can't rewrite it (their SIP ALG breaks the audio).
+        'transport': engine.sipTls ? 'SIP_TRANSPORT_TLS' : 'SIP_TRANSPORT_TCP',
       },
     });
     return _trunks[key] = (j['sip_trunk_id'] ?? j['sipTrunkId']) as String;
   }
 
   /// Rings [number] from the line; Ava joins room [room] and takes over once they answer.
+  /// Returns when the call is answered; throws with the reason if it isn't (busy, refused, no answer…).
   Future<void> call({required Map<String, dynamic> line, required String number, required String room, String? name}) async {
     if (!engine.phoneReady) throw PhoneError('Phone calling isn’t running. Start live voice (Settings → Voice) — phone calling must be installed.');
     final trunk = await _outboundTrunk(line);
@@ -97,8 +99,20 @@ class Phone {
       'room_name': room,
       'participant_identity': 'callee',
       'participant_name': name ?? number,
-      'wait_until_answered': false,
+      'wait_until_answered': true,
     });
+  }
+
+  /// The call failed: say why in plain words.
+  static String _reason(String msg) {
+    final m = msg.toLowerCase();
+    if (m.contains('blacklist') || m.contains('32203')) return 'Your Twilio account blocked this number (calls to that country or number aren’t allowed — Twilio console → Voice → Geographic permissions).';
+    if (m.contains('busy') || m.contains('486')) return 'The line was busy.';
+    if (m.contains('no answer') || m.contains('480') || m.contains('408')) return 'No one answered.';
+    if (m.contains('declin') || m.contains('603')) return 'They declined the call.';
+    if (m.contains('404')) return 'That number doesn’t exist.';
+    if (m.contains('401') || m.contains('403') || m.contains('auth')) return 'Twilio refused the call: $msg';
+    return 'The call didn’t go through: $msg';
   }
 
   /// "+44 7700 900123", "07700 900123" (with a UK line) → "+447700900123".

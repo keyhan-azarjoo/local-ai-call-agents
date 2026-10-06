@@ -648,7 +648,8 @@ class AppState extends ChangeNotifier {
       'summary': summary,
       'transcript': jsonEncode(turns),
     });
-    if (task != null) {
+    // A call that failed to connect already says why; keep that.
+    if (task != null && !(task['status'] == 'failed' && !pickedUp)) {
       await db.update('call_tasks', taskId!, {'status': answered ? 'done' : 'no_answer', 'result': summary});
       await log('Call to ${task['to_name'] ?? task['number']}: ${answered ? 'done' : 'no answer'}');
     }

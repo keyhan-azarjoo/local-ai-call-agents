@@ -3,6 +3,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:livekit_client/livekit_client.dart';
 import 'package:provider/provider.dart';
 
@@ -519,7 +520,7 @@ class _VoiceEnginePanelState extends State<VoiceEnginePanel> {
                 final app = context.read<AppState>();
                 setState(() => installing = true);
                 try {
-                  await v.installPhone();
+                  await v.installPhone(patch: await rootBundle.loadString('assets/engine/livekit-sip-stun.patch'));
                   app.toast('Phone calling is installed. Restart live voice to use it.');
                 } catch (e) {
                   app.toast('$e');

@@ -822,7 +822,7 @@ def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool =
     )
 
 
-async def app_config(mode: str, lang: str = "auto") -> dict:
+async def app_config(mode: str, lang: str = "auto", room: str = "") -> dict:
     """Greeting, name and default language from the LocalAILine app (if it runs us).
     Also tells the app a call is starting, so it loads the model while we greet."""
     base = os.environ.get("LL_APP_URL")
@@ -830,7 +830,7 @@ async def app_config(mode: str, lang: str = "auto") -> dict:
         return {}
     try:
         async with aiohttp.ClientSession() as h:
-            async with h.get(f"{base}/api/voice-config", params={"mode": mode, "lang": lang}, headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"},
+            async with h.get(f"{base}/api/voice-config", params={"mode": mode, "lang": lang, "room": room}, headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"},
                              timeout=aiohttp.ClientTimeout(total=3)) as r:
                 return await r.json(content_type=None)
     except Exception as e:  # noqa: BLE001
@@ -848,7 +848,7 @@ async def entrypoint(ctx: JobContext) -> None:
         mode = f"outbound#{ctx.room.name[9:]}"
     started = time.time()
     picked_up = {"yes": not ctx.room.name.startswith("pstn-out-")}
-    cfg = await app_config(mode, parts[2] if len(parts) > 3 and parts[0] == "talk" else "auto")
+    cfg = await app_config(mode, parts[2] if len(parts) > 3 and parts[0] == "talk" else "auto", ctx.room.name)
     # Voices chosen in the app, per language.
     VOICE_CHOICE.clear()
     VOICE_CHOICE.update({k: v for k, v in (cfg.get("voices") or {}).items() if isinstance(v, str)})

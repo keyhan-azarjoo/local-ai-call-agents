@@ -199,7 +199,28 @@ class Phone {
   /// LiveKit side of incoming calls (it forgets them when it restarts): calls to the number
   /// get their own room "pstn-in-…", where Ava answers.
   final _inbound = <String>{};
-  Future<void> ensureInbound(Map<String, dynamic> cfg) async {
+  /// Calls to line [lineId] get rooms "pstn-in-(line id)-…", so the app knows which line (and so
+  /// which agent answers).
+  Future<void>? _inboundBusy;
+  Future<void> ensureInbound(Map<String, dynamic> cfg, {int? lineId}) async {
+    while (_inboundBusy != null) {
+      await _inboundBusy;
+    }
+    final done = Completer<void>();
+    _inboundBusy = done.future;
+    try {
+      await _ensureInbound(cfg, lineId: lineId);
+    } on PhoneError catch (e) {
+      // Already set up (e.g. by a start a moment ago): that's fine.
+      if (!e.message.contains('Conflicting inbound')) rethrow;
+      _inbound.add('${cfg['number']}');
+    } finally {
+      _inboundBusy = null;
+      done.complete();
+    }
+  }
+
+  Future<void> _ensureInbound(Map<String, dynamic> cfg, {int? lineId}) async {
     final number = '${cfg['number']}';
     if (_inbound.contains(number)) return;
     final t = await _livekit('CreateSIPInboundTrunk', {
@@ -207,12 +228,24 @@ class Phone {
     });
     await _livekit('CreateSIPDispatchRule', {
       'rule': {
-        'dispatch_rule_individual': {'room_prefix': 'pstn-in-'},
+        'dispatch_rule_individual': {'room_prefix': lineId == null ? 'pstn-in-' : 'pstn-in-$lineId-'},
       },
       'trunk_ids': [t['sip_trunk_id'] ?? t['sipTrunkId']],
       'name': 'Answer $number',
     });
     _inbound.add(number);
+  }
+
+  /// Whether someone is in a call's room yet.
+  Future<bool> inRoom(String room, String identity) async {
+    final jwt = await engine.token(identity: 'localailine-app', room: room, sipAdmin: true, ttl: const Duration(minutes: 1));
+    try {
+      final r = await _c.post(Uri.parse('http://127.0.0.1:${VoiceEngine.livekitPort}/twirp/livekit.RoomService/ListParticipants'),
+          headers: {'Authorization': 'Bearer $jwt', 'Content-Type': 'application/json'}, body: jsonEncode({'room': room}));
+      return r.statusCode == 200 && r.body.contains(identity);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Rings [number] from the line; Ava joins room [room] and takes over once they answer.

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 import 'package:record/record.dart';
@@ -164,6 +165,7 @@ class RingOverlay extends StatelessWidget {
           right: 0,
           child: Center(child: Material(color: Colors.transparent, child: Pill(s.ringStatus!, tone: Tone.amber, lamp: LampState.ring))),
         ),
+      if (s.joinedCall != null) Positioned.fill(child: PassedCall(join: s.joinedCall!)),
       if (r != null)
         Positioned.fill(
           child: Material(
@@ -175,7 +177,7 @@ class RingOverlay extends StatelessWidget {
                 padding: const EdgeInsets.all(26),
                 decoration: BoxDecoration(color: LL.navy, borderRadius: BorderRadius.circular(18)),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text('Incoming call · ${r['line']}', style: const TextStyle(color: Color(0xFF8FA6C2), fontFamily: LL.mono, fontSize: 11)),
+                  Text(r['join'] != null ? 'A call for you' : 'Incoming call · ${r['line']}', style: const TextStyle(color: Color(0xFF8FA6C2), fontFamily: LL.mono, fontSize: 11)),
                   const SizedBox(height: 14),
                   Container(
                     width: 64,
@@ -185,10 +187,17 @@ class RingOverlay extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   Text('${r['from']}', style: const TextStyle(fontFamily: LL.display, fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white)),
-                  Text('${r['number']}', style: const TextStyle(fontFamily: LL.mono, fontSize: 16, color: Colors.white)),
+                  Text('${r['number']}', textAlign: TextAlign.center, style: TextStyle(fontFamily: r['join'] != null ? null : LL.mono, fontSize: r['join'] != null ? 14 : 16, color: Colors.white)),
                   const SizedBox(height: 6),
-                  Text('Ava answers in ${r['seconds']}s if you don’t', style: const TextStyle(color: LL.navText, fontSize: 12.5)),
+                  Text(r['join'] != null ? 'Answer to take over the call' : 'Ava answers in ${r['seconds']}s if you don’t', style: const TextStyle(color: LL.navText, fontSize: 12.5)),
                   const SizedBox(height: 20),
+                  if (r['join'] != null)
+                    Row(children: [
+                      Expanded(child: Btn('Answer', kind: BtnKind.green, onPressed: () => s.answerIncoming('me'))),
+                      const SizedBox(width: 8),
+                      Expanded(child: Btn('Decline', kind: BtnKind.danger, onPressed: () => s.answerIncoming('decline'))),
+                    ])
+                  else ...[
                   Row(children: [
                     Expanded(child: Btn('Answer here', kind: BtnKind.green, onPressed: () => s.answerIncoming('me'))),
                     const SizedBox(width: 8),
@@ -196,6 +205,7 @@ class RingOverlay extends StatelessWidget {
                   ]),
                   const SizedBox(height: 8),
                   SizedBox(width: double.infinity, child: Btn('Decline', kind: BtnKind.danger, onPressed: () => s.answerIncoming('decline'))),
+                  ],
                 ]),
               ),
             ),
@@ -549,4 +559,92 @@ class _RemoteSettings extends StatelessWidget {
       ),
     ]);
   }
+}
+
+/// On a call passed to this person: talking with the caller through LiveKit.
+class PassedCall extends StatefulWidget {
+  const PassedCall({super.key, required this.join});
+  final Map<String, dynamic> join;
+  @override
+  State<PassedCall> createState() => _PassedCallState();
+}
+
+class _PassedCallState extends State<PassedCall> {
+  lk.Room? room;
+  lk.EventsListener<lk.RoomEvent>? events;
+  String status = 'Connecting…';
+  bool muted = false;
+  final started = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _join();
+  }
+
+  Future<void> _join() async {
+    try {
+      final r = lk.Room(roomOptions: const lk.RoomOptions(defaultAudioCaptureOptions: lk.AudioCaptureOptions(echoCancellation: true, noiseSuppression: true, autoGainControl: true)));
+      room = r;
+      events = r.createListener()
+        ..on<lk.ParticipantDisconnectedEvent>((e) {
+          // The caller hung up (the agent leaving is expected).
+          if (e.participant.identity == 'callee' || e.participant.identity.startsWith('sip')) _end();
+        })
+        ..on<lk.RoomDisconnectedEvent>((_) => _end());
+      await r.connect('${widget.join['url']}', '${widget.join['token']}');
+      await r.localParticipant?.setMicrophoneEnabled(true);
+      if (mounted) setState(() => status = 'On the call');
+    } catch (e) {
+      if (mounted) setState(() => status = 'Couldn’t join the call: $e');
+    }
+  }
+
+  Future<void> _end() async {
+    final r = room;
+    room = null;
+    await events?.dispose();
+    if (r != null) {
+      await r.disconnect();
+      await r.dispose();
+    }
+    if (mounted) context.read<AppState>().leaveJoinedCall();
+  }
+
+  @override
+  void dispose() {
+    _end();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: LL.navy,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(28),
+            child: Column(children: [
+              const Spacer(),
+              const Icon(Icons.call, color: LL.amber, size: 40),
+              const SizedBox(height: 12),
+              Text(status, style: const TextStyle(fontFamily: LL.display, fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white)),
+              const SizedBox(height: 8),
+              Text('Passed by ${widget.join['from']}', style: const TextStyle(color: LL.navText)),
+              if ('${widget.join['brief'] ?? ''}'.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('${widget.join['brief']}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 15)),
+              ],
+              const Spacer(),
+              Row(children: [
+                Expanded(child: Btn(muted ? 'Unmute' : 'Mute', onPressed: () async {
+                  setState(() => muted = !muted);
+                  await room?.localParticipant?.setMicrophoneEnabled(!muted);
+                })),
+                const SizedBox(width: 12),
+                Expanded(child: Btn('Hang up', kind: BtnKind.danger, icon: Icons.call_end, onPressed: _end)),
+              ]),
+            ]),
+          ),
+        ),
+      );
 }

@@ -240,6 +240,20 @@ class Db {
     ALTER TABLE agents ADD COLUMN transfer_when TEXT;
     ALTER TABLE agents ADD COLUMN access TEXT
     ''',
+    // What callers asked for, taken by agents: messages, bookings, orders.
+    '''
+    CREATE TABLE requests(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      name TEXT,
+      phone TEXT,
+      summary TEXT NOT NULL,
+      details TEXT,
+      agent TEXT,
+      status TEXT NOT NULL DEFAULT 'new',
+      created_at INTEGER NOT NULL
+    )
+    ''',
   ];
 
   // ---------- settings ----------

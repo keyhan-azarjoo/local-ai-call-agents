@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 
 import '../data/db.dart';
 import '../services/auth.dart';
+import '../services/abilities.dart';
 import '../services/agent_loop.dart';
 import '../services/apps/apps_manager.dart';
 import '../services/catalog.dart';
@@ -558,13 +559,15 @@ class AppState extends ChangeNotifier {
     ModelTarget? target,
     bool useTools = true,
     AgentAccess? access,
+    Set<String> abilities = const {},
+    String? agentName,
   }) async {
     void check() {
       if (cancelled?.call() ?? false) throw const Cancelled();
     }
 
     // Some models (e.g. the multilingual one) can't use tools well: they answer from documents and data snapshots.
-    final tools = useTools ? await toolsFor(scopes, access: access) : <ToolBinding>[];
+    final tools = useTools ? [...await toolsFor(scopes, access: access), ...Abilities.bindings(abilities)] : <ToolBinding>[];
     messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile, model: target is LocalTarget ? target.model : null, access: access);
     // Find tools by meaning too (typos, other words), using the local embedding model.
     var preferred = <ToolBinding>[];
@@ -586,6 +589,7 @@ class AppState extends ChangeNotifier {
       approve: approve,
       runTool: (b, args) {
         check();
+        if (b.serverId == Abilities.serverId) return Abilities.run(db, b.tool.name, args, agent: agentName);
         return mcp.callCached(b.serverId, b.tool.name, args, readOnly: b.tool.readOnly);
       },
       onText: onText == null && cancelled == null
@@ -715,7 +719,7 @@ class AppState extends ChangeNotifier {
       final cfg = (jsonDecode('${l['config']}') as Map).cast<String, dynamic>();
       if (cfg['inbound'] == true) {
         try {
-          await phone!.ensureInbound(cfg);
+          await phone!.ensureInbound(cfg, lineId: l['id'] as int);
           await voice!.startBridge(Phone.bridgeEnv(cfg));
         } catch (e) {
           await log('Couldn’t set up incoming calls for ${cfg['number']}: $e');
@@ -1122,6 +1126,62 @@ class AppState extends ChangeNotifier {
   /// The agents a call can be passed between: the one answering calls, and those set up for hand-offs.
   Future<List<Map<String, Object?>>> callTeam() async => db.all('agents', where: "enabled = 1 AND handles IN ('incoming', 'handoff', 'human')", orderBy: 'id');
 
+  /// What an agent can do on calls (take messages, book, take orders). The answering agent can
+  /// always take a message.
+  Set<String> abilitiesOf(Map<String, Object?>? agent) {
+    if (agent == null) return const {};
+    try {
+      final l = (jsonDecode('${agent['access'] ?? '{}'}') as Map)['abilities'];
+      if (l is List) return {for (final v in l) '$v'};
+    } catch (_) {}
+    return agent['handles'] == 'incoming' ? {'message'} : const {};
+  }
+
+  static final _confirmed = RegExp(r'\b(confirmed|saved|booked|placed|reserved|passed (it )?on|i.ll (let them know|pass that on|make sure they get))\b', caseSensitive: false);
+
+  /// An agent said an order/booking/message is done without saving it: read it from the call and save it.
+  Future<void> _autoSave(Set<String> abilities, List<ChatMessage> convo, String agentName) async {
+    final last = convo.last.content;
+    if (abilities.isEmpty || !_confirmed.hasMatch(last) || !llmReady) return;
+    final kind = abilities.contains('order') && RegExp(r'order', caseSensitive: false).hasMatch(last)
+        ? 'order'
+        : abilities.contains('booking') && RegExp(r'book|reserv|appointment|table', caseSensitive: false).hasMatch(last)
+        ? 'booking'
+        : abilities.contains('message') ? 'message' : abilities.first;
+    final fields = switch (kind) {
+      'order' => 'name, phone, items (with quantities and prices), total, delivery (address and postcode, or "collection"), notes',
+      'booking' => 'name, phone, when (date and time), service, people (number), notes',
+      _ => 'name, phone, message, urgent (true/false)',
+    };
+    try {
+      final out = StringBuffer();
+      await for (final t in chat([
+        ChatMessage('system', 'From this phone call, extract the confirmed $kind as one JSON object with keys: $fields. Use only what was said; leave unknown keys out. Output only the JSON.'),
+        ChatMessage('user', convo.where((m) => m.role != 'system').map((m) => '${m.role == 'user' ? 'Caller' : agentName}: ${m.content}').join('\n')),
+      ]).timeout(const Duration(seconds: 40))) {
+        out.write(t);
+      }
+      final m = RegExp(r'\{[\s\S]*\}').firstMatch(out.toString());
+      if (m == null) return;
+      final args = (jsonDecode(m.group(0)!) as Map).cast<String, dynamic>();
+      final tool = switch (kind) { 'order' => 'place_order', 'booking' => 'book', _ => 'take_message' };
+      await Abilities.run(db, tool, args, agent: agentName);
+      refresh();
+    } catch (_) {}
+  }
+
+  /// How to use the abilities: say "done" only once it's really saved.
+  String abilityRules(Set<String> abilities) {
+    if (abilities.isEmpty) return '';
+    final names = [
+      if (abilities.contains('order')) 'place_order (orders)',
+      if (abilities.contains('booking')) 'book (bookings)',
+      if (abilities.contains('message')) 'take_message (messages)',
+    ];
+    return ' You can save things for the business with ${names.join(', ')}. When the caller has confirmed, you MUST call the tool; '
+        'never say an order, booking or message is confirmed, booked or passed on until the tool replied "Saved".';
+  }
+
   Future<AgentAccess?> accessOf(Map<String, Object?> agent) async {
     final skillSource = {for (final k in await db.all('skills', where: 'source_id IS NOT NULL')) k['id'] as int: k['source_id'] as int};
     return AgentAccess.parse(agent['access'] as String?, skillSource: skillSource);
@@ -1133,7 +1193,17 @@ class AppState extends ChangeNotifier {
     final team = await callTeam();
     if (team.isEmpty) return null;
     final now = _onCall[room];
+    // Which agent answers: the one linked to the line the call came in on (call flow), else the main one.
+    int? lineAgent;
+    final lm = RegExp(r'^pstn-in-(\d+)-').firstMatch(room);
+    if (lm != null) {
+      final line = (await db.all('lines', where: 'id = ?', args: [int.parse(lm.group(1)!)])).firstOrNull;
+      try {
+        lineAgent = ((jsonDecode('${line?['config'] ?? '{}'}') as Map)['agentId'] as num?)?.toInt();
+      } catch (_) {}
+    }
     final agent = team.where((a) => a['id'] == now?.agentId).firstOrNull ??
+        team.where((a) => a['id'] == lineAgent).firstOrNull ??
         (mode.startsWith('outbound#') ? null : team.firstWhere((a) => a['handles'] == 'incoming', orElse: () => team.first));
     if (agent == null) return null;
     // Who this agent may pass calls to: the links drawn in the call flow (or everyone, if none drawn).
@@ -1169,16 +1239,38 @@ class AppState extends ChangeNotifier {
     final person = (await db.all('agents', where: 'id = ?', args: [p.agentId])).firstOrNull;
     final access = (jsonDecode('${person?['access'] ?? '{}'}') as Map?) ?? {};
     final number = '${access['number'] ?? ''}'.trim();
+    final say = person == null ? '' : 'Hi ${person['name']}, this is ${p.from}. ${p.brief.isEmpty ? 'I have a caller for you.' : 'I have a caller for you: ${p.brief}.'} I’ll connect you now.';
+    // Their LocalAILine app first (on a paired phone), then their phone number.
+    final device = (access['device'] as num?)?.toInt();
+    if (person != null && device != null && host?.live.containsKey(device) == true && voice != null) {
+      final identity = 'person-${person['id']}-${DateTime.now().millisecondsSinceEpoch}';
+      final token = await voice!.token(identity: identity, room: room, name: '${person['name']}');
+      final a = await host!.ring(
+        callId: 'pass-$room',
+        from: 'Call passed by ${p.from}',
+        number: p.brief,
+        line: 'LocalAILine',
+        timeout: const Duration(seconds: 25),
+        onlyDevice: device,
+        join: {'url': voice!.lanLivekitUrl, 'token': token, 'room': room, 'brief': p.brief, 'from': p.from},
+      );
+      if (a.action == 'me') {
+        // Wait until they're actually in the call, so they hear the brief.
+        for (var i = 0; i < 30 && !await phone!.inRoom(room, identity); i++) {
+          await Future.delayed(const Duration(milliseconds: 300));
+        }
+        await log('Passed a call to ${person['name']} in the LocalAILine app');
+        return {'ok': true, 'say': say};
+      }
+      if (number.isEmpty) return {'ok': false, 'name': person['name']};
+    }
     final lines = await db.all('lines', where: "provider = 'twilio'", orderBy: 'id');
-    if (person == null || number.isEmpty || lines.isEmpty) return {'ok': false, 'why': 'no number'};
+    if (person == null || number.isEmpty || lines.isEmpty) return {'ok': false, 'why': 'no number', 'name': person?['name']};
     final cfg = (jsonDecode('${lines.first['config']}') as Map).cast<String, dynamic>();
     try {
       await phone!.call(line: cfg, number: Phone.e164(number, lineNumber: '${cfg['number']}'), room: room, name: '${person['name']}');
       await log('Connected a caller to ${person['name']}');
-      return {
-        'ok': true,
-        'say': 'Hi ${person['name']}, this is ${p.from}. ${p.brief.isEmpty ? 'I have a caller for you.' : 'I have a caller for you: ${p.brief}.'} I’ll connect you now.',
-      };
+      return {'ok': true, 'say': say};
     } catch (e) {
       await log('${person['name']} didn’t answer a passed call: $e');
       return {'ok': false, 'name': person['name']};
@@ -1443,7 +1535,10 @@ class AppState extends ChangeNotifier {
     }
 
     if (path == '/api/voice-config') {
-      final agent = (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
+      // The agent answering this call (by line, in the call flow) greets in its own voice.
+      final callRoom = req.uri.queryParameters['room'] ?? '';
+      final flowAgent = callRoom.isEmpty ? null : (await _callAgent(callRoom, 'caller'))?.agent;
+      final agent = flowAgent ?? (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
       // A call is starting: load the model and its instructions while the greeting plays.
       final qm = req.uri.queryParameters['mode'] ?? '';
       final m = qm == 'owner' || qm.startsWith('outbound#') ? qm : 'caller';
@@ -1506,8 +1601,9 @@ class AppState extends ChangeNotifier {
     final scopes = _voiceScopes(mode);
     var flow = room.isEmpty ? null : await _callAgent(room, mode);
     var access = flow == null ? null : await accessOf(flow.agent);
-    final messages = [ChatMessage('system', '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}'), ...convo];
+    final messages = [ChatMessage('system', '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(abilitiesOf(flow?.agent))}'), ...convo];
     ({String name, String brief})? passTo;
+    var saved = false;
     // A drafted call ("CALL_TASK {…}") is saved for review, never read aloud.
     Future<void> saveTask(String t) async {
       final m = RegExp(r'CALL_TASK\s*(\{.*\})').firstMatch(t);
@@ -1621,6 +1717,11 @@ class AppState extends ChangeNotifier {
         cancelled: () => gone,
         scopes: scopes,
         access: access,
+        abilities: abilitiesOf(flow?.agent),
+        agentName: '${flow?.agent['name'] ?? ''}',
+        onEvent: (e) {
+          if (e.binding.serverId == Abilities.serverId && e.ok) saved = true;
+        },
         approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later
         onToolStart: (_) => fill(),
         onText: (t) {
@@ -1648,6 +1749,10 @@ class AppState extends ChangeNotifier {
         },
       );
       await saveTask(full);
+      // Said it's done but didn't save it (small models do that): save it from the conversation.
+      if (!saved && flow != null && passTo == null) {
+        unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', full)], '${flow.agent['name']}'));
+      }
       // The call goes to a teammate: they pick up straight away, in their own voice.
       final target = passTo == null ? null : (await callTeam()).where((a) => '${a['name']}'.toLowerCase() == passTo!.name.toLowerCase()).firstOrNull;
       if (target != null && target['handles'] == 'human' && flow != null && !gone) {
@@ -1664,13 +1769,15 @@ class AppState extends ChangeNotifier {
         var said = '';
         await agentReply(
           [
-            ChatMessage('system', '${await _voiceSystem(mode, lang, flow!.agent)}${flow.brief}${flow.team}'),
+            ChatMessage('system', '${await _voiceSystem(mode, lang, flow!.agent)}${flow.brief}${flow.team}${abilityRules(abilitiesOf(flow.agent))}'),
             ...convo,
             ChatMessage('assistant', spokenText(full.split('[transfer').first).trim()),
             ChatMessage('user', '(You have just taken over the call. Greet the caller in one short sentence as ${target['name']}, show you know what they need from the brief, and carry on.)'),
           ],
           scopes: scopes,
           access: access,
+          abilities: abilitiesOf(flow.agent),
+          agentName: '${flow.agent['name']}',
           cancelled: () => gone,
           approve: (_, _) async => false,
           onText: (t) {
@@ -1833,7 +1940,17 @@ class AppState extends ChangeNotifier {
   void answerIncoming(String action) {
     final id = incoming?['callId'] as String?;
     if (id != null) remote?.answer(id, action);
+    // A call passed to this person: join it here.
+    if (action == 'me' && incoming?['join'] is Map) joinedCall = (incoming!['join'] as Map).cast<String, dynamic>();
     incoming = null;
+    notifyListeners();
+  }
+
+  /// A call this device joined (passed to the person here by an agent).
+  Map<String, dynamic>? joinedCall;
+
+  void leaveJoinedCall() {
+    joinedCall = null;
     notifyListeners();
   }
 

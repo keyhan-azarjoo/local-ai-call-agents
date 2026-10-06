@@ -215,6 +215,8 @@ class _CallsPageState extends State<CallsPage> {
   @override
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const PageHead('Calls', description: 'Every call is kept on this computer only.'),
+        const RequestsSection(),
+        const SizedBox(height: 16),
         Segmented(
           value: filter,
           options: const {'all': 'All', 'incoming': 'Incoming', 'outgoing': 'Made by AI', 'test': 'Tests'},
@@ -918,5 +920,37 @@ class SettingsPage extends StatelessWidget {
         ),
       ]),
     ]);
+  }
+}
+
+/// What callers asked for, saved by agents: messages, bookings and orders.
+class RequestsSection extends StatelessWidget {
+  const RequestsSection({super.key});
+  @override
+  Widget build(BuildContext context) {
+    final s = context.watch<AppState>();
+    return Rows('requests', orderBy: 'id DESC', builder: (context, rows) {
+      final open = rows.where((r) => r['status'] == 'new').toList();
+      if (rows.isEmpty) return const SizedBox.shrink();
+      return Section(
+        title: 'Messages, bookings and orders${open.isEmpty ? '' : ' · ${open.length} new'}',
+        children: [
+          for (final r in rows.take(30))
+            Tile(
+              last: r == rows.take(30).last,
+              leading: LogoBox(child: Icon(switch (r['kind']) { 'booking' => Icons.event_available, 'order' => Icons.receipt_long, _ => Icons.sticky_note_2_outlined })),
+              title: Text('${r['summary']}', maxLines: 2, overflow: TextOverflow.ellipsis),
+              subtitle: Muted(
+                  '${switch (r['kind']) { 'booking' => 'Booking', 'order' => 'Order', _ => 'Message' }} · ${r['name'] ?? 'Caller'}${'${r['phone'] ?? ''}'.isEmpty ? '' : ' · ${r['phone']}'} · taken by ${r['agent'] ?? 'Ava'} · ${ago(r['created_at'] as int)}'),
+              trailing: r['status'] == 'new'
+                  ? Btn('Mark done', small: true, onPressed: () async {
+                      await s.db.update('requests', r['id'] as int, {'status': 'done'});
+                      s.refresh();
+                    })
+                  : const Pill('Done', tone: Tone.green),
+            ),
+        ],
+      );
+    });
   }
 }

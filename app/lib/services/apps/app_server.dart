@@ -392,8 +392,8 @@ class AppServer {
       'yesno' => {'type': 'boolean', 'description': f.label},
       'choice' => {'type': 'string', 'enum': f.options, 'description': f.label},
       'date' => {'type': 'string', 'description': '${f.label} (YYYY-MM-DD)'},
-      'time' => {'type': 'string', 'description': '${f.label} (HH:MM)'},
-      'datetime' => {'type': 'string', 'description': '${f.label} (YYYY-MM-DD HH:MM)'},
+      'time' => {'type': 'string', 'description': '${f.label} (HH:MM, 24-hour: 9am = 09:00, 7pm = 19:00, 9pm = 21:00)'},
+      'datetime' => {'type': 'string', 'description': '${f.label} (YYYY-MM-DD HH:MM, 24-hour)'},
       'link' => {'type': 'string', 'description': '${f.label}: the name or id of one of the $target'},
       'links' when f.qty => {
           'type': 'array',

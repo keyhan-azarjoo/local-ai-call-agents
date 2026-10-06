@@ -1348,8 +1348,18 @@ class AppState extends ChangeNotifier {
     if (convo.length < 2 || convo.last.role != 'user' || convo[convo.length - 2].role != 'assistant' || !llmReady) return null;
     final yes = convo.last.content.trim();
     if (!_yes.hasMatch(yes) || yes.length > 120 || RegExp(r"\b(no|not|but|change|instead|wait|actually|cancel)\b", caseSensitive: false).hasMatch(yes)) return null;
-    if (!_proposal.hasMatch(convo[convo.length - 2].content) || !_askedForNew(convo)) return null;
+    if (!_proposal.hasMatch(convo[convo.length - 2].content)) return null;
     final tools = await builtAppTools(scopes);
+    // "Shall I cancel it?" — "Yes": cancel their own booking (checked against the number they call from).
+    if (RegExp(r'\bcancel', caseSensitive: false).hasMatch(convo[convo.length - 2].content) && callerNumber != null) {
+      final said = [for (final m in convo.reversed.take(6)) m.content].join(' ');
+      final cancels = tools.where((t) => t.tool.name.startsWith('cancel_my_')).toList();
+      final cancel = cancels.where((t) => RegExp(r'order', caseSensitive: false).hasMatch(t.tool.name) == RegExp(r'\border', caseSensitive: false).hasMatch(said)).firstOrNull ?? cancels.firstOrNull;
+      if (cancel == null) return null;
+      final r = await mcp.call(cancel.serverId, cancel.tool.name, {'phone': callerNumber});
+      return (ok: !r.isError, text: r.text);
+    }
+    if (!_askedForNew(convo)) return null;
     final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
     final tool = RegExp(r'\border', caseSensitive: false).hasMatch(said) && !RegExp(r'\b(table for|book a table|reservation)\b', caseSensitive: false).hasMatch(said)
         ? _appToolFor(tools, 'order') ?? _appToolFor(tools, 'booking')

@@ -303,6 +303,16 @@ void main() {
     expect(bestMatch('cut and beard', barber), 3);
   });
 
+  test('out of stock can\'t be ordered, on the website or by phone', () async {
+    final body = {'name': 'Nina Park', 'phone': '07700 900800', 'items': [{'item': 'Eco washing-up liquid', 'qty': 1}], 'pickup': '${ymd(DateTime.now().add(const Duration(days: 1)))} 10:00'};
+    final web = await req('shop', 'POST', '/api/t/orders', body: body);
+    expect(web.code, 400);
+    expect('${(web.body as Map)['error']}', contains('out of stock'));
+    final phone = await tool('shop', 'add_orders', body);
+    expect(phone.error, true);
+    expect((await req('shop', 'POST', '/api/t/orders', body: {...body, 'items': [{'item': 'Sourdough loaf', 'qty': 1}]})).code, 200);
+  });
+
   test('a made-up name is refused on the phone', () async {
     final r = await tool('restaurant', 'add_reservations', {'name': 'Guest', 'phone': '07700 700001', 'date': ymd(DateTime.now().add(const Duration(days: 25))), 'time': '7pm', 'guests': 2});
     expect(r.error, true);

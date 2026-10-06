@@ -166,6 +166,7 @@ class AppData {
     final t = _table(table);
     if (t.single) return setSingle(table, values, manager: manager);
     final clean = await _clean(t, values, manager: manager, partial: false);
+    if (!manager) await _inStock(t, clean);
     // The same booking or order again within half an hour (asked twice, saved twice): keep one.
     final same = await _recentSame(t, clean);
     if (same != null) {
@@ -187,6 +188,21 @@ class AppData {
     if (shape == null) await _holdStay(t, clean);
     final now = DateTime.now().millisecondsSinceEpoch;
     return db.raw.insert('app_rows', {'app_id': appId, 'tbl': t.id, 'data': jsonEncode(clean), 'created_at': now, 'updated_at': now});
+  }
+
+  /// Customers can't order what is marked out of stock (or book a home no longer available).
+  Future<void> _inStock(TableSpec t, Map<String, Object?> clean) async {
+    for (final f in t.fields.where((f) => (f.type == 'link' || f.type == 'links') && clean[f.id] != null)) {
+      final target = spec.table(f.link!)!;
+      final flag = target.fields.where((x) => x.type == 'yesno' && RegExp(r'stock|available|availab', caseSensitive: false).hasMatch('${x.id} ${x.label}')).firstOrNull;
+      if (flag == null) continue;
+      final ids = [for (final x in (clean[f.id] is List ? clean[f.id] as List : [clean[f.id]])) x is Map ? x['id'] : x];
+      for (final r in await list(target.id, manager: true)) {
+        if (ids.contains(r['id']) && r[flag.id] == false) {
+          throw AppDataError('${r[target.labelField]} is ${RegExp('stock').hasMatch(flag.id) ? 'out of stock' : 'not available'} right now: tell the caller, and offer something else.');
+        }
+      }
+    }
   }
 
   Future<int?> _recentSame(TableSpec t, Map<String, Object?> clean) async {

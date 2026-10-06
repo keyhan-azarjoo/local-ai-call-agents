@@ -249,6 +249,8 @@ class Harness {
       if (said == null) break;
       ended = said.contains('[END]');
       said = said.replaceAll('[END]', '').trim();
+      // Asked something but only said goodbye: a real caller would answer.
+      if (said.isEmpty && extra > 0) said = 'Yes, please.';
       if (said.isEmpty) break;
       turns.add({'role': 'user', 'content': said});
       if (env['SCEN_DEBUG'] != null) print('  CALLER: $said');
@@ -529,7 +531,8 @@ class Harness {
         final a = _digits('$got'), b = _digits('$w');
         // Never said their number: the number they called from is right.
         final said = (numbers['SAID'] ?? '').contains(b.length >= 9 ? b.substring(b.length - 9) : b);
-        ok = same(a, b) || (!said && same(a, _digits(numbers['ID'] ?? '')));
+        // (The simulated caller sometimes misreads its own number: what they said is what counts.)
+        ok = same(a, b) || (!said && same(a, _digits(numbers['ID'] ?? ''))) || (a.length >= 9 && (numbers['SAID'] ?? '').contains(a.substring(a.length - 9)));
       } else if (f.type == 'link') {
         final nm = got is int ? (await names(app, f.link!))[got] ?? '#$got' : '$got';
         shown = nm;

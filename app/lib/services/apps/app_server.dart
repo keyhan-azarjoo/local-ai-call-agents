@@ -130,6 +130,14 @@ class AppServer {
       if (!manager) return _json(req, 403, {'error': 'Only the manager can do that.'});
       return _saveSite(req);
     }
+    if (rest.startsWith('_plan/')) {
+      // Which tables (stylists, rooms…) are booked when on a day. Customers see no names.
+      final t = spec.table(rest.substring(6));
+      final b = t == null ? null : BookingShape.of(spec, t);
+      if (b == null || (!manager && !t!.access.add)) return _json(req, 404, {'error': 'Not found'});
+      final date = req.uri.queryParameters['date'] ?? DateTime.now().toIso8601String().substring(0, 10);
+      return _json(req, 200, await data.dayPlan(b, date, manager: manager));
+    }
     final parts = rest.split('/');
     if (parts.length < 2 || parts.first != 't') return _json(req, 404, {'error': 'Not found'});
     final t = spec.table(parts[1]);
@@ -320,6 +328,15 @@ class AppServer {
               {'search': {'type': 'string', 'description': 'Words to look for (optional)'}}, const [], readOnly: true));
         }
       }
+      final shape = BookingShape.of(spec, t);
+      if (shape != null && !manager && t.access.add) {
+        final what = shape.resources.title.toLowerCase();
+        out.add(AppTool('check_${t.id}', 'Shows which $what of $app are free at a date and time (and which are booked). Use it before booking.', {
+          'date': {'type': 'string', 'description': 'YYYY-MM-DD'},
+          'time': {'type': 'string', 'description': 'HH:MM'},
+          if (shape.guestsField != null) 'guests': {'type': 'integer', 'description': 'How many people'},
+        }, const ['date', 'time'], readOnly: true));
+      }
       if (add && !t.single) {
         out.add(AppTool('add_${t.id}', manager ? 'Adds a record to the $what of $app.$about' : 'Adds a new record to the $what of $app (e.g. a customer order or booking).$about',
             {for (final f in fields) f.id: _schema(f)}, [for (final f in fields) if (f.required) f.id], auto: !manager));
@@ -367,6 +384,20 @@ class AppServer {
     final verb = name.substring(0, name.indexOf('_'));
     final t = spec.table(name.substring(verb.length + 1))!;
     switch (verb) {
+      case 'check':
+        final b = BookingShape.of(spec, t)!;
+        final date = '${args['date'] ?? ''}'.trim(), time = '${args['time'] ?? ''}'.trim();
+        if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date)) throw AppDataError('Give the date as YYYY-MM-DD (today is ${DateTime.now().toIso8601String().substring(0, 10)}).');
+        final guests = (args['guests'] as num?)?.toInt() ?? int.tryParse('${args['guests'] ?? ''}') ?? 0;
+        final a = await data.availability(b, date, time, guests: guests);
+        String show(Map<String, Object?> r) => '${r[b.resources.labelField] ?? r['id']}${b.seatsField != null ? ' (${r[b.seatsField!.id]} seats)' : ''}';
+        final what = b.resources.title.toLowerCase();
+        return a.free.isEmpty
+            ? 'Nothing is free at $time on $date${guests > 0 ? ' for $guests' : ''}. Offer another time.'
+            : 'Free $what at $time on $date${guests > 0 ? ' for $guests' : ''}: ${a.free.map(show).join(', ')}. '
+                '${a.taken.isEmpty ? '' : 'Booked: ${a.taken.map(show).join(', ')}. '}A booking lasts ${data.bookingMinutes} minutes. '
+                'This only checked — NOTHING IS BOOKED YET. Once you have the caller\'s name and phone and they agree, call add_${t.id} to book '
+                '(you may leave the ${b.resourceField.label.toLowerCase()} out: the best free one is given).';
       case 'list':
         final rows = await data.list(t.id, search: args['search'] as String?, manager: manager);
         return data.describe(t.id, rows.take(100).toList());

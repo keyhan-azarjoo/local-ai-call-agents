@@ -415,6 +415,76 @@ class AppState extends ChangeNotifier {
     return out;
   }
 
+  /// Customers' tools of the apps built in LocalAILine (bookings, orders, menus…).
+  Future<List<ToolBinding>> builtAppTools(Set<String> scopes) async => [
+        for (final srv in await mcp.servers())
+          if (srv.enabled && srv.secret['app'] != null && srv.secret['role'] == 'customers' && scopes.contains(srv.scope))
+            for (final t in srv.tools) ToolBinding(serverId: srv.id, serverName: srv.name, tool: t, fnName: ToolBinding.safeName(srv.name, t.name)),
+      ];
+
+  static final _bookingTool = RegExp(r'^add_.*(reserv|book|appoint|viewing|signup|enrol|ticket|visit|class)', caseSensitive: false);
+  static final _orderTool = RegExp(r'^add_.*order', caseSensitive: false);
+
+  /// The app's tool that saves this kind of thing ('booking' / 'order'), if it has one.
+  static ToolBinding? _appToolFor(List<ToolBinding> appTools, String kind) =>
+      appTools.where((t) => (kind == 'booking' ? _bookingTool : _orderTool).hasMatch(t.tool.name)).firstOrNull;
+
+  static bool _appCovers(List<ToolBinding> appTools, String ability) =>
+      (ability == 'booking' || ability == 'order') && _appToolFor(appTools, ability) != null;
+
+  /// For calls: which business this is and how its app saves bookings and orders.
+  Future<String> builtAppRules(Set<String> abilities, Set<String> scopes) async {
+    if (!abilities.any(const {'booking', 'order'}.contains)) return '';
+    return appRulesText(await builtAppTools(scopes));
+  }
+
+  /// The AI said a booking/order is done but didn't save it (small models do that):
+  /// save it now with the app's own tool. null = nothing to do; else whether it worked and what the app said.
+  Future<({bool ok, String text})?> commitClaimed(List<ChatMessage> convo, String reply, Set<String> scopes) async {
+    if (!_confirmed.hasMatch(reply) || !llmReady) return null;
+    final tools = await builtAppTools(scopes);
+    final said = [for (final m in convo.reversed.take(6)) m.content, reply].join(' ');
+    final tool = RegExp(r'order', caseSensitive: false).hasMatch(said)
+        ? _appToolFor(tools, 'order') ?? _appToolFor(tools, 'booking')
+        : _appToolFor(tools, 'booking') ?? _appToolFor(tools, 'order');
+    if (tool == null) return null;
+    return commitWith(toolLoop, modelTarget, tool, [...convo, ChatMessage('assistant', reply)], (args) => mcp.call(tool.serverId, tool.tool.name, args));
+  }
+
+  /// Has the model call [tool] once with what was agreed in [convo].
+  static Future<({bool ok, String text})?> commitWith(ToolLoop loop, ModelTarget target, ToolBinding tool, List<ChatMessage> convo,
+      Future<({String text, bool isError})> Function(Map<String, dynamic>) run) async {
+    ({String text, bool isError})? result;
+    final today = DateTime.now();
+    await loop.run(
+      target: target,
+      builtins: false,
+      messages: [
+        ChatMessage('system', 'You save what was agreed on a phone call into ${tool.serverName}. Call ${tool.fnName} exactly once with the details from the call. '
+            'Dates as YYYY-MM-DD (today is ${today.toIso8601String().substring(0, 10)}), times as HH:MM (7pm = 19:00). Then reply with one short sentence.'),
+        ChatMessage('user', '${convo.where((m) => m.role == 'user' || m.role == 'assistant').map((m) => '${m.role == 'user' ? 'Caller' : 'Assistant'}: ${m.content}').join('\n')}\n\nSave it now.'),
+      ],
+      tools: [tool],
+      approve: (_, _) async => true,
+      runTool: (b, args) async => result ??= await run(args),
+    );
+    return result == null ? null : (ok: !result!.isError, text: result!.text);
+  }
+
+  /// See [builtAppRules].
+  static String appRulesText(List<ToolBinding> tools) {
+    if (tools.isEmpty) return '';
+    final name = tools.first.serverName;
+    final book = _appToolFor(tools, 'booking'), order = _appToolFor(tools, 'order');
+    final check = tools.where((t) => t.tool.name.startsWith('check_')).firstOrNull;
+    return ' You answer for $name. Its system is where bookings and orders are kept'
+        '${check == null ? '' : '; before offering a time, call ${check.fnName} to see what is free (that only looks, it does not book)'}'
+        '${book == null ? '' : '; save a booking with ${book.fnName}'}${order == null ? '' : '; save an order with ${order.fnName}'}. '
+        'Collect the details, read them back ONCE, and as soon as the caller says yes, call the tool in that same reply. '
+        'Only say it is booked or placed after the tool answered "Done"; if it answers with a problem (e.g. that time is taken), tell the caller and offer what is free. '
+        'Never repeat a confirmation you already gave: if they ask again, just say yes, it is booked, in a few words.';
+  }
+
   /// Adds what the AI should know for this turn: turned-on skills, and the most
   /// relevant passages from your documents (searched locally, in milliseconds).
   static final _nonLatin = RegExp(r'[\u0590-\u08FF\u0400-\u04FF\u0900-\u0DFF\u0E00-\u0E7F\u3040-\u30FF\u4E00-\u9FFF\uAC00-\uD7AF]');
@@ -567,7 +637,18 @@ class AppState extends ChangeNotifier {
     }
 
     // Some models (e.g. the multilingual one) can't use tools well: they answer from documents and data snapshots.
-    final tools = useTools ? [...await toolsFor(scopes, access: access), ...Abilities.bindings(abilities)] : <ToolBinding>[];
+    // An app built here (e.g. the restaurant's website) is where bookings and orders belong:
+    // agents that take them use its tools, even if their own tool list leaves it out.
+    final appTools = useTools && abilities.any(const {'booking', 'order'}.contains) ? await builtAppTools(scopes) : <ToolBinding>[];
+    final own = useTools ? await toolsFor(scopes, access: access) : <ToolBinding>[];
+    final tools = useTools
+        ? [
+            ...own,
+            for (final t in appTools)
+              if (!own.any((o) => o.fnName == t.fnName)) t,
+            ...Abilities.bindings(abilities.where((a) => !_appCovers(appTools, a))),
+          ]
+        : <ToolBinding>[];
     messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile, model: target is LocalTarget ? target.model : null, access: access);
     // Find tools by meaning too (typos, other words), using the local embedding model.
     var preferred = <ToolBinding>[];
@@ -1153,6 +1234,28 @@ class AppState extends ChangeNotifier {
       'booking' => 'name, phone, when (date and time), service, people (number), notes',
       _ => 'name, phone, message, urgent (true/false)',
     };
+    // The business's own app takes it if it can (it shows on its website and manager page).
+    final appTool = kind == 'message' ? null : _appToolFor(await builtAppTools({'all'}), kind);
+    if (appTool != null) {
+      try {
+        final props = (appTool.tool.inputSchema['properties'] as Map?) ?? {};
+        final out = StringBuffer();
+        await for (final t in chat([
+          ChatMessage('system', 'From this phone call, extract the confirmed $kind as one JSON object with these keys: '
+              '${props.entries.map((e) => '${e.key} (${(e.value as Map)['description'] ?? (e.value as Map)['type']})').join(', ')}. '
+              'Dates as YYYY-MM-DD (today is ${DateTime.now().toIso8601String().substring(0, 10)}), times as HH:MM. Use only what was said; leave unknown keys out. Output only the JSON.'),
+          ChatMessage('user', convo.where((m) => m.role != 'system').map((m) => '${m.role == 'user' ? 'Caller' : agentName}: ${m.content}').join('\n')),
+        ], json: true).timeout(const Duration(seconds: 40))) {
+          out.write(t);
+        }
+        final m = RegExp(r'\{[\s\S]*\}').firstMatch(out.toString());
+        if (m != null) {
+          final r = await mcp.call(appTool.serverId, appTool.tool.name, (jsonDecode(m.group(0)!) as Map).cast<String, dynamic>());
+          await log('${r.isError ? 'Could not save' : 'Saved'} a $kind from a call into ${appTool.serverName}${r.isError ? ': ${r.text}' : ''}');
+          if (!r.isError) return refresh();
+        }
+      } catch (_) {}
+    }
     try {
       final out = StringBuffer();
       await for (final t in chat([
@@ -1293,7 +1396,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  static final _transfer = RegExp(r'\[transfer:\s*([^|\]]+?)\s*(?:\|([^\]]*))?\]', caseSensitive: false);
+  // Small models sometimes leave the closing bracket off: the tag then runs to the end of the reply.
+  static final _transfer = RegExp(r'\[transfer:\s*([^|\]\n]+?)\s*(?:\|([^\]]*))?(?:\]|$)', caseSensitive: false);
 
   /// The call task behind an outbound call's mode ("outbound#12").
   Future<Map<String, Object?>?> _taskOf(String mode) async {
@@ -1601,7 +1705,11 @@ class AppState extends ChangeNotifier {
     final scopes = _voiceScopes(mode);
     var flow = room.isEmpty ? null : await _callAgent(room, mode);
     var access = flow == null ? null : await accessOf(flow.agent);
-    final messages = [ChatMessage('system', '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(abilitiesOf(flow?.agent))}'), ...convo];
+    final messages = [
+      ChatMessage('system',
+          '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(abilitiesOf(flow?.agent))}${await builtAppRules(abilitiesOf(flow?.agent), scopes)}'),
+      ...convo,
+    ];
     ({String name, String brief})? passTo;
     var saved = false;
     // A drafted call ("CALL_TASK {…}") is saved for review, never read aloud.
@@ -1720,7 +1828,7 @@ class AppState extends ChangeNotifier {
         abilities: abilitiesOf(flow?.agent),
         agentName: '${flow?.agent['name'] ?? ''}',
         onEvent: (e) {
-          if (e.binding.serverId == Abilities.serverId && e.ok) saved = true;
+          if (e.ok && (e.binding.serverId == Abilities.serverId || e.binding.tool.name.startsWith('add_'))) saved = true;
         },
         approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later
         onToolStart: (_) => fill(),
@@ -1749,9 +1857,19 @@ class AppState extends ChangeNotifier {
         },
       );
       await saveTask(full);
-      // Said it's done but didn't save it (small models do that): save it from the conversation.
+      // Said it's done but didn't save it (small models do that): save it now, into the business's
+      // app if it has one; if that fails (e.g. the table is taken), say so straight away.
       if (!saved && flow != null && passTo == null) {
-        unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', full)], '${flow.agent['name']}'));
+        final c = gone ? null : await commitClaimed(convo, full, scopes).catchError((_) => null);
+        if (c == null) {
+          unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', full)], '${flow.agent['name']}'));
+        } else if (!c.ok && !gone) {
+          final fix = ' Sorry, I have to correct that: ${spokenText(c.text.split('\n').first)}';
+          chunk({'content': fix});
+          sent += fix;
+        } else {
+          await log('Saved what ${flow.agent['name']} agreed on a call');
+        }
       }
       // The call goes to a teammate: they pick up straight away, in their own voice.
       final target = passTo == null ? null : (await callTeam()).where((a) => '${a['name']}'.toLowerCase() == passTo!.name.toLowerCase()).firstOrNull;
@@ -1769,7 +1887,7 @@ class AppState extends ChangeNotifier {
         var said = '';
         await agentReply(
           [
-            ChatMessage('system', '${await _voiceSystem(mode, lang, flow!.agent)}${flow.brief}${flow.team}${abilityRules(abilitiesOf(flow.agent))}'),
+            ChatMessage('system', '${await _voiceSystem(mode, lang, flow!.agent)}${flow.brief}${flow.team}${abilityRules(abilitiesOf(flow.agent))}${await builtAppRules(abilitiesOf(flow.agent), scopes)}'),
             ...convo,
             ChatMessage('assistant', spokenText(full.split('[transfer').first).trim()),
             ChatMessage('user', '(You have just taken over the call. Greet the caller in one short sentence as ${target['name']}, show you know what they need from the brief, and carry on.)'),

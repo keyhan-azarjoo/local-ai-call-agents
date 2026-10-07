@@ -13002,5 +13002,5614 @@
   },
   "max_turns": 16,
   "n": 3336
+ },
+ {
+  "id": "challenge-restaurant-long_call-3337",
+  "app": "restaurant",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ravi Walsh",
+   "first": "Ravi",
+   "says_number": "07719 666 146"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: What is in the seafood linguine? | What desserts do you have? | Is the Diavola spicy? | What time do you close? | How much is the Tartufo pizza?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Book a table for 6 at half past six in the evening, this Friday.",
+  "facts": [
+   "Your name: Ravi Walsh",
+   "Day: this Friday",
+   "Time: half past six in the evening",
+   "People: 6",
+   "Your phone number: 07719 666 146"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "reservations",
+   "new": 1,
+   "fields": {
+    "name": "Ravi",
+    "date": {
+     "weekday": 5
+    },
+    "time": "18:30",
+    "guests": 6,
+    "phone": "07719 666 146"
+   },
+   "reply_mentions": [
+    "mussel|clam|prawn",
+    "tiramis|sorbet",
+    "spicy|chilli|hot|yes"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3337
+ },
+ {
+  "id": "challenge-restaurant-long_call-3338",
+  "app": "restaurant",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Aisha Silva",
+   "first": "Aisha",
+   "says_number": "07767 209 773"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the Tartufo pizza? | How far do you deliver? | Which pasta is vegetarian? | How much is an Aperol spritz? | What is in the seafood linguine?. Ask one follow-up about one of the answers, and chat briefly about how busy they must be. Only then: Book a table for 6 at six pm, Sunday.",
+  "facts": [
+   "Your name: Aisha Silva",
+   "Day: Sunday",
+   "Time: six pm",
+   "People: 6",
+   "Your phone number: 07767 209 773"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "reservations",
+   "new": 1,
+   "fields": {
+    "name": "Aisha",
+    "date": {
+     "weekday": 7
+    },
+    "time": "18:00",
+    "guests": 6,
+    "phone": "07767 209 773"
+   },
+   "reply_mentions": [
+    "15",
+    "3 miles|three miles|45",
+    "cacio|pepe"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3338
+ },
+ {
+  "id": "challenge-restaurant-long_call-3339",
+  "app": "restaurant",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Dmitri Clarke",
+   "first": "Dmitri",
+   "says_number": "07788 400 449"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is an Aperol spritz? | What is in the seafood linguine? | What time do you close? | What desserts do you have? | How far do you deliver?. Ask one follow-up about one of the answers, and chat briefly about a holiday you just had. Only then: Book a table for 2 at 8 o'clock in the evening, next Thursday.",
+  "facts": [
+   "Your name: Dmitri Clarke",
+   "Day: next Thursday",
+   "Time: 8 o'clock in the evening",
+   "People: 2",
+   "Your phone number: 07788 400 449"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "reservations",
+   "new": 1,
+   "fields": {
+    "name": "Dmitri",
+    "date": {
+     "weekday": 4
+    },
+    "time": "20:00",
+    "guests": 2,
+    "phone": "07788 400 449"
+   },
+   "reply_mentions": [
+    "9",
+    "mussel|clam|prawn",
+    "22:30|10:30|half past ten"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3339
+ },
+ {
+  "id": "challenge-restaurant-long_call-3340",
+  "app": "restaurant",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Dmitri Murphy",
+   "first": "Dmitri",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Is the Diavola spicy? | What time do you close? | How far do you deliver? | How much is an Aperol spritz? | What is in the seafood linguine?. Ask one follow-up about one of the answers, and chat briefly about a holiday you just had. Only then: Order food for collection: 2 Tartufo, 1 Limoncello sorbet, 2 the burrata, 1 Margherita.",
+  "facts": [
+   "Your name: Dmitri Murphy",
+   "You want: 2 Tartufo, 1 Limoncello sorbet, 2 the burrata, 1 Margherita",
+   "You will COLLECT it yourself (takeaway, not delivery)",
+   "When: at half past six",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Dmitri",
+    "type": "Collection",
+    "items": [
+     {
+      "item": "Tartufo",
+      "qty": 2
+     },
+     {
+      "item": "Limoncello sorbet",
+      "qty": 1
+     },
+     {
+      "item": "Burrata & heritage tomatoes",
+      "qty": 2
+     },
+     {
+      "item": "Margherita",
+      "qty": 1
+     }
+    ],
+    "phone": "$CALLER"
+   },
+   "total": 65.5,
+   "reply_mentions": [
+    "spicy|chilli|hot|yes",
+    "22:30|10:30|half past ten",
+    "3 miles|three miles|45"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3340
+ },
+ {
+  "id": "challenge-restaurant-long_call-3341",
+  "app": "restaurant",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Freya Moreau",
+   "first": "Freya",
+   "says_number": "07725 901 672"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is an Aperol spritz? | What is in the seafood linguine? | What desserts do you have? | Which pasta is vegetarian? | Is the Diavola spicy?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Book a table for 2 at ten past seven pm, Saturday.",
+  "facts": [
+   "Your name: Freya Moreau",
+   "Day: Saturday",
+   "Time: ten past seven pm",
+   "People: 2",
+   "Your phone number: 07725 901 672"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "reservations",
+   "new": 1,
+   "fields": {
+    "name": "Freya",
+    "date": {
+     "weekday": 6
+    },
+    "time": "19:10",
+    "guests": 2,
+    "phone": "07725 901 672"
+   },
+   "reply_mentions": [
+    "9",
+    "mussel|clam|prawn",
+    "tiramis|sorbet"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3341
+ },
+ {
+  "id": "challenge-restaurant-lang_book-3342",
+  "app": "restaurant",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Jakub Petrova",
+   "first": "Jakub",
+   "says_number": "07715 494 832"
+  },
+  "goal": "Book a table for 3 at quarter to eight pm, Sunday.",
+  "facts": [
+   "Your name: Jakub Petrova",
+   "Day: Sunday",
+   "Time: quarter to eight pm",
+   "People: 3",
+   "Your phone number: 07715 494 832",
+   "Special request: wheelchair access"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "reservations",
+   "new": 1,
+   "fields": {
+    "name": "Jakub",
+    "date": {
+     "weekday": 7
+    },
+    "time": "19:45",
+    "guests": 3,
+    "phone": "07715 494 832"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3342
+ },
+ {
+  "id": "challenge-restaurant-lang_info-3343",
+  "app": "restaurant",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Yusuf Evans",
+   "first": "Yusuf",
+   "says_number": null
+  },
+  "goal": "How much is the Tartufo pizza? You do not want to book or order.",
+  "facts": [
+   "Your name: Yusuf Evans"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "15"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3343
+ },
+ {
+  "id": "challenge-restaurant-lang_book-3344",
+  "app": "restaurant",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Maya Ali",
+   "first": "Maya",
+   "says_number": "07724 241 383"
+  },
+  "goal": "Order food for collection: 2 Fritto misto, 3 Margherita, 2 cacio e pepe.",
+  "facts": [
+   "Your name: Maya Ali",
+   "You want: 2 Fritto misto, 3 Margherita, 2 cacio e pepe",
+   "You will COLLECT it yourself (takeaway, not delivery)",
+   "When: as soon as possible",
+   "Your phone number: 07724 241 383"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Maya",
+    "type": "Collection",
+    "items": [
+     {
+      "item": "Fritto misto",
+      "qty": 2
+     },
+     {
+      "item": "Margherita",
+      "qty": 3
+     },
+     {
+      "item": "Cacio e pepe",
+      "qty": 2
+     }
+    ],
+    "phone": "07724 241 383"
+   },
+   "total": 78.5
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3344
+ },
+ {
+  "id": "challenge-restaurant-lang_info-3345",
+  "app": "restaurant",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Hugo Walsh",
+   "first": "Hugo",
+   "says_number": null
+  },
+  "goal": "How much is the Tartufo pizza? You do not want to book or order.",
+  "facts": [
+   "Your name: Hugo Walsh"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "15"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3345
+ },
+ {
+  "id": "challenge-restaurant-lang_book-3346",
+  "app": "restaurant",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Joel Patel",
+   "first": "Joel",
+   "says_number": null
+  },
+  "goal": "Book a table for 4 at half past six in the evening, this Wednesday.",
+  "facts": [
+   "Your name: Joel Patel",
+   "Day: this Wednesday",
+   "Time: half past six in the evening",
+   "People: 4",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Special request: wheelchair access"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "reservations",
+   "new": 1,
+   "fields": {
+    "name": "Joel",
+    "date": {
+     "weekday": 3
+    },
+    "time": "18:30",
+    "guests": 4,
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3346
+ },
+ {
+  "id": "challenge-restaurant-lang_info-3347",
+  "app": "restaurant",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Tariq Garcia",
+   "first": "Tariq",
+   "says_number": "07784 905 373"
+  },
+  "goal": "How far do you deliver? You do not want to book or order.",
+  "facts": [
+   "Your name: Tariq Garcia"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "3 miles|three miles|45"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3347
+ },
+ {
+  "id": "challenge-restaurant-lang_book-3348",
+  "app": "restaurant",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Leila Mensah",
+   "first": "Leila",
+   "says_number": "07727 741 645"
+  },
+  "goal": "Book a table for 2 at 9pm, this Wednesday.",
+  "facts": [
+   "Your name: Leila Mensah",
+   "Day: this Wednesday",
+   "Time: 9pm",
+   "People: 2",
+   "Your phone number: 07727 741 645"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "reservations",
+   "new": 1,
+   "fields": {
+    "name": "Leila",
+    "date": {
+     "weekday": 3
+    },
+    "time": "21:00",
+    "guests": 2,
+    "phone": "07727 741 645"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3348
+ },
+ {
+  "id": "challenge-restaurant-lang_info-3349",
+  "app": "restaurant",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Rory Walsh",
+   "first": "Rory",
+   "says_number": "07731 205 766"
+  },
+  "goal": "How much is the Tartufo pizza? You do not want to book or order.",
+  "facts": [
+   "Your name: Rory Walsh"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "15"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3349
+ },
+ {
+  "id": "challenge-barber-long_call-3350",
+  "app": "barber",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Callum Hughes",
+   "first": "Callum",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How long does a cut and beard take? | How much is a skin fade? | How much is a hot towel shave? | How much is a kids cut? | How much is the beard oil?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book a buzz cut the day after tomorrow at noon.",
+  "facts": [
+   "Your name: Callum Hughes",
+   "Service: buzz cut",
+   "Day: the day after tomorrow",
+   "Time: noon",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Any of them is fine"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Callum",
+    "service": "Buzz cut",
+    "date": {
+     "offset": 2
+    },
+    "time": "12:00",
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "45",
+    "22",
+    "20"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3350
+ },
+ {
+  "id": "challenge-barber-long_call-3351",
+  "app": "barber",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ines Dubois",
+   "first": "Ines",
+   "says_number": "07723 268 386"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How long does a cut and beard take? | How much is the beard oil? | How much is a kids cut? | Do you take walk-ins? | Which barber is best for fades?. Ask one follow-up about one of the answers, and chat briefly about how busy they must be. Only then: Book a beard trim this Wednesday at 4pm.",
+  "facts": [
+   "Your name: Ines Dubois",
+   "Service: beard trim",
+   "Day: this Wednesday",
+   "Time: 4pm",
+   "Your phone number: 07723 268 386",
+   "Any of them is fine"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Ines",
+    "service": "Beard trim",
+    "date": {
+     "weekday": 3
+    },
+    "time": "16:00",
+    "phone": "07723 268 386"
+   },
+   "reply_mentions": [
+    "45",
+    "12",
+    "12"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3351
+ },
+ {
+  "id": "challenge-barber-long_call-3352",
+  "app": "barber",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Layla Singh",
+   "first": "Layla",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is a skin fade? | Is there parking? | How much is the beard oil? | Which barber is best for fades? | How much is a kids cut?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book a kids cut for my son next Thursday at 9:30 in the morning with Ali.",
+  "facts": [
+   "Your name: Layla Singh",
+   "Service: kids cut for my son",
+   "Day: next Thursday",
+   "Time: 9:30 in the morning",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You want Ali"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Layla",
+    "service": "Kids cut",
+    "date": {
+     "weekday": 4
+    },
+    "time": "09:30",
+    "phone": "$CALLER",
+    "barber": "Ali"
+   },
+   "reply_mentions": [
+    "22",
+    "parking|market lane",
+    "12"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3352
+ },
+ {
+  "id": "challenge-barber-long_call-3353",
+  "app": "barber",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Esme Tanaka",
+   "first": "Esme",
+   "says_number": "07729 919 733"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Is there parking? | Which barber is best for fades? | How much is the beard oil? | How much is a hot towel shave? | Do you take walk-ins?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Book a hot towel shave this Wednesday at quarter past three pm.",
+  "facts": [
+   "Your name: Esme Tanaka",
+   "Service: hot towel shave",
+   "Day: this Wednesday",
+   "Time: quarter past three pm",
+   "Your phone number: 07729 919 733",
+   "Any of them is fine"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Esme",
+    "service": "Hot towel shave",
+    "date": {
+     "weekday": 3
+    },
+    "time": "15:15",
+    "phone": "07729 919 733"
+   },
+   "reply_mentions": [
+    "parking|market lane",
+    "Tony",
+    "12"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3353
+ },
+ {
+  "id": "challenge-barber-long_call-3354",
+  "app": "barber",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Mateo Evans",
+   "first": "Mateo",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is a hot towel shave? | How long does a cut and beard take? | How much is a kids cut? | Do you take walk-ins? | Is there parking?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Book a kids cut for my son the day after tomorrow at noon with Tony.",
+  "facts": [
+   "Your name: Mateo Evans",
+   "Service: kids cut for my son",
+   "Day: the day after tomorrow",
+   "Time: noon",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You want Tony"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Mateo",
+    "service": "Kids cut",
+    "date": {
+     "offset": 2
+    },
+    "time": "12:00",
+    "phone": "$CALLER",
+    "barber": "Tony"
+   },
+   "reply_mentions": [
+    "20",
+    "45",
+    "12"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3354
+ },
+ {
+  "id": "challenge-barber-lang_book-3355",
+  "app": "barber",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Erin Fraser",
+   "first": "Erin",
+   "says_number": "07744 578 638"
+  },
+  "goal": "Book a beard trim Friday at half past eleven in the morning with Jay.",
+  "facts": [
+   "Your name: Erin Fraser",
+   "Service: beard trim",
+   "Day: Friday",
+   "Time: half past eleven in the morning",
+   "Your phone number: 07744 578 638",
+   "You want Jay"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Erin",
+    "service": "Beard trim",
+    "date": {
+     "weekday": 5
+    },
+    "time": "11:30",
+    "phone": "07744 578 638",
+    "barber": "Jay"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3355
+ },
+ {
+  "id": "challenge-barber-lang_info-3356",
+  "app": "barber",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Samir Clarke",
+   "first": "Samir",
+   "says_number": null
+  },
+  "goal": "Do you take walk-ins? You do not want to book or order.",
+  "facts": [
+   "Your name: Samir Clarke"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "walk|5 ?pm|17:00|five"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3356
+ },
+ {
+  "id": "challenge-barber-lang_book-3357",
+  "app": "barber",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Oscar Dubois",
+   "first": "Oscar",
+   "says_number": null
+  },
+  "goal": "Book a buzz cut Saturday at 5pm with Ali.",
+  "facts": [
+   "Your name: Oscar Dubois",
+   "Service: buzz cut",
+   "Day: Saturday",
+   "Time: 5pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You want Ali"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Oscar",
+    "service": "Buzz cut",
+    "date": {
+     "weekday": 6
+    },
+    "time": "17:00",
+    "phone": "$CALLER",
+    "barber": "Ali"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3357
+ },
+ {
+  "id": "challenge-barber-lang_info-3358",
+  "app": "barber",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Freya Haddad",
+   "first": "Freya",
+   "says_number": "07722 518 144"
+  },
+  "goal": "How much is a skin fade? You do not want to book or order.",
+  "facts": [
+   "Your name: Freya Haddad"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "22"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3358
+ },
+ {
+  "id": "challenge-barber-lang_book-3359",
+  "app": "barber",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Yusuf Lee",
+   "first": "Yusuf",
+   "says_number": "07769 354 357"
+  },
+  "goal": "Book a skin fade this Friday at quarter past three pm with Jay.",
+  "facts": [
+   "Your name: Yusuf Lee",
+   "Service: skin fade",
+   "Day: this Friday",
+   "Time: quarter past three pm",
+   "Your phone number: 07769 354 357",
+   "You want Jay"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Yusuf",
+    "service": "Skin fade",
+    "date": {
+     "weekday": 5
+    },
+    "time": "15:15",
+    "phone": "07769 354 357",
+    "barber": "Jay"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3359
+ },
+ {
+  "id": "challenge-barber-lang_info-3360",
+  "app": "barber",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Keyhan Karimi",
+   "first": "Keyhan",
+   "says_number": null
+  },
+  "goal": "Do you take walk-ins? You do not want to book or order.",
+  "facts": [
+   "Your name: Keyhan Karimi"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "walk|5 ?pm|17:00|five"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3360
+ },
+ {
+  "id": "challenge-barber-lang_book-3361",
+  "app": "barber",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Elena Clarke",
+   "first": "Elena",
+   "says_number": null
+  },
+  "goal": "Book a beard trim the day after tomorrow at 5pm.",
+  "facts": [
+   "Your name: Elena Clarke",
+   "Service: beard trim",
+   "Day: the day after tomorrow",
+   "Time: 5pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Any of them is fine"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Elena",
+    "service": "Beard trim",
+    "date": {
+     "offset": 2
+    },
+    "time": "17:00",
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3361
+ },
+ {
+  "id": "challenge-barber-lang_info-3362",
+  "app": "barber",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Liam Patel",
+   "first": "Liam",
+   "says_number": "07774 203 134"
+  },
+  "goal": "Is there parking? You do not want to book or order.",
+  "facts": [
+   "Your name: Liam Patel"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "parking|market lane"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3362
+ },
+ {
+  "id": "challenge-salon-long_call-3363",
+  "app": "salon",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Dmitri Demir",
+   "first": "Dmitri",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Who is best with curly hair? | How long does balayage take? | How much is balayage? | How much is a full head colour? | How much is an Olaplex treatment?. Ask one follow-up about one of the answers, and chat briefly about a holiday you just had. Only then: Book a gel manicure Saturday at 9:30 in the morning with Priya.",
+  "facts": [
+   "Your name: Dmitri Demir",
+   "Service: gel manicure",
+   "Day: Saturday",
+   "Time: 9:30 in the morning",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You want Priya"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Dmitri",
+    "service": "Gel manicure",
+    "date": {
+     "weekday": 6
+    },
+    "time": "09:30",
+    "phone": "$CALLER",
+    "stylist": "Priya"
+   },
+   "reply_mentions": [
+    "Priya",
+    "180|3 hours|three hours",
+    "160"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3363
+ },
+ {
+  "id": "challenge-salon-long_call-3364",
+  "app": "salon",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Idris Tanaka",
+   "first": "Idris",
+   "says_number": "07781 170 860"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is balayage? | Who is best with curly hair? | Do I need a patch test for colour? | How much is an Olaplex treatment? | How long does balayage take?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book a blow-dry Saturday at 9:30 in the morning with Marcus.",
+  "facts": [
+   "Your name: Idris Tanaka",
+   "Service: blow-dry",
+   "Day: Saturday",
+   "Time: 9:30 in the morning",
+   "Your phone number: 07781 170 860",
+   "You want Marcus"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Idris",
+    "service": "Blow-dry",
+    "date": {
+     "weekday": 6
+    },
+    "time": "09:30",
+    "phone": "07781 170 860",
+    "stylist": "Marcus"
+   },
+   "reply_mentions": [
+    "160",
+    "Priya",
+    "patch|48"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3364
+ },
+ {
+  "id": "challenge-salon-long_call-3365",
+  "app": "salon",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Aisha Okafor",
+   "first": "Aisha",
+   "says_number": "07707 181 639"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is an Olaplex treatment? | Do I need a patch test for colour? | Who is best with curly hair? | How long does balayage take? | How much is balayage?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book a women's cut and blow-dry tomorrow at half past eleven in the morning.",
+  "facts": [
+   "Your name: Aisha Okafor",
+   "Service: women's cut and blow-dry",
+   "Day: tomorrow",
+   "Time: half past eleven in the morning",
+   "Your phone number: 07707 181 639",
+   "Any of them is fine"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Aisha",
+    "service": "Women’s cut & blow-dry",
+    "date": {
+     "offset": 1
+    },
+    "time": "11:30",
+    "phone": "07707 181 639"
+   },
+   "reply_mentions": [
+    "30",
+    "patch|48",
+    "Priya"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3365
+ },
+ {
+  "id": "challenge-salon-long_call-3366",
+  "app": "salon",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ivy Ali",
+   "first": "Ivy",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is balayage? | How much is a full head colour? | How long does balayage take? | Who is best with curly hair? | Do I need a patch test for colour?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book a men's cut Friday at 2pm with Amélie.",
+  "facts": [
+   "Your name: Ivy Ali",
+   "Service: men's cut",
+   "Day: Friday",
+   "Time: 2pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You want Amélie"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Ivy",
+    "service": "Men’s cut",
+    "date": {
+     "weekday": 5
+    },
+    "time": "14:00",
+    "phone": "$CALLER",
+    "stylist": "Amélie"
+   },
+   "reply_mentions": [
+    "160",
+    "95",
+    "180|3 hours|three hours"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3366
+ },
+ {
+  "id": "challenge-salon-long_call-3367",
+  "app": "salon",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Dana Fraser",
+   "first": "Dana",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Do I need a patch test for colour? | How much is an Olaplex treatment? | Who is best with curly hair? | How much is a full head colour? | How much is balayage?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book a balayage Saturday at noon with Priya.",
+  "facts": [
+   "Your name: Dana Fraser",
+   "Service: balayage",
+   "Day: Saturday",
+   "Time: noon",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You want Priya"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Dana",
+    "service": "Balayage",
+    "date": {
+     "weekday": 6
+    },
+    "time": "12:00",
+    "phone": "$CALLER",
+    "stylist": "Priya"
+   },
+   "reply_mentions": [
+    "patch|48",
+    "30",
+    "Priya"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3367
+ },
+ {
+  "id": "challenge-salon-lang_book-3368",
+  "app": "salon",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Leila Hughes",
+   "first": "Leila",
+   "says_number": "07771 556 239"
+  },
+  "goal": "Book a gel manicure tomorrow at 2pm.",
+  "facts": [
+   "Your name: Leila Hughes",
+   "Service: gel manicure",
+   "Day: tomorrow",
+   "Time: 2pm",
+   "Your phone number: 07771 556 239",
+   "Any of them is fine"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Leila",
+    "service": "Gel manicure",
+    "date": {
+     "offset": 1
+    },
+    "time": "14:00",
+    "phone": "07771 556 239"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3368
+ },
+ {
+  "id": "challenge-salon-lang_info-3369",
+  "app": "salon",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Layla Murphy",
+   "first": "Layla",
+   "says_number": null
+  },
+  "goal": "Who is best with curly hair? You do not want to book or order.",
+  "facts": [
+   "Your name: Layla Murphy"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "Priya"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3369
+ },
+ {
+  "id": "challenge-salon-lang_book-3370",
+  "app": "salon",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Keyhan Haddad",
+   "first": "Keyhan",
+   "says_number": "07707 970 122"
+  },
+  "goal": "Book a women's cut and blow-dry next Thursday at 10am.",
+  "facts": [
+   "Your name: Keyhan Haddad",
+   "Service: women's cut and blow-dry",
+   "Day: next Thursday",
+   "Time: 10am",
+   "Your phone number: 07707 970 122",
+   "Any of them is fine"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Keyhan",
+    "service": "Women’s cut & blow-dry",
+    "date": {
+     "weekday": 4
+    },
+    "time": "10:00",
+    "phone": "07707 970 122"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3370
+ },
+ {
+  "id": "challenge-salon-lang_info-3371",
+  "app": "salon",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Jakub Patel",
+   "first": "Jakub",
+   "says_number": "07755 328 952"
+  },
+  "goal": "How much is a full head colour? You do not want to book or order.",
+  "facts": [
+   "Your name: Jakub Patel"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "95"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3371
+ },
+ {
+  "id": "challenge-salon-lang_book-3372",
+  "app": "salon",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Liam Patel",
+   "first": "Liam",
+   "says_number": "07726 190 854"
+  },
+  "goal": "Book a Olaplex treatment Friday at 2pm with Amélie.",
+  "facts": [
+   "Your name: Liam Patel",
+   "Service: Olaplex treatment",
+   "Day: Friday",
+   "Time: 2pm",
+   "Your phone number: 07726 190 854",
+   "You want Amélie"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Liam",
+    "service": "Olaplex treatment",
+    "date": {
+     "weekday": 5
+    },
+    "time": "14:00",
+    "phone": "07726 190 854",
+    "stylist": "Amélie"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3372
+ },
+ {
+  "id": "challenge-salon-lang_info-3373",
+  "app": "salon",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Siobhan Khan",
+   "first": "Siobhan",
+   "says_number": "07708 701 597"
+  },
+  "goal": "How much is an Olaplex treatment? You do not want to book or order.",
+  "facts": [
+   "Your name: Siobhan Khan"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "30"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3373
+ },
+ {
+  "id": "challenge-salon-lang_book-3374",
+  "app": "salon",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Siobhan Khan",
+   "first": "Siobhan",
+   "says_number": null
+  },
+  "goal": "Book a women's cut and blow-dry the day after tomorrow at 4pm with Amélie.",
+  "facts": [
+   "Your name: Siobhan Khan",
+   "Service: women's cut and blow-dry",
+   "Day: the day after tomorrow",
+   "Time: 4pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You want Amélie"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Siobhan",
+    "service": "Women’s cut & blow-dry",
+    "date": {
+     "offset": 2
+    },
+    "time": "16:00",
+    "phone": "$CALLER",
+    "stylist": "Amélie"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3374
+ },
+ {
+  "id": "challenge-salon-lang_info-3375",
+  "app": "salon",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Tariq Clarke",
+   "first": "Tariq",
+   "says_number": null
+  },
+  "goal": "How much is balayage? You do not want to book or order.",
+  "facts": [
+   "Your name: Tariq Clarke"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "160"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3375
+ },
+ {
+  "id": "challenge-clinic-long_call-3376",
+  "app": "clinic",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Elena Nowak",
+   "first": "Elena",
+   "says_number": "07729 686 995"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Is the Invisalign consultation free? | Do you have a hygienist? | What should a new patient bring or do? | How much is teeth whitening? | Which dentist does implants?. Ask one follow-up about one of the answers, and chat briefly about a holiday you just had. Only then: Book a check-up and clean Friday at half past eleven in the morning.",
+  "facts": [
+   "Your name: Elena Nowak",
+   "You want: check-up and clean",
+   "Day: Friday",
+   "Time: half past eleven in the morning",
+   "Your phone number: 07729 686 995",
+   "Any dentist is fine",
+   "You are an existing patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Elena",
+    "treatment": "Check-up & clean",
+    "date": {
+     "weekday": 5
+    },
+    "time": "11:30",
+    "phone": "07729 686 995"
+   },
+   "reply_mentions": [
+    "free|0|no charge",
+    "Leah|hygien",
+    "10 minutes|early|form|history"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3376
+ },
+ {
+  "id": "challenge-clinic-long_call-3377",
+  "app": "clinic",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Erin Haddad",
+   "first": "Erin",
+   "says_number": "07745 342 289"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Which dentist does implants? | How much is a check-up? | Is the Invisalign consultation free? | How much is teeth whitening? | What should a new patient bring or do?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Book a white filling this Friday at 9:30 in the morning.",
+  "facts": [
+   "Your name: Erin Haddad",
+   "You want: white filling",
+   "Day: this Friday",
+   "Time: 9:30 in the morning",
+   "Your phone number: 07745 342 289",
+   "You would like Dr Hannah Reid",
+   "You are a new patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Erin",
+    "treatment": "White filling",
+    "date": {
+     "weekday": 5
+    },
+    "time": "09:30",
+    "phone": "07745 342 289",
+    "doctor": "Dr Hannah Reid"
+   },
+   "reply_mentions": [
+    "Omar|Khalil",
+    "65",
+    "free|0|no charge"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3377
+ },
+ {
+  "id": "challenge-clinic-long_call-3378",
+  "app": "clinic",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Kenji Petrova",
+   "first": "Kenji",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is teeth whitening? | Which dentist does implants? | How much is a check-up? | Do you have a hygienist? | Is the Invisalign consultation free?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book a white filling next Thursday at noon.",
+  "facts": [
+   "Your name: Kenji Petrova",
+   "You want: white filling",
+   "Day: next Thursday",
+   "Time: noon",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You would like Dr Omar Khalil",
+   "You are an existing patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Kenji",
+    "treatment": "White filling",
+    "date": {
+     "weekday": 4
+    },
+    "time": "12:00",
+    "phone": "$CALLER",
+    "doctor": "Dr Omar Khalil"
+   },
+   "reply_mentions": [
+    "299",
+    "Omar|Khalil",
+    "65"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3378
+ },
+ {
+  "id": "challenge-clinic-long_call-3379",
+  "app": "clinic",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ivy Fraser",
+   "first": "Ivy",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Is the Invisalign consultation free? | Which dentist does implants? | Do you have a hygienist? | What should a new patient bring or do? | How much is teeth whitening?. Ask one follow-up about one of the answers, and chat briefly about how busy they must be. Only then: Book a emergency appointment, I have toothache Friday at 4pm.",
+  "facts": [
+   "Your name: Ivy Fraser",
+   "You want: emergency appointment, I have toothache",
+   "Day: Friday",
+   "Time: 4pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Any dentist is fine",
+   "You are a new patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Ivy",
+    "treatment": "Emergency appointment",
+    "date": {
+     "weekday": 5
+    },
+    "time": "16:00",
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "free|0|no charge",
+    "Omar|Khalil",
+    "Leah|hygien"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3379
+ },
+ {
+  "id": "challenge-clinic-long_call-3380",
+  "app": "clinic",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Yusuf Ahmed",
+   "first": "Yusuf",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Which dentist does implants? | How much is a check-up? | Is the Invisalign consultation free? | What should a new patient bring or do? | Do you have a hygienist?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book a check-up and clean next Thursday at quarter past three pm.",
+  "facts": [
+   "Your name: Yusuf Ahmed",
+   "You want: check-up and clean",
+   "Day: next Thursday",
+   "Time: quarter past three pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You would like Dr Omar Khalil",
+   "You are a new patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Yusuf",
+    "treatment": "Check-up & clean",
+    "date": {
+     "weekday": 4
+    },
+    "time": "15:15",
+    "phone": "$CALLER",
+    "doctor": "Dr Omar Khalil"
+   },
+   "reply_mentions": [
+    "Omar|Khalil",
+    "65",
+    "free|0|no charge"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3380
+ },
+ {
+  "id": "challenge-clinic-lang_book-3381",
+  "app": "clinic",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Ben Ali",
+   "first": "Ben",
+   "says_number": "07799 119 125"
+  },
+  "goal": "Book a check-up and clean this Wednesday at 9:30 in the morning.",
+  "facts": [
+   "Your name: Ben Ali",
+   "You want: check-up and clean",
+   "Day: this Wednesday",
+   "Time: 9:30 in the morning",
+   "Your phone number: 07799 119 125",
+   "Any dentist is fine",
+   "You are an existing patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Ben",
+    "treatment": "Check-up & clean",
+    "date": {
+     "weekday": 3
+    },
+    "time": "09:30",
+    "phone": "07799 119 125"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3381
+ },
+ {
+  "id": "challenge-clinic-lang_info-3382",
+  "app": "clinic",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Zara Ali",
+   "first": "Zara",
+   "says_number": "07734 944 321"
+  },
+  "goal": "Which dentist does implants? You do not want to book or order.",
+  "facts": [
+   "Your name: Zara Ali"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "Omar|Khalil"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3382
+ },
+ {
+  "id": "challenge-clinic-lang_book-3383",
+  "app": "clinic",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Nadia Okafor",
+   "first": "Nadia",
+   "says_number": "07749 898 232"
+  },
+  "goal": "Book a white filling tomorrow at quarter past three pm.",
+  "facts": [
+   "Your name: Nadia Okafor",
+   "You want: white filling",
+   "Day: tomorrow",
+   "Time: quarter past three pm",
+   "Your phone number: 07749 898 232",
+   "You would like Dr Omar Khalil",
+   "You are a new patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Nadia",
+    "treatment": "White filling",
+    "date": {
+     "offset": 1
+    },
+    "time": "15:15",
+    "phone": "07749 898 232",
+    "doctor": "Dr Omar Khalil"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3383
+ },
+ {
+  "id": "challenge-clinic-lang_info-3384",
+  "app": "clinic",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Ruby Dubois",
+   "first": "Ruby",
+   "says_number": null
+  },
+  "goal": "Which dentist does implants? You do not want to book or order.",
+  "facts": [
+   "Your name: Ruby Dubois"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "Omar|Khalil"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3384
+ },
+ {
+  "id": "challenge-clinic-lang_book-3385",
+  "app": "clinic",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Kenji Hughes",
+   "first": "Kenji",
+   "says_number": "07744 142 824"
+  },
+  "goal": "Book a white filling the day after tomorrow at 9:30 in the morning.",
+  "facts": [
+   "Your name: Kenji Hughes",
+   "You want: white filling",
+   "Day: the day after tomorrow",
+   "Time: 9:30 in the morning",
+   "Your phone number: 07744 142 824",
+   "Any dentist is fine",
+   "You are an existing patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Kenji",
+    "treatment": "White filling",
+    "date": {
+     "offset": 2
+    },
+    "time": "09:30",
+    "phone": "07744 142 824"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3385
+ },
+ {
+  "id": "challenge-clinic-lang_info-3386",
+  "app": "clinic",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Elena Evans",
+   "first": "Elena",
+   "says_number": "07737 973 774"
+  },
+  "goal": "How much is a check-up? You do not want to book or order.",
+  "facts": [
+   "Your name: Elena Evans"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "65"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3386
+ },
+ {
+  "id": "challenge-clinic-lang_book-3387",
+  "app": "clinic",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Elena Dubois",
+   "first": "Elena",
+   "says_number": null
+  },
+  "goal": "Book a check-up and clean tomorrow at 4pm.",
+  "facts": [
+   "Your name: Elena Dubois",
+   "You want: check-up and clean",
+   "Day: tomorrow",
+   "Time: 4pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "You would like Dr Omar Khalil",
+   "You are a new patient"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "appointments",
+   "new": 1,
+   "fields": {
+    "name": "Elena",
+    "treatment": "Check-up & clean",
+    "date": {
+     "offset": 1
+    },
+    "time": "16:00",
+    "phone": "$CALLER",
+    "doctor": "Dr Omar Khalil"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3387
+ },
+ {
+  "id": "challenge-clinic-lang_info-3388",
+  "app": "clinic",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Leila Petrova",
+   "first": "Leila",
+   "says_number": "07741 186 581"
+  },
+  "goal": "How much is a check-up? You do not want to book or order.",
+  "facts": [
+   "Your name: Leila Petrova"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "65"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3388
+ },
+ {
+  "id": "challenge-hotel-long_call-3389",
+  "app": "hotel",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ivy Fraser",
+   "first": "Ivy",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Is breakfast included? | What time is check-in? | Are dogs allowed? | How much is the Harbour View room? | How many does the Family Suite sleep?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Book the Garden Twin for 2 night(s) from the day after tomorrow for 2.",
+  "facts": [
+   "Your name: Ivy Fraser",
+   "Check in: the day after tomorrow",
+   "Nights: 2 (so check out 2 days later)",
+   "Guests: 2",
+   "Room: Garden Twin",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Request: a cot for a baby"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Ivy",
+    "room": "Garden Twin",
+    "check_in": {
+     "offset": 2
+    },
+    "check_out": {
+     "offset": 2,
+     "plus": 2
+    },
+    "guests": 2,
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "breakfast|included|8",
+    "3 ?pm|15:00|three",
+    "Garden Twin|dog|15"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3389
+ },
+ {
+  "id": "challenge-hotel-long_call-3390",
+  "app": "hotel",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Freya Hughes",
+   "first": "Freya",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How many does the Family Suite sleep? | How much is the Harbour View room? | Is breakfast included? | Are dogs allowed? | Which is the cheapest room?. Ask one follow-up about one of the answers, and chat briefly about a holiday you just had. Only then: Book the Garden Twin for 2 night(s) from Sunday for 2.",
+  "facts": [
+   "Your name: Freya Hughes",
+   "Check in: Sunday",
+   "Nights: 2 (so check out 2 days later)",
+   "Guests: 2",
+   "Room: Garden Twin",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Freya",
+    "room": "Garden Twin",
+    "check_in": {
+     "weekday": 7
+    },
+    "check_out": {
+     "weekday": 7,
+     "plus": 2
+    },
+    "guests": 2,
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "4|four",
+    "165",
+    "breakfast|included|8"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3390
+ },
+ {
+  "id": "challenge-hotel-long_call-3391",
+  "app": "hotel",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Chloe Walsh",
+   "first": "Chloe",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How many does the Family Suite sleep? | Is breakfast included? | Are dogs allowed? | Which is the cheapest room? | What time is check-in?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Book the Harbour View for 4 night(s) from Friday for 1.",
+  "facts": [
+   "Your name: Chloe Walsh",
+   "Check in: Friday",
+   "Nights: 4 (so check out 4 days later)",
+   "Guests: 1",
+   "Room: Harbour View",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Chloe",
+    "room": "Harbour View",
+    "check_in": {
+     "weekday": 5
+    },
+    "check_out": {
+     "weekday": 5,
+     "plus": 4
+    },
+    "guests": 1,
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "4|four",
+    "breakfast|included|8",
+    "Garden Twin|dog|15"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3391
+ },
+ {
+  "id": "challenge-hotel-long_call-3392",
+  "app": "hotel",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Mei Nowak",
+   "first": "Mei",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Are dogs allowed? | How much is the Harbour View room? | Which is the cheapest room? | How many does the Family Suite sleep? | What time is check-in?. Ask one follow-up about one of the answers, and chat briefly about a holiday you just had. Only then: Book the The Loft for 2 night(s) from Saturday for 2.",
+  "facts": [
+   "Your name: Mei Nowak",
+   "Check in: Saturday",
+   "Nights: 2 (so check out 2 days later)",
+   "Guests: 2",
+   "Room: The Loft",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Mei",
+    "room": "The Loft",
+    "check_in": {
+     "weekday": 6
+    },
+    "check_out": {
+     "weekday": 6,
+     "plus": 2
+    },
+    "guests": 2,
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "Garden Twin|dog|15",
+    "165",
+    "Garden Twin|115"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3392
+ },
+ {
+  "id": "challenge-hotel-long_call-3393",
+  "app": "hotel",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Mateo Karimi",
+   "first": "Mateo",
+   "says_number": "07727 623 462"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: What time is check-in? | Is breakfast included? | How many does the Family Suite sleep? | Are dogs allowed? | How much is the Harbour View room?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Book the Harbour View for 4 night(s) from this Friday for 1.",
+  "facts": [
+   "Your name: Mateo Karimi",
+   "Check in: this Friday",
+   "Nights: 4 (so check out 4 days later)",
+   "Guests: 1",
+   "Room: Harbour View",
+   "Your phone number: 07727 623 462",
+   "Request: a cot for a baby"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Mateo",
+    "room": "Harbour View",
+    "check_in": {
+     "weekday": 5
+    },
+    "check_out": {
+     "weekday": 5,
+     "plus": 4
+    },
+    "guests": 1,
+    "phone": "07727 623 462"
+   },
+   "reply_mentions": [
+    "3 ?pm|15:00|three",
+    "breakfast|included|8",
+    "4|four"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3393
+ },
+ {
+  "id": "challenge-hotel-lang_book-3394",
+  "app": "hotel",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Siobhan Lee",
+   "first": "Siobhan",
+   "says_number": null
+  },
+  "goal": "Book the Garden Twin for 1 night(s) from Sunday for 2.",
+  "facts": [
+   "Your name: Siobhan Lee",
+   "Check in: Sunday",
+   "Nights: 1 (so check out 1 days later)",
+   "Guests: 2",
+   "Room: Garden Twin",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Request: a cot for a baby"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Siobhan",
+    "room": "Garden Twin",
+    "check_in": {
+     "weekday": 7
+    },
+    "check_out": {
+     "weekday": 7,
+     "plus": 1
+    },
+    "guests": 2,
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3394
+ },
+ {
+  "id": "challenge-hotel-lang_info-3395",
+  "app": "hotel",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Greta Patel",
+   "first": "Greta",
+   "says_number": null
+  },
+  "goal": "Is breakfast included? You do not want to book or order.",
+  "facts": [
+   "Your name: Greta Patel"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "breakfast|included|8"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3395
+ },
+ {
+  "id": "challenge-hotel-lang_book-3396",
+  "app": "hotel",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Greta Demir",
+   "first": "Greta",
+   "says_number": null
+  },
+  "goal": "Book the Family Suite for 1 night(s) from next Thursday for 1.",
+  "facts": [
+   "Your name: Greta Demir",
+   "Check in: next Thursday",
+   "Nights: 1 (so check out 1 days later)",
+   "Guests: 1",
+   "Room: Family Suite",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Request: a cot for a baby"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Greta",
+    "room": "Family Suite",
+    "check_in": {
+     "weekday": 4
+    },
+    "check_out": {
+     "weekday": 4,
+     "plus": 1
+    },
+    "guests": 1,
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3396
+ },
+ {
+  "id": "challenge-hotel-lang_info-3397",
+  "app": "hotel",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Zara Lee",
+   "first": "Zara",
+   "says_number": null
+  },
+  "goal": "Are dogs allowed? You do not want to book or order.",
+  "facts": [
+   "Your name: Zara Lee"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "Garden Twin|dog|15"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3397
+ },
+ {
+  "id": "challenge-hotel-lang_book-3398",
+  "app": "hotel",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Greta Demir",
+   "first": "Greta",
+   "says_number": null
+  },
+  "goal": "Book the Family Suite for 4 night(s) from the day after tomorrow for 3.",
+  "facts": [
+   "Your name: Greta Demir",
+   "Check in: the day after tomorrow",
+   "Nights: 4 (so check out 4 days later)",
+   "Guests: 3",
+   "Room: Family Suite",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Greta",
+    "room": "Family Suite",
+    "check_in": {
+     "offset": 2
+    },
+    "check_out": {
+     "offset": 2,
+     "plus": 4
+    },
+    "guests": 3,
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3398
+ },
+ {
+  "id": "challenge-hotel-lang_info-3399",
+  "app": "hotel",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Dana Garcia",
+   "first": "Dana",
+   "says_number": null
+  },
+  "goal": "Are dogs allowed? You do not want to book or order.",
+  "facts": [
+   "Your name: Dana Garcia"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "Garden Twin|dog|15"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3399
+ },
+ {
+  "id": "challenge-hotel-lang_book-3400",
+  "app": "hotel",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Tariq Petrova",
+   "first": "Tariq",
+   "says_number": "07768 707 272"
+  },
+  "goal": "Book the Harbour View for 3 night(s) from Friday for 2.",
+  "facts": [
+   "Your name: Tariq Petrova",
+   "Check in: Friday",
+   "Nights: 3 (so check out 3 days later)",
+   "Guests: 2",
+   "Room: Harbour View",
+   "Your phone number: 07768 707 272",
+   "Request: a cot for a baby"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Tariq",
+    "room": "Harbour View",
+    "check_in": {
+     "weekday": 5
+    },
+    "check_out": {
+     "weekday": 5,
+     "plus": 3
+    },
+    "guests": 2,
+    "phone": "07768 707 272"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3400
+ },
+ {
+  "id": "challenge-hotel-lang_info-3401",
+  "app": "hotel",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Ben Baker",
+   "first": "Ben",
+   "says_number": null
+  },
+  "goal": "What time is check-in? You do not want to book or order.",
+  "facts": [
+   "Your name: Ben Baker"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "3 ?pm|15:00|three"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3401
+ },
+ {
+  "id": "challenge-garage-long_call-3402",
+  "app": "garage",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Kwame Petrova",
+   "first": "Kwame",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is an MOT? | How much is a full service and how long? | How much are front brake pads? | Is there a courtesy car? | When should I drop the car off?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book your BMW 320d in for diagnostics for a warning light Saturday.",
+  "facts": [
+   "Your name: Kwame Petrova",
+   "Car: BMW 320d",
+   "Registration: YT66 HJK",
+   "You want: diagnostics for a warning light",
+   "Drop-off day: Saturday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Kwame",
+    "car": "BMW",
+    "plate": "YT66 HJK",
+    "services": [
+     "Diagnostics"
+    ],
+    "date": {
+     "weekday": 6
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "54",
+    "229|3 hours|three hours",
+    "140"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3402
+ },
+ {
+  "id": "challenge-garage-long_call-3403",
+  "app": "garage",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Freya Nowak",
+   "first": "Freya",
+   "says_number": "07755 993 966"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is an MOT? | When should I drop the car off? | How much is a full service and how long? | How much are front brake pads? | How much is an air-con re-gas?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Book your Nissan Qashqai in for air-con re-gas this Wednesday.",
+  "facts": [
+   "Your name: Freya Nowak",
+   "Car: Nissan Qashqai",
+   "Registration: BD21 FGH",
+   "You want: air-con re-gas",
+   "Drop-off day: this Wednesday",
+   "Your phone number: 07755 993 966",
+   "Problem: a squeaking noise when braking"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Freya",
+    "car": "Nissan",
+    "plate": "BD21 FGH",
+    "services": [
+     "Air-con re-gas"
+    ],
+    "date": {
+     "weekday": 3
+    },
+    "phone": "07755 993 966"
+   },
+   "reply_mentions": [
+    "54",
+    "8|9",
+    "229|3 hours|three hours"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3403
+ },
+ {
+  "id": "challenge-garage-long_call-3404",
+  "app": "garage",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Dmitri Tanaka",
+   "first": "Dmitri",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much are front brake pads? | How much is an MOT? | How much is an air-con re-gas? | How much is a full service and how long? | When should I drop the car off?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Book your BMW 320d in for front brake pads this Friday.",
+  "facts": [
+   "Your name: Dmitri Tanaka",
+   "Car: BMW 320d",
+   "Registration: YT66 HJK",
+   "You want: front brake pads",
+   "Drop-off day: this Friday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Dmitri",
+    "car": "BMW",
+    "plate": "YT66 HJK",
+    "services": [
+     "Brake pads (front)"
+    ],
+    "date": {
+     "weekday": 5
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "140",
+    "54",
+    "69"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3404
+ },
+ {
+  "id": "challenge-garage-long_call-3405",
+  "app": "garage",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Amara Okafor",
+   "first": "Amara",
+   "says_number": "07786 541 281"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is an air-con re-gas? | How much is an MOT? | How much is a full service and how long? | How much are front brake pads? | When should I drop the car off?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Book your VW Golf in for diagnostics for a warning light and front brake pads this Friday.",
+  "facts": [
+   "Your name: Amara Okafor",
+   "Car: VW Golf",
+   "Registration: LK19 XYZ",
+   "You want: diagnostics for a warning light and front brake pads",
+   "Drop-off day: this Friday",
+   "Your phone number: 07786 541 281"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Amara",
+    "car": "VW",
+    "plate": "LK19 XYZ",
+    "services": [
+     "Diagnostics",
+     "Brake pads (front)"
+    ],
+    "date": {
+     "weekday": 5
+    },
+    "phone": "07786 541 281"
+   },
+   "reply_mentions": [
+    "69",
+    "54",
+    "229|3 hours|three hours"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3405
+ },
+ {
+  "id": "challenge-garage-long_call-3406",
+  "app": "garage",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Esme Okafor",
+   "first": "Esme",
+   "says_number": "07711 540 297"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is an air-con re-gas? | How much is an MOT? | When should I drop the car off? | Is there a courtesy car? | How much is a full service and how long?. Ask one follow-up about one of the answers, and chat briefly about a holiday you just had. Only then: Book your VW Golf in for front brake pads and diagnostics for a warning light the day after tomorrow.",
+  "facts": [
+   "Your name: Esme Okafor",
+   "Car: VW Golf",
+   "Registration: LK19 XYZ",
+   "You want: front brake pads and diagnostics for a warning light",
+   "Drop-off day: the day after tomorrow",
+   "Your phone number: 07711 540 297"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Esme",
+    "car": "VW",
+    "plate": "LK19 XYZ",
+    "services": [
+     "Brake pads (front)",
+     "Diagnostics"
+    ],
+    "date": {
+     "offset": 2
+    },
+    "phone": "07711 540 297"
+   },
+   "reply_mentions": [
+    "69",
+    "54",
+    "8|9"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3406
+ },
+ {
+  "id": "challenge-garage-lang_book-3407",
+  "app": "garage",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Keyhan Evans",
+   "first": "Keyhan",
+   "says_number": null
+  },
+  "goal": "Book your Nissan Qashqai in for front brake pads and full service next Thursday.",
+  "facts": [
+   "Your name: Keyhan Evans",
+   "Car: Nissan Qashqai",
+   "Registration: BD21 FGH",
+   "You want: front brake pads and full service",
+   "Drop-off day: next Thursday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Problem: a squeaking noise when braking"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Keyhan",
+    "car": "Nissan",
+    "plate": "BD21 FGH",
+    "services": [
+     "Brake pads (front)",
+     "Full service"
+    ],
+    "date": {
+     "weekday": 4
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3407
+ },
+ {
+  "id": "challenge-garage-lang_info-3408",
+  "app": "garage",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Maya Sharma",
+   "first": "Maya",
+   "says_number": null
+  },
+  "goal": "How much is an air-con re-gas? You do not want to book or order.",
+  "facts": [
+   "Your name: Maya Sharma"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "69"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3408
+ },
+ {
+  "id": "challenge-garage-lang_book-3409",
+  "app": "garage",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Greta Demir",
+   "first": "Greta",
+   "says_number": null
+  },
+  "goal": "Book your VW Golf in for diagnostics for a warning light and front brake pads next Thursday.",
+  "facts": [
+   "Your name: Greta Demir",
+   "Car: VW Golf",
+   "Registration: LK19 XYZ",
+   "You want: diagnostics for a warning light and front brake pads",
+   "Drop-off day: next Thursday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Greta",
+    "car": "VW",
+    "plate": "LK19 XYZ",
+    "services": [
+     "Diagnostics",
+     "Brake pads (front)"
+    ],
+    "date": {
+     "weekday": 4
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3409
+ },
+ {
+  "id": "challenge-garage-lang_info-3410",
+  "app": "garage",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Mateo Rossi",
+   "first": "Mateo",
+   "says_number": "07730 214 539"
+  },
+  "goal": "Is there a courtesy car? You do not want to book or order.",
+  "facts": [
+   "Your name: Mateo Rossi"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "courtesy|car"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3410
+ },
+ {
+  "id": "challenge-garage-lang_book-3411",
+  "app": "garage",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Joel Lee",
+   "first": "Joel",
+   "says_number": null
+  },
+  "goal": "Book your Ford Focus in for diagnostics for a warning light the day after tomorrow.",
+  "facts": [
+   "Your name: Joel Lee",
+   "Car: Ford Focus",
+   "Registration: AB12 CDE",
+   "You want: diagnostics for a warning light",
+   "Drop-off day: the day after tomorrow",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Problem: a squeaking noise when braking"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Joel",
+    "car": "Ford",
+    "plate": "AB12 CDE",
+    "services": [
+     "Diagnostics"
+    ],
+    "date": {
+     "offset": 2
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3411
+ },
+ {
+  "id": "challenge-garage-lang_info-3412",
+  "app": "garage",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Jakub Silva",
+   "first": "Jakub",
+   "says_number": "07732 230 266"
+  },
+  "goal": "How much is a full service and how long? You do not want to book or order.",
+  "facts": [
+   "Your name: Jakub Silva"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "229|3 hours|three hours"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3412
+ },
+ {
+  "id": "challenge-garage-lang_book-3413",
+  "app": "garage",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Layla Moreau",
+   "first": "Layla",
+   "says_number": null
+  },
+  "goal": "Book your Nissan Qashqai in for front brake pads this Friday.",
+  "facts": [
+   "Your name: Layla Moreau",
+   "Car: Nissan Qashqai",
+   "Registration: BD21 FGH",
+   "You want: front brake pads",
+   "Drop-off day: this Friday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "bookings",
+   "new": 1,
+   "fields": {
+    "name": "Layla",
+    "car": "Nissan",
+    "plate": "BD21 FGH",
+    "services": [
+     "Brake pads (front)"
+    ],
+    "date": {
+     "weekday": 5
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3413
+ },
+ {
+  "id": "challenge-garage-lang_info-3414",
+  "app": "garage",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Freya Tanaka",
+   "first": "Freya",
+   "says_number": null
+  },
+  "goal": "How much is a full service and how long? You do not want to book or order.",
+  "facts": [
+   "Your name: Freya Tanaka"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "229|3 hours|three hours"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3414
+ },
+ {
+  "id": "challenge-gym-long_call-3415",
+  "app": "gym",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Elena Novak",
+   "first": "Elena",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: What time is HIIT blast? | Which day is Olympic lifting? | How much is the Unlimited membership? | How much is the class pass? | How much is off-peak?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Sign up for the HIIT blast class this coming Tuesday.",
+  "facts": [
+   "Your name: Elena Novak",
+   "Class: HIIT blast",
+   "Day: this coming Tuesday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Elena",
+    "class": "HIIT blast",
+    "date": {
+     "weekday": 2
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "7|07:00|seven",
+    "Thursday",
+    "45"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3415
+ },
+ {
+  "id": "challenge-gym-long_call-3416",
+  "app": "gym",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Leila Haddad",
+   "first": "Leila",
+   "says_number": "07714 829 120"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the class pass? | How much is off-peak? | What time is HIIT blast? | Who teaches mobility flow? | Which day is Olympic lifting?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Sign up for the Olympic lifting class this coming Thursday.",
+  "facts": [
+   "Your name: Leila Haddad",
+   "Class: Olympic lifting",
+   "Day: this coming Thursday",
+   "Your phone number: 07714 829 120"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Leila",
+    "class": "Olympic lifting",
+    "date": {
+     "weekday": 4
+    },
+    "phone": "07714 829 120"
+   },
+   "reply_mentions": [
+    "80",
+    "25",
+    "7|07:00|seven"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3416
+ },
+ {
+  "id": "challenge-gym-long_call-3417",
+  "app": "gym",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Erin Patel",
+   "first": "Erin",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the class pass? | Which day is Olympic lifting? | How much is the Unlimited membership? | How much is off-peak? | What time is HIIT blast?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Sign up for the Olympic lifting class this coming Thursday.",
+  "facts": [
+   "Your name: Erin Patel",
+   "Class: Olympic lifting",
+   "Day: this coming Thursday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Erin",
+    "class": "Olympic lifting",
+    "date": {
+     "weekday": 4
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "80",
+    "Thursday",
+    "45"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3417
+ },
+ {
+  "id": "challenge-gym-long_call-3418",
+  "app": "gym",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Dmitri Okafor",
+   "first": "Dmitri",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Which day is Olympic lifting? | How much is off-peak? | How much is the Unlimited membership? | How much is the class pass? | Who teaches mobility flow?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Sign up for the Saturday sweat class this coming Saturday.",
+  "facts": [
+   "Your name: Dmitri Okafor",
+   "Class: Saturday sweat",
+   "Day: this coming Saturday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine.",
+   "Email if asked: dmitri@example.com"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Dmitri",
+    "class": "Saturday sweat",
+    "date": {
+     "weekday": 6
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "Thursday",
+    "25",
+    "45"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3418
+ },
+ {
+  "id": "challenge-gym-long_call-3419",
+  "app": "gym",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ruby Rossi",
+   "first": "Ruby",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is off-peak? | How much is the Unlimited membership? | Who teaches mobility flow? | What time is HIIT blast? | How much is the class pass?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Sign up for the HIIT blast class this coming Tuesday.",
+  "facts": [
+   "Your name: Ruby Rossi",
+   "Class: HIIT blast",
+   "Day: this coming Tuesday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Ruby",
+    "class": "HIIT blast",
+    "date": {
+     "weekday": 2
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "25",
+    "45",
+    "Sofia"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3419
+ },
+ {
+  "id": "challenge-gym-lang_book-3420",
+  "app": "gym",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Kwame Lee",
+   "first": "Kwame",
+   "says_number": "07718 176 834"
+  },
+  "goal": "Sign up for the Saturday sweat class this coming Saturday.",
+  "facts": [
+   "Your name: Kwame Lee",
+   "Class: Saturday sweat",
+   "Day: this coming Saturday",
+   "Your phone number: 07718 176 834"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Kwame",
+    "class": "Saturday sweat",
+    "date": {
+     "weekday": 6
+    },
+    "phone": "07718 176 834"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3420
+ },
+ {
+  "id": "challenge-gym-lang_info-3421",
+  "app": "gym",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Arjun Evans",
+   "first": "Arjun",
+   "says_number": "07720 293 911"
+  },
+  "goal": "Who teaches mobility flow? You do not want to book or order.",
+  "facts": [
+   "Your name: Arjun Evans"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "Sofia"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3421
+ },
+ {
+  "id": "challenge-gym-lang_book-3422",
+  "app": "gym",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Joel Evans",
+   "first": "Joel",
+   "says_number": null
+  },
+  "goal": "Sign up for the Olympic lifting class this coming Thursday.",
+  "facts": [
+   "Your name: Joel Evans",
+   "Class: Olympic lifting",
+   "Day: this coming Thursday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Joel",
+    "class": "Olympic lifting",
+    "date": {
+     "weekday": 4
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3422
+ },
+ {
+  "id": "challenge-gym-lang_info-3423",
+  "app": "gym",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Ruby Baker",
+   "first": "Ruby",
+   "says_number": "07781 940 763"
+  },
+  "goal": "Who teaches mobility flow? You do not want to book or order.",
+  "facts": [
+   "Your name: Ruby Baker"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "Sofia"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3423
+ },
+ {
+  "id": "challenge-gym-lang_book-3424",
+  "app": "gym",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Erin Dubois",
+   "first": "Erin",
+   "says_number": "07743 184 786"
+  },
+  "goal": "Sign up for the Olympic lifting class this coming Thursday.",
+  "facts": [
+   "Your name: Erin Dubois",
+   "Class: Olympic lifting",
+   "Day: this coming Thursday",
+   "Your phone number: 07743 184 786",
+   "Email if asked: erin@example.com"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Erin",
+    "class": "Olympic lifting",
+    "date": {
+     "weekday": 4
+    },
+    "phone": "07743 184 786"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3424
+ },
+ {
+  "id": "challenge-gym-lang_info-3425",
+  "app": "gym",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Kenji Murphy",
+   "first": "Kenji",
+   "says_number": "07701 479 392"
+  },
+  "goal": "How much is the Unlimited membership? You do not want to book or order.",
+  "facts": [
+   "Your name: Kenji Murphy"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "45"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3425
+ },
+ {
+  "id": "challenge-gym-lang_book-3426",
+  "app": "gym",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Freya Haddad",
+   "first": "Freya",
+   "says_number": "07777 649 880"
+  },
+  "goal": "Sign up for the Barbell strength class this coming Monday.",
+  "facts": [
+   "Your name: Freya Haddad",
+   "Class: Barbell strength",
+   "Day: this coming Monday",
+   "Your phone number: 07777 649 880"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "signups",
+   "new": 1,
+   "fields": {
+    "name": "Freya",
+    "class": "Barbell strength",
+    "date": {
+     "weekday": 1
+    },
+    "phone": "07777 649 880"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3426
+ },
+ {
+  "id": "challenge-gym-lang_info-3427",
+  "app": "gym",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Kenji Demir",
+   "first": "Kenji",
+   "says_number": "07716 125 369"
+  },
+  "goal": "What time is HIIT blast? You do not want to book or order.",
+  "facts": [
+   "Your name: Kenji Demir"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "7|07:00|seven"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3427
+ },
+ {
+  "id": "challenge-shop-long_call-3428",
+  "app": "shop",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Zara Ahmed",
+   "first": "Zara",
+   "says_number": "07753 985 110"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Do you deliver, and how much is it? | How much is the ground coffee? | How much is a sourdough loaf? | How much are the eggs? | How much is the veg box?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Order 1 x olive oil to pick up tomorrow at 10am.",
+  "facts": [
+   "Your name: Zara Ahmed",
+   "You want: 1 x olive oil",
+   "You will COLLECT it: tomorrow at 10am",
+   "Your phone number: 07753 985 110"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Zara",
+    "items": [
+     {
+      "item": "Extra-virgin olive oil",
+      "qty": 1
+     }
+    ],
+    "type": "Collection",
+    "pickup": {
+     "offset": 1,
+     "time": "10:00"
+    },
+    "phone": "07753 985 110"
+   },
+   "reply_mentions": [
+    "deliver|2\\.50|2 miles",
+    "6\\.4|6\\.40",
+    "4\\.2|4\\.20"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3428
+ },
+ {
+  "id": "challenge-shop-long_call-3429",
+  "app": "shop",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Kwame Tanaka",
+   "first": "Kwame",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is a sourdough loaf? | How much is the olive oil? | How much is the veg box? | How much are the eggs? | Do you deliver, and how much is it?. Ask one follow-up about one of the answers, and chat briefly about how busy they must be. Only then: Order 2 x ground coffee to be delivered tomorrow at 4pm to 94 Elm Grove.",
+  "facts": [
+   "Your name: Kwame Tanaka",
+   "You want: 2 x ground coffee",
+   "You want it DELIVERED, not collected",
+   "Address: 94 Elm Grove",
+   "Postcode: W12 7RJ",
+   "Deliver: tomorrow at 4pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Kwame",
+    "items": [
+     {
+      "item": "Ground coffee",
+      "qty": 2
+     }
+    ],
+    "type": "Delivery",
+    "address": "94 Elm Grove",
+    "postcode": "W12 7RJ",
+    "pickup": {
+     "offset": 1,
+     "time": "16:00"
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "4\\.2|4\\.20",
+    "8\\.5|8\\.50",
+    "14"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3429
+ },
+ {
+  "id": "challenge-shop-long_call-3430",
+  "app": "shop",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Yusuf Nowak",
+   "first": "Yusuf",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the ground coffee? | How much are the eggs? | Do you deliver, and how much is it? | How much is the veg box? | How much is the olive oil?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Order 2 x sparkling lemonade, 2 x ground coffee, 1 x a box of six eggs to be delivered tomorrow at 4pm to 105 Victoria Road.",
+  "facts": [
+   "Your name: Yusuf Nowak",
+   "You want: 2 x sparkling lemonade, 2 x ground coffee, 1 x a box of six eggs",
+   "You want it DELIVERED, not collected",
+   "Address: 105 Victoria Road",
+   "Postcode: N7 8QJ",
+   "Deliver: tomorrow at 4pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Yusuf",
+    "items": [
+     {
+      "item": "Sparkling lemonade",
+      "qty": 2
+     },
+     {
+      "item": "Ground coffee",
+      "qty": 2
+     },
+     {
+      "item": "Free-range eggs (6)",
+      "qty": 1
+     }
+    ],
+    "type": "Delivery",
+    "address": "105 Victoria Road",
+    "postcode": "N7 8QJ",
+    "pickup": {
+     "offset": 1,
+     "time": "16:00"
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "6\\.4|6\\.40",
+    "2\\.6|2\\.60",
+    "deliver|2\\.50|2 miles"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3430
+ },
+ {
+  "id": "challenge-shop-long_call-3431",
+  "app": "shop",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ruby Demir",
+   "first": "Ruby",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much are the eggs? | How much is the veg box? | How much is the ground coffee? | Do you deliver, and how much is it? | How much is a sourdough loaf?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Order 2 x a box of six eggs, 2 x ground coffee, 1 x sparkling lemonade to pick up tomorrow at 4pm.",
+  "facts": [
+   "Your name: Ruby Demir",
+   "You want: 2 x a box of six eggs, 2 x ground coffee, 1 x sparkling lemonade",
+   "You will COLLECT it: tomorrow at 4pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Ruby",
+    "items": [
+     {
+      "item": "Free-range eggs (6)",
+      "qty": 2
+     },
+     {
+      "item": "Ground coffee",
+      "qty": 2
+     },
+     {
+      "item": "Sparkling lemonade",
+      "qty": 1
+     }
+    ],
+    "type": "Collection",
+    "pickup": {
+     "offset": 1,
+     "time": "16:00"
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "2\\.6|2\\.60",
+    "14",
+    "6\\.4|6\\.40"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3431
+ },
+ {
+  "id": "challenge-shop-long_call-3432",
+  "app": "shop",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Freya Hughes",
+   "first": "Freya",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the olive oil? | How much is a sourdough loaf? | How much are the eggs? | Do you deliver, and how much is it? | How much is the ground coffee?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Order 2 x sparkling lemonade, 4 x croissants to be delivered tomorrow at 4pm to 124 Albert Terrace.",
+  "facts": [
+   "Your name: Freya Hughes",
+   "You want: 2 x sparkling lemonade, 4 x croissants",
+   "You want it DELIVERED, not collected",
+   "Address: 124 Albert Terrace",
+   "Postcode: SE15 4QS",
+   "Deliver: tomorrow at 4pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Freya",
+    "items": [
+     {
+      "item": "Sparkling lemonade",
+      "qty": 2
+     },
+     {
+      "item": "Butter croissant",
+      "qty": 4
+     }
+    ],
+    "type": "Delivery",
+    "address": "124 Albert Terrace",
+    "postcode": "SE15 4QS",
+    "pickup": {
+     "offset": 1,
+     "time": "16:00"
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "8\\.5|8\\.50",
+    "4\\.2|4\\.20",
+    "2\\.6|2\\.60"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3432
+ },
+ {
+  "id": "challenge-shop-lang_book-3433",
+  "app": "shop",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Samir Chen",
+   "first": "Samir",
+   "says_number": "07722 801 403"
+  },
+  "goal": "Order 4 x sparkling lemonade, 1 x a sourdough loaf to pick up tomorrow at half past twelve.",
+  "facts": [
+   "Your name: Samir Chen",
+   "You want: 4 x sparkling lemonade, 1 x a sourdough loaf",
+   "You will COLLECT it: tomorrow at half past twelve",
+   "Your phone number: 07722 801 403"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Samir",
+    "items": [
+     {
+      "item": "Sparkling lemonade",
+      "qty": 4
+     },
+     {
+      "item": "Sourdough loaf",
+      "qty": 1
+     }
+    ],
+    "type": "Collection",
+    "pickup": {
+     "offset": 1,
+     "time": "12:30"
+    },
+    "phone": "07722 801 403"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3433
+ },
+ {
+  "id": "challenge-shop-lang_info-3434",
+  "app": "shop",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Noah Tanaka",
+   "first": "Noah",
+   "says_number": null
+  },
+  "goal": "How much is the veg box? You do not want to book or order.",
+  "facts": [
+   "Your name: Noah Tanaka"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "14"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3434
+ },
+ {
+  "id": "challenge-shop-lang_book-3435",
+  "app": "shop",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Jakub Dubois",
+   "first": "Jakub",
+   "says_number": "07717 366 641"
+  },
+  "goal": "Order 1 x a box of six eggs, 1 x olive oil to pick up tomorrow at 5pm.",
+  "facts": [
+   "Your name: Jakub Dubois",
+   "You want: 1 x a box of six eggs, 1 x olive oil",
+   "You will COLLECT it: tomorrow at 5pm",
+   "Your phone number: 07717 366 641"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Jakub",
+    "items": [
+     {
+      "item": "Free-range eggs (6)",
+      "qty": 1
+     },
+     {
+      "item": "Extra-virgin olive oil",
+      "qty": 1
+     }
+    ],
+    "type": "Collection",
+    "pickup": {
+     "offset": 1,
+     "time": "17:00"
+    },
+    "phone": "07717 366 641"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3435
+ },
+ {
+  "id": "challenge-shop-lang_info-3436",
+  "app": "shop",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Dana Mensah",
+   "first": "Dana",
+   "says_number": "07729 631 896"
+  },
+  "goal": "How much is a sourdough loaf? You do not want to book or order.",
+  "facts": [
+   "Your name: Dana Mensah"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "4\\.2|4\\.20"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3436
+ },
+ {
+  "id": "challenge-shop-lang_book-3437",
+  "app": "shop",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Aisha Moreau",
+   "first": "Aisha",
+   "says_number": null
+  },
+  "goal": "Order 2 x ground coffee to pick up tomorrow at 4pm.",
+  "facts": [
+   "Your name: Aisha Moreau",
+   "You want: 2 x ground coffee",
+   "You will COLLECT it: tomorrow at 4pm",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Aisha",
+    "items": [
+     {
+      "item": "Ground coffee",
+      "qty": 2
+     }
+    ],
+    "type": "Collection",
+    "pickup": {
+     "offset": 1,
+     "time": "16:00"
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3437
+ },
+ {
+  "id": "challenge-shop-lang_info-3438",
+  "app": "shop",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Mei Rossi",
+   "first": "Mei",
+   "says_number": null
+  },
+  "goal": "How much is the ground coffee? You do not want to book or order.",
+  "facts": [
+   "Your name: Mei Rossi"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "6\\.4|6\\.40"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3438
+ },
+ {
+  "id": "challenge-shop-lang_book-3439",
+  "app": "shop",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Idris Demir",
+   "first": "Idris",
+   "says_number": "07774 309 625"
+  },
+  "goal": "Order 2 x olive oil, 1 x a box of six eggs to pick up tomorrow at half past twelve.",
+  "facts": [
+   "Your name: Idris Demir",
+   "You want: 2 x olive oil, 1 x a box of six eggs",
+   "You will COLLECT it: tomorrow at half past twelve",
+   "Your phone number: 07774 309 625"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "orders",
+   "new": 1,
+   "fields": {
+    "name": "Idris",
+    "items": [
+     {
+      "item": "Extra-virgin olive oil",
+      "qty": 2
+     },
+     {
+      "item": "Free-range eggs (6)",
+      "qty": 1
+     }
+    ],
+    "type": "Collection",
+    "pickup": {
+     "offset": 1,
+     "time": "12:30"
+    },
+    "phone": "07774 309 625"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3439
+ },
+ {
+  "id": "challenge-shop-lang_info-3440",
+  "app": "shop",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Siobhan Evans",
+   "first": "Siobhan",
+   "says_number": "07798 260 689"
+  },
+  "goal": "How much is the olive oil? You do not want to book or order.",
+  "facts": [
+   "Your name: Siobhan Evans"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "8\\.5|8\\.50"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3440
+ },
+ {
+  "id": "challenge-tutoring-long_call-3441",
+  "app": "tutoring",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Kenji Patel",
+   "first": "Kenji",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is conversational Spanish? | Is there a trial lesson? | Which day is Python for beginners? | How much is A-level chemistry? | How much is the GCSE maths booster and which day?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Enrol yourself on conversational Spanish.",
+  "facts": [
+   "Your name (you are the student): Kenji Patel",
+   "Course: conversational Spanish",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Kenji",
+    "course": "Conversational Spanish",
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "160",
+    "trial|free",
+    "Wednesday"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3441
+ },
+ {
+  "id": "challenge-tutoring-long_call-3442",
+  "app": "tutoring",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Hugo Singh",
+   "first": "Hugo",
+   "says_number": "07767 173 667"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the GCSE maths booster and which day? | How much is A-level chemistry? | How much is conversational Spanish? | Which day is Python for beginners? | Is there a trial lesson?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Enrol yourself on conversational Spanish.",
+  "facts": [
+   "Your name (you are the student): Hugo Singh",
+   "Course: conversational Spanish",
+   "Your phone number: 07767 173 667"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Hugo",
+    "course": "Conversational Spanish",
+    "phone": "07767 173 667"
+   },
+   "reply_mentions": [
+    "180|Tuesday",
+    "220",
+    "160"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3442
+ },
+ {
+  "id": "challenge-tutoring-long_call-3443",
+  "app": "tutoring",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Aisha Mensah",
+   "first": "Aisha",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is A-level chemistry? | How much is conversational Spanish? | Which day is Python for beginners? | Is there a trial lesson? | How much is the GCSE maths booster and which day?. Ask one follow-up about one of the answers, and chat briefly about how busy they must be. Only then: Enrol your child Nadia Mensah on the GCSE maths booster.",
+  "facts": [
+   "You are the parent: Aisha Mensah",
+   "Student (your child): Nadia Mensah",
+   "Course: the GCSE maths booster",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Nadia",
+    "course": "GCSE Maths booster",
+    "phone": "$CALLER",
+    "parent": "Aisha"
+   },
+   "reply_mentions": [
+    "220",
+    "160",
+    "Wednesday"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3443
+ },
+ {
+  "id": "challenge-tutoring-long_call-3444",
+  "app": "tutoring",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Yusuf Garcia",
+   "first": "Yusuf",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is conversational Spanish? | How much is the GCSE maths booster and which day? | Which day is Python for beginners? | How much is A-level chemistry? | Is there a trial lesson?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Enrol your child Ines Garcia on A-level chemistry.",
+  "facts": [
+   "You are the parent: Yusuf Garcia",
+   "Student (your child): Ines Garcia",
+   "Course: A-level chemistry",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Ines",
+    "course": "A-level Chemistry",
+    "phone": "$CALLER",
+    "parent": "Yusuf"
+   },
+   "reply_mentions": [
+    "160",
+    "180|Tuesday",
+    "Wednesday"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3444
+ },
+ {
+  "id": "challenge-tutoring-long_call-3445",
+  "app": "tutoring",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Tariq Patel",
+   "first": "Tariq",
+   "says_number": "07776 988 662"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Is there a trial lesson? | How much is conversational Spanish? | How much is A-level chemistry? | Which day is Python for beginners? | How much is the GCSE maths booster and which day?. Ask one follow-up about one of the answers, and chat briefly about how busy they must be. Only then: Enrol your child Ruby Patel on the GCSE maths booster.",
+  "facts": [
+   "You are the parent: Tariq Patel",
+   "Student (your child): Ruby Patel",
+   "Course: the GCSE maths booster",
+   "Your phone number: 07776 988 662"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Ruby",
+    "course": "GCSE Maths booster",
+    "phone": "07776 988 662",
+    "parent": "Tariq"
+   },
+   "reply_mentions": [
+    "trial|free",
+    "160",
+    "220"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3445
+ },
+ {
+  "id": "challenge-tutoring-lang_book-3446",
+  "app": "tutoring",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Oscar Silva",
+   "first": "Oscar",
+   "says_number": "07710 400 233"
+  },
+  "goal": "Enrol your child Joel Silva on the reading confidence course.",
+  "facts": [
+   "You are the parent: Oscar Silva",
+   "Student (your child): Joel Silva",
+   "Course: the reading confidence course",
+   "Your phone number: 07710 400 233"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Joel",
+    "course": "Reading confidence",
+    "phone": "07710 400 233",
+    "parent": "Oscar"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3446
+ },
+ {
+  "id": "challenge-tutoring-lang_info-3447",
+  "app": "tutoring",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Rory Evans",
+   "first": "Rory",
+   "says_number": "07766 103 697"
+  },
+  "goal": "How much is A-level chemistry? You do not want to book or order.",
+  "facts": [
+   "Your name: Rory Evans"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "220"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3447
+ },
+ {
+  "id": "challenge-tutoring-lang_book-3448",
+  "app": "tutoring",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Nadia Chen",
+   "first": "Nadia",
+   "says_number": null
+  },
+  "goal": "Enrol your child Kenji Chen on A-level chemistry.",
+  "facts": [
+   "You are the parent: Nadia Chen",
+   "Student (your child): Kenji Chen",
+   "Course: A-level chemistry",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Kenji",
+    "course": "A-level Chemistry",
+    "phone": "$CALLER",
+    "parent": "Nadia"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3448
+ },
+ {
+  "id": "challenge-tutoring-lang_info-3449",
+  "app": "tutoring",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Mei Khan",
+   "first": "Mei",
+   "says_number": null
+  },
+  "goal": "Which day is Python for beginners? You do not want to book or order.",
+  "facts": [
+   "Your name: Mei Khan"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "Wednesday"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3449
+ },
+ {
+  "id": "challenge-tutoring-lang_book-3450",
+  "app": "tutoring",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Siobhan Okafor",
+   "first": "Siobhan",
+   "says_number": null
+  },
+  "goal": "Enrol your child Arjun Okafor on the reading confidence course.",
+  "facts": [
+   "You are the parent: Siobhan Okafor",
+   "Student (your child): Arjun Okafor",
+   "Course: the reading confidence course",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Arjun",
+    "course": "Reading confidence",
+    "phone": "$CALLER",
+    "parent": "Siobhan"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3450
+ },
+ {
+  "id": "challenge-tutoring-lang_info-3451",
+  "app": "tutoring",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Ravi Novak",
+   "first": "Ravi",
+   "says_number": null
+  },
+  "goal": "How much is conversational Spanish? You do not want to book or order.",
+  "facts": [
+   "Your name: Ravi Novak"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "160"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3451
+ },
+ {
+  "id": "challenge-tutoring-lang_book-3452",
+  "app": "tutoring",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Aisha Khan",
+   "first": "Aisha",
+   "says_number": "07720 468 381"
+  },
+  "goal": "Enrol yourself on Python for beginners.",
+  "facts": [
+   "Your name (you are the student): Aisha Khan",
+   "Course: Python for beginners",
+   "Your phone number: 07720 468 381"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "enrolments",
+   "new": 1,
+   "fields": {
+    "student": "Aisha",
+    "course": "Python for beginners",
+    "phone": "07720 468 381"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3452
+ },
+ {
+  "id": "challenge-tutoring-lang_info-3453",
+  "app": "tutoring",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Kwame Rossi",
+   "first": "Kwame",
+   "says_number": null
+  },
+  "goal": "How much is conversational Spanish? You do not want to book or order.",
+  "facts": [
+   "Your name: Kwame Rossi"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "160"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3453
+ },
+ {
+  "id": "challenge-events-long_call-3454",
+  "app": "events",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Alice Sharma",
+   "first": "Alice",
+   "says_number": "07703 730 926"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: Is there an age limit? | How much is Deep House Friday? | When is the late jazz session? | How much are Midnight Owls tickets? | How much is the comedy showcase?. Ask one follow-up about one of the answers, and chat briefly about how busy they must be. Only then: Get 2 ticket(s) for the stand-up comedy showcase.",
+  "facts": [
+   "Your name: Alice Sharma",
+   "Event: the stand-up comedy showcase",
+   "Tickets: 2",
+   "Your phone number: 07703 730 926"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Alice",
+    "event": "Stand-up Showcase",
+    "quantity": 2,
+    "phone": "07703 730 926"
+   },
+   "reply_mentions": [
+    "18|ID|age",
+    "15",
+    "22|Thursday|21:00|9"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3454
+ },
+ {
+  "id": "challenge-events-long_call-3455",
+  "app": "events",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Erin Demir",
+   "first": "Erin",
+   "says_number": "07701 517 535"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the comedy showcase? | When is the late jazz session? | Is there an age limit? | How much are Midnight Owls tickets? | How much is Deep House Friday?. Ask one follow-up about one of the answers, and chat briefly about a holiday you just had. Only then: Get 3 ticket(s) for the stand-up comedy showcase.",
+  "facts": [
+   "Your name: Erin Demir",
+   "Event: the stand-up comedy showcase",
+   "Tickets: 3",
+   "Your phone number: 07701 517 535"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Erin",
+    "event": "Stand-up Showcase",
+    "quantity": 3,
+    "phone": "07701 517 535"
+   },
+   "reply_mentions": [
+    "10",
+    "22|Thursday|21:00|9",
+    "18|ID|age"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3455
+ },
+ {
+  "id": "challenge-events-long_call-3456",
+  "app": "events",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ravi Lee",
+   "first": "Ravi",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is Deep House Friday? | How much are Midnight Owls tickets? | How much is the comedy showcase? | When is the late jazz session? | Is there an age limit?. Ask one follow-up about one of the answers, and chat briefly about how busy they must be. Only then: Get 3 ticket(s) for the Midnight Owls gig.",
+  "facts": [
+   "Your name: Ravi Lee",
+   "Event: the Midnight Owls gig",
+   "Tickets: 3",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Ravi",
+    "event": "The Midnight Owls",
+    "quantity": 3,
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "15",
+    "12",
+    "10"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3456
+ },
+ {
+  "id": "challenge-events-long_call-3457",
+  "app": "events",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Zara Patel",
+   "first": "Zara",
+   "says_number": "07740 894 395"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the comedy showcase? | How much are Midnight Owls tickets? | When is the late jazz session? | Is there an age limit? | How much is Deep House Friday?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Get 3 ticket(s) for the Midnight Owls gig.",
+  "facts": [
+   "Your name: Zara Patel",
+   "Event: the Midnight Owls gig",
+   "Tickets: 3",
+   "Your phone number: 07740 894 395"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Zara",
+    "event": "The Midnight Owls",
+    "quantity": 3,
+    "phone": "07740 894 395"
+   },
+   "reply_mentions": [
+    "10",
+    "12",
+    "22|Thursday|21:00|9"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3457
+ },
+ {
+  "id": "challenge-events-long_call-3458",
+  "app": "events",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Jakub Patel",
+   "first": "Jakub",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the comedy showcase? | How much is Deep House Friday? | How much are Midnight Owls tickets? | When is the late jazz session? | Is there an age limit?. Ask one follow-up about one of the answers, and chat briefly about how their day is going. Only then: Get 2 ticket(s) for the stand-up comedy showcase.",
+  "facts": [
+   "Your name: Jakub Patel",
+   "Event: the stand-up comedy showcase",
+   "Tickets: 2",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Jakub",
+    "event": "Stand-up Showcase",
+    "quantity": 2,
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "10",
+    "15",
+    "12"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3458
+ },
+ {
+  "id": "challenge-events-lang_book-3459",
+  "app": "events",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Zara Nowak",
+   "first": "Zara",
+   "says_number": null
+  },
+  "goal": "Get 1 ticket(s) for Deep House Friday.",
+  "facts": [
+   "Your name: Zara Nowak",
+   "Event: Deep House Friday",
+   "Tickets: 1",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Zara",
+    "event": "Deep House Friday",
+    "quantity": 1,
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3459
+ },
+ {
+  "id": "challenge-events-lang_info-3460",
+  "app": "events",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Elena Demir",
+   "first": "Elena",
+   "says_number": null
+  },
+  "goal": "How much is Deep House Friday? You do not want to book or order.",
+  "facts": [
+   "Your name: Elena Demir"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "15"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3460
+ },
+ {
+  "id": "challenge-events-lang_book-3461",
+  "app": "events",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Ravi Novak",
+   "first": "Ravi",
+   "says_number": null
+  },
+  "goal": "Get 2 ticket(s) for the stand-up comedy showcase.",
+  "facts": [
+   "Your name: Ravi Novak",
+   "Event: the stand-up comedy showcase",
+   "Tickets: 2",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Ravi",
+    "event": "Stand-up Showcase",
+    "quantity": 2,
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3461
+ },
+ {
+  "id": "challenge-events-lang_info-3462",
+  "app": "events",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Zara Rossi",
+   "first": "Zara",
+   "says_number": "07770 189 720"
+  },
+  "goal": "How much is the comedy showcase? You do not want to book or order.",
+  "facts": [
+   "Your name: Zara Rossi"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "10"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3462
+ },
+ {
+  "id": "challenge-events-lang_book-3463",
+  "app": "events",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Samir Fraser",
+   "first": "Samir",
+   "says_number": "07761 579 180"
+  },
+  "goal": "Get 2 ticket(s) for the stand-up comedy showcase.",
+  "facts": [
+   "Your name: Samir Fraser",
+   "Event: the stand-up comedy showcase",
+   "Tickets: 2",
+   "Your phone number: 07761 579 180"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Samir",
+    "event": "Stand-up Showcase",
+    "quantity": 2,
+    "phone": "07761 579 180"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3463
+ },
+ {
+  "id": "challenge-events-lang_info-3464",
+  "app": "events",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Elena Murphy",
+   "first": "Elena",
+   "says_number": "07706 968 635"
+  },
+  "goal": "How much are Midnight Owls tickets? You do not want to book or order.",
+  "facts": [
+   "Your name: Elena Murphy"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "12"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3464
+ },
+ {
+  "id": "challenge-events-lang_book-3465",
+  "app": "events",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Dana Murphy",
+   "first": "Dana",
+   "says_number": "07799 897 746"
+  },
+  "goal": "Get 3 ticket(s) for the stand-up comedy showcase.",
+  "facts": [
+   "Your name: Dana Murphy",
+   "Event: the stand-up comedy showcase",
+   "Tickets: 3",
+   "Your phone number: 07799 897 746"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "tickets",
+   "new": 1,
+   "fields": {
+    "name": "Dana",
+    "event": "Stand-up Showcase",
+    "quantity": 3,
+    "phone": "07799 897 746"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3465
+ },
+ {
+  "id": "challenge-events-lang_info-3466",
+  "app": "events",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Ruby Demir",
+   "first": "Ruby",
+   "says_number": null
+  },
+  "goal": "When is the late jazz session? You do not want to book or order.",
+  "facts": [
+   "Your name: Ruby Demir"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "22|Thursday|21:00|9"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3466
+ },
+ {
+  "id": "challenge-realestate-long_call-3467",
+  "app": "realestate",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Callum Karimi",
+   "first": "Callum",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the Victorian terrace? | When do viewings run? | How much is the studio near the station? | How much is the flat with the balcony to rent? | How many bedrooms does the cottage have?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Ask to view the cottage with the orchard the day after tomorrow.",
+  "facts": [
+   "Your name: Callum Karimi",
+   "Property: the cottage with the orchard",
+   "Preferred day: the day after tomorrow",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Callum",
+    "property": "Cottage with orchard",
+    "date": {
+     "offset": 2
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "685",
+    "9|6 ?pm|18:00|saturday",
+    "975"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3467
+ },
+ {
+  "id": "challenge-realestate-long_call-3468",
+  "app": "realestate",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Ines Tanaka",
+   "first": "Ines",
+   "says_number": "07759 727 943"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: When do viewings run? | How much is the Victorian terrace? | How much is the studio near the station? | How much is the flat with the balcony to rent? | How many bedrooms does the cottage have?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Ask to view the Victorian terrace in Jericho tomorrow.",
+  "facts": [
+   "Your name: Ines Tanaka",
+   "Property: the Victorian terrace in Jericho",
+   "Preferred day: tomorrow",
+   "Your phone number: 07759 727 943"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Ines",
+    "property": "Victorian terrace, Jericho",
+    "date": {
+     "offset": 1
+    },
+    "phone": "07759 727 943"
+   },
+   "reply_mentions": [
+    "9|6 ?pm|18:00|saturday",
+    "685",
+    "975"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3468
+ },
+ {
+  "id": "challenge-realestate-long_call-3469",
+  "app": "realestate",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Arjun Demir",
+   "first": "Arjun",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How many bedrooms does the cottage have? | How much is the studio near the station? | How much is the Victorian terrace? | How much is the flat with the balcony to rent? | When do viewings run?. Ask one follow-up about one of the answers, and chat briefly about the weather today. Only then: Ask to view the modern flat with the balcony the day after tomorrow.",
+  "facts": [
+   "Your name: Arjun Demir",
+   "Property: the modern flat with the balcony",
+   "Preferred day: the day after tomorrow",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Arjun",
+    "property": "Modern flat with balcony",
+    "date": {
+     "offset": 2
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "2|two",
+    "975",
+    "685"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3469
+ },
+ {
+  "id": "challenge-realestate-long_call-3470",
+  "app": "realestate",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Siobhan Moreau",
+   "first": "Siobhan",
+   "says_number": null
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How many bedrooms does the cottage have? | How much is the studio near the station? | How much is the Victorian terrace? | When do viewings run? | How much is the flat with the balcony to rent?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Ask to view the cottage with the orchard Saturday.",
+  "facts": [
+   "Your name: Siobhan Moreau",
+   "Property: the cottage with the orchard",
+   "Preferred day: Saturday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Siobhan",
+    "property": "Cottage with orchard",
+    "date": {
+     "weekday": 6
+    },
+    "phone": "$CALLER"
+   },
+   "reply_mentions": [
+    "2|two",
+    "975",
+    "685"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3470
+ },
+ {
+  "id": "challenge-realestate-long_call-3471",
+  "app": "realestate",
+  "intent": "long_call",
+  "setup": "solo",
+  "persona": null,
+  "style": "long_call",
+  "style_text": "Curious and thorough: one question at a time, you listen to each answer before the next.",
+  "caller": {
+   "name": "Dana Demir",
+   "first": "Dana",
+   "says_number": "07723 576 856"
+  },
+  "goal": "This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: How much is the Victorian terrace? | How much is the studio near the station? | How many bedrooms does the cottage have? | When do viewings run? | How much is the flat with the balcony to rent?. Ask one follow-up about one of the answers, and chat briefly about last night's football. Only then: Ask to view the modern flat with the balcony this Wednesday.",
+  "facts": [
+   "Your name: Dana Demir",
+   "Property: the modern flat with the balcony",
+   "Preferred day: this Wednesday",
+   "Your phone number: 07723 576 856"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Dana",
+    "property": "Modern flat with balcony",
+    "date": {
+     "weekday": 3
+    },
+    "phone": "07723 576 856"
+   },
+   "reply_mentions": [
+    "685",
+    "975",
+    "2|two"
+   ]
+  },
+  "max_turns": 24,
+  "n": 3471
+ },
+ {
+  "id": "challenge-realestate-lang_book-3472",
+  "app": "realestate",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_es",
+  "style_text": "You speak ONLY Spanish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Siobhan Baker",
+   "first": "Siobhan",
+   "says_number": null
+  },
+  "goal": "Ask to view the Victorian terrace in Jericho next Thursday.",
+  "facts": [
+   "Your name: Siobhan Baker",
+   "Property: the Victorian terrace in Jericho",
+   "Preferred day: next Thursday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Siobhan",
+    "property": "Victorian terrace, Jericho",
+    "date": {
+     "weekday": 4
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "es",
+  "max_turns": 14,
+  "n": 3472
+ },
+ {
+  "id": "challenge-realestate-lang_info-3473",
+  "app": "realestate",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fr",
+  "style_text": "You speak ONLY French, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Dana Clarke",
+   "first": "Dana",
+   "says_number": "07786 472 180"
+  },
+  "goal": "How many bedrooms does the cottage have? You do not want to book or order.",
+  "facts": [
+   "Your name: Dana Clarke"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "2|two"
+   ]
+  },
+  "lang": "fr",
+  "max_turns": 14,
+  "n": 3473
+ },
+ {
+  "id": "challenge-realestate-lang_book-3474",
+  "app": "realestate",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_de",
+  "style_text": "You speak ONLY German, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Idris Patel",
+   "first": "Idris",
+   "says_number": null
+  },
+  "goal": "Ask to view the modern flat with the balcony tomorrow.",
+  "facts": [
+   "Your name: Idris Patel",
+   "Property: the modern flat with the balcony",
+   "Preferred day: tomorrow",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Idris",
+    "property": "Modern flat with balcony",
+    "date": {
+     "offset": 1
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "de",
+  "max_turns": 14,
+  "n": 3474
+ },
+ {
+  "id": "challenge-realestate-lang_info-3475",
+  "app": "realestate",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_it",
+  "style_text": "You speak ONLY Italian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Oscar Fraser",
+   "first": "Oscar",
+   "says_number": null
+  },
+  "goal": "How much is the flat with the balcony to rent? You do not want to book or order.",
+  "facts": [
+   "Your name: Oscar Fraser"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "1650|1,650"
+   ]
+  },
+  "lang": "it",
+  "max_turns": 14,
+  "n": 3475
+ },
+ {
+  "id": "challenge-realestate-lang_book-3476",
+  "app": "realestate",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_fa",
+  "style_text": "You speak ONLY Persian, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Kenji Nowak",
+   "first": "Kenji",
+   "says_number": "07779 470 672"
+  },
+  "goal": "Ask to view the modern flat with the balcony this Friday.",
+  "facts": [
+   "Your name: Kenji Nowak",
+   "Property: the modern flat with the balcony",
+   "Preferred day: this Friday",
+   "Your phone number: 07779 470 672"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Kenji",
+    "property": "Modern flat with balcony",
+    "date": {
+     "weekday": 5
+    },
+    "phone": "07779 470 672"
+   }
+  },
+  "lang": "fa",
+  "max_turns": 14,
+  "n": 3476
+ },
+ {
+  "id": "challenge-realestate-lang_info-3477",
+  "app": "realestate",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_ar",
+  "style_text": "You speak ONLY Arabic, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Ben Patel",
+   "first": "Ben",
+   "says_number": null
+  },
+  "goal": "How much is the studio near the station? You do not want to book or order.",
+  "facts": [
+   "Your name: Ben Patel"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "975"
+   ]
+  },
+  "lang": "ar",
+  "max_turns": 14,
+  "n": 3477
+ },
+ {
+  "id": "challenge-realestate-lang_book-3478",
+  "app": "realestate",
+  "intent": "lang_book",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_tr",
+  "style_text": "You speak ONLY Turkish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Greta Khan",
+   "first": "Greta",
+   "says_number": null
+  },
+  "goal": "Ask to view the modern flat with the balcony Friday.",
+  "facts": [
+   "Your name: Greta Khan",
+   "Property: the modern flat with the balcony",
+   "Preferred day: Friday",
+   "You do not give a phone number unless asked; then say the number you are calling from is fine."
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "table": "viewings",
+   "new": 1,
+   "fields": {
+    "name": "Greta",
+    "property": "Modern flat with balcony",
+    "date": {
+     "weekday": 5
+    },
+    "phone": "$CALLER"
+   }
+  },
+  "lang": "tr",
+  "max_turns": 14,
+  "n": 3478
+ },
+ {
+  "id": "challenge-realestate-lang_info-3479",
+  "app": "realestate",
+  "intent": "lang_info",
+  "setup": "solo",
+  "persona": null,
+  "style": "lang_pl",
+  "style_text": "You speak ONLY Polish, as a native speaker would (names, numbers, postcodes and phone numbers as they are).",
+  "caller": {
+   "name": "Callum Rossi",
+   "first": "Callum",
+   "says_number": null
+  },
+  "goal": "When do viewings run? You do not want to book or order.",
+  "facts": [
+   "Your name: Callum Rossi"
+  ],
+  "wrong": null,
+  "seed": [],
+  "expect": {
+   "new": 0,
+   "reply_mentions": [
+    "9|6 ?pm|18:00|saturday"
+   ]
+  },
+  "lang": "pl",
+  "max_turns": 14,
+  "n": 3479
  }
 ]

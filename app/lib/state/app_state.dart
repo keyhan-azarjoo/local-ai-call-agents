@@ -856,7 +856,8 @@ class AppState extends ChangeNotifier {
     // agents that take them use its tools, even if their own tool list leaves it out.
     final appTools = useTools && (callerNumber != null || abilities.any(const {'booking', 'order'}.contains)) ? await builtAppTools(scopes) : <ToolBinding>[];
     final own = useTools ? await toolsFor(scopes, access: access) : <ToolBinding>[];
-    final abilityTools = useTools ? Abilities.bindings(abilities.where((a) => !_appCovers(appTools, a))) : <ToolBinding>[];
+    // A business with its own app keeps its bookings and orders there: the main app only takes messages for the manager.
+    final abilityTools = useTools ? Abilities.bindings(abilities.where((a) => appTools.isEmpty ? !_appCovers(appTools, a) : a == 'message')) : <ToolBinding>[];
     final tools = useTools
         ? [
             ...own,
@@ -919,6 +920,14 @@ class AppState extends ChangeNotifier {
               isError: true,
             ));
           }
+        }
+        // A "message" that is really a booking, an order or an answer belongs in the business's app, not the manager's notes.
+        if (b.serverId == Abilities.serverId && b.tool.name == 'take_message' && appTools.isNotEmpty && !_forManager(args, messages)) {
+          return Future.value((
+            text: 'Not saved: messages are only for the manager (a call-back, a complaint, something you can\'t handle). '
+                'Bookings and orders go in ${appTools.first.serverName} with its add_ tool; answer questions from its list_/get_ tools.',
+            isError: true,
+          ));
         }
         // Small models put their own name in as the customer's.
         final own = agentName?.trim().toLowerCase() ?? '';
@@ -1727,6 +1736,16 @@ class AppState extends ChangeNotifier {
   /// The caller is correcting what was said or saved ("No, my number is…", "with Priya, not Marcus").
   static final _correcting = RegExp(r"^\W*(no|nope|wrong)\b|\b(not (right|correct)|isn.t (right|correct)|is wrong|instead|i meant|should be)\b", caseSensitive: false);
 
+  /// A real message for the manager or owner: they asked for a call back, a person, or to leave a message,
+  /// or complained — not a booking, an order, or an answer written down as a "message".
+  static bool _forManager(Map<String, dynamic> args, Iterable<ChatMessage> convo) {
+    final asked = convo.where((m) => m.role == 'user').map((m) => callerWords(m.content)).join(' ');
+    final text = '${args['message'] ?? ''}';
+    final wanted = RegExp(r"\b(message|call (me )?back|ring (me )?back|manager|owner|speak to|talk to|in person|complain\w*|refund|problem with|not happy|unhappy)\b", caseSensitive: false).hasMatch('$asked $text');
+    final isBooking = RegExp(r"\b(confirmed|booked|booking is|reservation is|order (is|placed)|sign(ed)? (me |you )?up|i.?d like to (book|order|sign)|the (cost|price) of|costs? £|£\d)", caseSensitive: false).hasMatch(text);
+    return wanted && !isBooking;
+  }
+
   /// The caller is asking about a booking or order they already have.
   static final _aboutMine = RegExp(r"\b(my (booking|reservation|appointment|order|stay|room|table|class|lesson|visit)|i (have |had |made |'ve )?(booked|ordered|reserved)|booked with|cancel|reschedul|when is my|what time is my)\b", caseSensitive: false);
 
@@ -1849,6 +1868,8 @@ class AppState extends ChangeNotifier {
   Future<void> _autoSave(Set<String> abilities, List<ChatMessage> convo, String agentName) async {
     final last = convo.last.content;
     if (abilities.isEmpty || !_confirmed.hasMatch(last) || !llmReady) return;
+    // A business with its own app: its bookings and orders are saved there (not here), and a message only when they left one.
+    if ((await builtAppTools({'all'})).isNotEmpty && !_forManager(const {}, convo)) return;
     // Orders and bookings only when the caller asked for a new one (not "is mine confirmed?", not cancelling).
     if (!abilities.contains('message') && !_askedForNew(convo)) return;
     final newThing = _askedForNew(convo);

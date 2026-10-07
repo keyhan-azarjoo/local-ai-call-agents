@@ -420,7 +420,7 @@ class ScenarioRunner {
     final rec = isolated ? null : receptionistOf[sc['app']];
     if (rec != null) s.roomAgent[room] = rec;
     final port = s.host!.port, key = s.host!.engineKey;
-    final cfg = jsonDecode(await _get('http://127.0.0.1:$port/api/voice-config?room=${Uri.encodeQueryComponent(room)}&mode=caller&token=$key')) as Map;
+    final cfg = jsonDecode(await _get('http://127.0.0.1:$port/api/voice-config?room=${Uri.encodeQueryComponent(room)}&mode=caller&lang=${sc['lang'] ?? 'en'}&token=$key')) as Map;
     final greeting = '${cfg['greeting']}';
     final turns = <Map<String, String>>[{'role': 'assistant', 'content': greeting}];
     // When each line was said, and for the AI how long it took: first words and the whole answer.
@@ -444,7 +444,7 @@ class ScenarioRunner {
       live();
       final rq = await http.postUrl(Uri.parse('http://127.0.0.1:$port/v1/chat/completions?token=$key'));
       rq.headers.contentType = ContentType.json;
-      rq.write(jsonEncode({'model': 'caller:en:$room', 'stream': true, 'messages': turns}));
+      rq.write(jsonEncode({'model': 'caller:${sc['lang'] ?? 'en'}:$room', 'stream': true, 'messages': turns})); // in the caller's language, as the voice engine sends it
       final asked = DateTime.now();
       final rs = await rq.close();
       final buf = StringBuffer();
@@ -894,7 +894,7 @@ List<Map<String, dynamic>> pickScenarios(List<Map<String, dynamic>> all, Scenari
     case ScenarioPick.journeys:
       return [for (final s in all) if (s['steps'] != null) s];
     case ScenarioPick.challenges:
-      return [for (final s in all) if ('${s['intent']}'.startsWith('challenge_')) s];
+      return [for (final s in all) if ('${s['id']}'.startsWith('challenge-')) s];
     case ScenarioPick.all:
       // Business by business in turn, so every batch covers all of them.
       final byApp = <String, List<Map<String, dynamic>>>{};

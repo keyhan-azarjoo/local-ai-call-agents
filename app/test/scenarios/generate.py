@@ -706,6 +706,71 @@ def challenges(base):
     return out
 
 
+# ---------------- long calls (~5 minutes) and other languages ----------------
+ASK = {
+    'restaurant': [('Is the Diavola spicy?', r'spicy|chilli|hot|yes'), ('How much is the Tartufo pizza?', r'15'), ('What is in the seafood linguine?', r'mussel|clam|prawn'),
+                   ('Which pasta is vegetarian?', r'cacio|pepe'), ('What desserts do you have?', r'tiramis|sorbet'), ('How much is an Aperol spritz?', r'9'),
+                   ('What time do you close?', r'22:30|10:30|half past ten'), ('How far do you deliver?', r'3 miles|three miles|45')],
+    'barber': [('How much is a skin fade?', r'22'), ('How long does a cut and beard take?', r'45'), ('How much is a hot towel shave?', r'20'), ('How much is a kids cut?', r'12'),
+               ('Which barber is best for fades?', r'Tony'), ('How much is the beard oil?', r'12'), ('Do you take walk-ins?', r'walk|5 ?pm|17:00|five'), ('Is there parking?', r'parking|market lane')],
+    'salon': [('How much is balayage?', r'160'), ('How much is a full head colour?', r'95'), ('How long does balayage take?', r'180|3 hours|three hours'),
+              ('Who is best with curly hair?', r'Priya'), ('Do I need a patch test for colour?', r'patch|48'), ('How much is an Olaplex treatment?', r'30')],
+    'clinic': [('How much is teeth whitening?', r'299'), ('How much is a check-up?', r'65'), ('Is the Invisalign consultation free?', r'free|0|no charge'),
+               ('Which dentist does implants?', r'Omar|Khalil'), ('Do you have a hygienist?', r'Leah|hygien'), ('What should a new patient bring or do?', r'10 minutes|early|form|history')],
+    'hotel': [('How much is the Harbour View room?', r'165'), ('How many does the Family Suite sleep?', r'4|four'), ('What time is check-in?', r'3 ?pm|15:00|three'),
+              ('Are dogs allowed?', r'Garden Twin|dog|15'), ('Is breakfast included?', r'breakfast|included|8'), ('Which is the cheapest room?', r'Garden Twin|115')],
+    'garage': [('How much is an MOT?', r'54'), ('How much is a full service and how long?', r'229|3 hours|three hours'), ('How much are front brake pads?', r'140'),
+               ('How much is an air-con re-gas?', r'69'), ('Is there a courtesy car?', r'courtesy|car'), ('When should I drop the car off?', r'8|9')],
+    'gym': [('How much is the Unlimited membership?', r'45'), ('How much is off-peak?', r'25'), ('How much is the class pass?', r'80'), ('What time is HIIT blast?', r'7|07:00|seven'),
+            ('Which day is Olympic lifting?', r'Thursday'), ('Who teaches mobility flow?', r'Sofia')],
+    'shop': [('How much is a sourdough loaf?', r'4\.2|4\.20'), ('How much is the veg box?', r'14'), ('How much is the ground coffee?', r'6\.4|6\.40'), ('How much are the eggs?', r'2\.6|2\.60'),
+             ('How much is the olive oil?', r'8\.5|8\.50'), ('Do you deliver, and how much is it?', r'deliver|2\.50|2 miles')],
+    'tutoring': [('How much is the GCSE maths booster and which day?', r'180|Tuesday'), ('How much is A-level chemistry?', r'220'), ('Which day is Python for beginners?', r'Wednesday'),
+                 ('How much is conversational Spanish?', r'160'), ('Is there a trial lesson?', r'trial|free')],
+    'events': [('How much are Midnight Owls tickets?', r'12'), ('When is the late jazz session?', r'22|Thursday|21:00|9'), ('How much is Deep House Friday?', r'15'),
+               ('How much is the comedy showcase?', r'10'), ('Is there an age limit?', r'18|ID|age')],
+    'realestate': [('How much is the Victorian terrace?', r'685'), ('How much is the flat with the balcony to rent?', r'1650|1,650'), ('How many bedrooms does the cottage have?', r'2|two'),
+                   ('How much is the studio near the station?', r'975'), ('When do viewings run?', r'9|6 ?pm|18:00|saturday')],
+}
+LANGS = [('es', 'Spanish'), ('fr', 'French'), ('de', 'German'), ('it', 'Italian'), ('fa', 'Persian'), ('ar', 'Arabic'), ('tr', 'Turkish'), ('pl', 'Polish')]
+
+
+def long_and_languages(base):
+    out = []
+    by_app = {}
+    for s in base:
+        if s['expect'].get('new') == 1 and s['intent'] in ('book', 'book_table', 'order_collection', 'order_delivery', 'order_pickup'):
+            by_app.setdefault(s['app'], []).append(s)
+    for app, pool in by_app.items():
+        pool = list(pool)
+        R.shuffle(pool)
+        # Long calls: five questions, a follow-up, a little chat, then the booking or order.
+        for k in range(5):
+            b = json.loads(json.dumps(pool[k % len(pool)]))
+            qs = R.sample(ASK[app], min(5, len(ASK[app])))
+            goal = ('This is a long call (about five minutes). Before anything else, ask these questions ONE AT A TIME, waiting for each answer: '
+                    + ' | '.join(q for q, _ in qs) + f'. Ask one follow-up about one of the answers, and chat briefly about {R.choice(CHAT)}. Only then: {b["goal"]}')
+            exp = {**b['expect'], 'reply_mentions': [m for _, m in qs[:3]]}
+            out.append(S.make(app, 'long_call', goal, b['facts'], exp, seed=b.get('seed', []), style='step_by_step', caller=b['caller'], setup='solo') | {
+                'style': 'long_call', 'style_text': 'Curious and thorough: one question at a time, you listen to each answer before the next.', 'max_turns': 24})
+        # Other languages: the whole call in that language.
+        for k, (code, lang) in enumerate(LANGS):
+            if k % 2 == 0:
+                b = json.loads(json.dumps(pool[(k + 5) % len(pool)]))
+                goal, facts, exp, seed = b['goal'], b['facts'], b['expect'], b.get('seed', [])
+                intent = 'lang_book'
+            else:
+                q, m = R.choice(ASK[app])
+                c = person('step_by_step')
+                goal, facts, exp, seed = f'{q} You do not want to book or order.', [f'Your name: {c["name"]}'], {'new': 0, 'reply_mentions': [m]}, []
+                b = {'caller': c}
+                intent = 'lang_info'
+            out.append(S.make(app, intent, goal, facts, exp, seed=seed, style='step_by_step', caller=b['caller'], setup='solo') | {
+                'style': f'lang_{code}', 'lang': code,
+                'style_text': f'You speak ONLY {lang}, as a native speaker would (names, numbers, postcodes and phone numbers as they are).', 'max_turns': 14})
+    return out
+
+
 def main():
     out = []
     out += restaurant()
@@ -715,7 +780,7 @@ def main():
     for i, s in enumerate(out):
         s['n'] = i + 1
     (Path(__file__).parents[2] / 'assets' / 'scenarios' / 'scenarios.json').write_text(json.dumps(out, indent=1, ensure_ascii=False))
-    ch = challenges(out)
+    ch = challenges(out) + long_and_languages(out)
     for i, c in enumerate(ch):
         c['n'] = 3001 + i
         c['id'] = f'challenge-{c["app"]}-{c["intent"].replace("challenge_", "")}-{c["n"]}'

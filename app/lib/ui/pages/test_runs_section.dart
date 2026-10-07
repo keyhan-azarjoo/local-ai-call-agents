@@ -573,8 +573,8 @@ class _RunScenariosDialogState extends State<_RunScenariosDialog> {
               (ScenarioPick.quick, 'Quick check', 'One of each kind of call for every app (about 70 calls, about an hour)'),
               (ScenarioPick.app, 'One app', 'Every scenario for one business'),
               (ScenarioPick.journeys, 'Call-backs and teams', 'Book, call back to change, someone else tries to cancel, cancel; switching apps; agent teams; skills (272)'),
-              (ScenarioPick.challenges, 'Hard calls', 'Long, messy calls: detours, changing their mind, off-topic, rambling, spelling, rude callers, tricks and privacy (336)'),
-              (ScenarioPick.all, 'Everything', 'All 1,758 scenarios (a day or more)'),
+              (ScenarioPick.challenges, 'Hard calls', 'Long and messy: five-minute calls with many questions, detours, changing their mind, off-topic, rude callers, tricks, privacy, and 8 other languages (479)'),
+              (ScenarioPick.all, 'Everything', 'All 1,901 scenarios (a day or more)'),
             ])
               InkWell(
                 onTap: () => setState(() => pick = v),

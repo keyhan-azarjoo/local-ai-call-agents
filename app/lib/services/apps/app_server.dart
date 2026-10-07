@@ -301,14 +301,15 @@ class AppServer {
       case 'tools/call':
         final p = (msg['params'] as Map?)?.cast<String, dynamic>() ?? {};
         final args = (p['arguments'] as Map?)?.cast<String, dynamic>() ?? {};
+        final shown = {...args}..remove('_heard'); // (the caller's words, for keeping who they asked for)
         try {
           if (paused) throw AppDataError('${spec.name} is paused right now.');
           final text = await callTool('${p['name']}', args, manager: manager);
           result = {'content': [{'type': 'text', 'text': text}]};
-          onToolCall?.call(spec.name, '${p['name']}', args, text, false);
+          onToolCall?.call(spec.name, '${p['name']}', shown, text, false);
         } on AppDataError catch (e) {
           result = {'content': [{'type': 'text', 'text': e.message}], 'isError': true};
-          onToolCall?.call(spec.name, '${p['name']}', args, e.message, true);
+          onToolCall?.call(spec.name, '${p['name']}', shown, e.message, true);
         }
       default:
         error = {'code': -32601, 'message': 'Unknown method $method'};
@@ -343,6 +344,14 @@ class AppServer {
           'time': {'type': 'string', 'description': 'HH:MM'},
           if (shape.guestsField != null) 'guests': {'type': 'integer', 'description': 'How many people'},
         }, const ['date', 'time'], readOnly: true));
+      }
+      final stay = AppData.stayOf(t);
+      if (stay != null && !manager && t.access.add) {
+        out.add(AppTool('check_${t.id}', 'For a NEW stay: shows which ${spec.table(stay.room.link!)!.title.toLowerCase()} of $app are free for every night from check-in to check-out. Not for someone\'s existing booking (that is find_my_${t.id}).', {
+          stay.from.id: {'type': 'string', 'description': '${stay.from.label} (YYYY-MM-DD)'},
+          stay.to.id: {'type': 'string', 'description': '${stay.to.label} (YYYY-MM-DD)'},
+          if (stay.guests != null) stay.guests!.id: {'type': 'integer', 'description': 'How many people'},
+        }, [stay.from.id, stay.to.id], readOnly: true));
       }
       final phoneF = t.fields.where((f) => f.type == 'phone').firstOrNull;
       if (!manager && t.access.add && !t.single && phoneF != null) {
@@ -459,16 +468,49 @@ class AppServer {
     return 'Cancelled. ${await data.describe(t.id, [r])}';
   }
 
+  /// [args] with the stylist, doctor… the caller named: the one named just now, whatever the AI put in;
+  /// else one named earlier in the call, when the AI left it out.
+  Future<Map<String, dynamic>> _keepNamed(TableSpec t, Map<String, dynamic> args, List<String> heard) async {
+    final shape = BookingShape.of(spec, t);
+    if (shape == null || heard.isEmpty) return args;
+    final res = shape.resourceField.id;
+    final now = await data.namedResource(shape, heard.last);
+    if (now != null) return {...args, res: now};
+    if ('${args[res] ?? ''}'.trim().isNotEmpty) return args;
+    final named = await data.namedResource(shape, heard.join('\n'));
+    return named == null ? args : {...args, res: named};
+  }
+
   static final _placeholder = RegExp(r'^((a|the|new|existing|regular|returning|valued)\s+)?(guest|customer|caller|client|unknown|n/?a|none|name|user|walk.?in|anonymous|patient|student|test|tbc|son|daughter|child|kid|boy|girl|wife|husband|partner|me|myself|mum|mom|dad|friend|\?+|-+)(\s*\d*)?$', caseSensitive: false);
 
   Future<String> callTool(String name, Map<String, dynamic> args, {required bool manager}) async {
     final tool = mcpTools(manager: manager).where((t) => t.name == name).firstOrNull;
     if (tool == null) throw AppDataError('Unknown tool $name.');
-    if (RegExp(r'^(find|cancel|change)_my_').hasMatch(name)) return _mine(name, args);
+    // The caller's own words in the call (sent by the phone side), newest last: who they asked for is kept.
+    final heard = [for (final x in (args['_heard'] as List? ?? const [])) '$x'];
+    if (args.containsKey('_heard')) args = {...args}..remove('_heard');
+    if (RegExp(r'^(find|cancel|change)_my_').hasMatch(name)) {
+      if (name.startsWith('change_my_')) args = await _keepNamed(spec.table(name.substring(10))!, args, heard);
+      return _mine(name, args);
+    }
     final verb = name.substring(0, name.indexOf('_'));
     final t = spec.table(name.substring(verb.length + 1))!;
     switch (verb) {
       case 'check':
+        final stay = AppData.stayOf(t);
+        if (stay != null) {
+          final from = parseDate('${args[stay.from.id] ?? ''}'), to = parseDate('${args[stay.to.id] ?? ''}');
+          if (from == null || to == null) throw AppDataError('Give check-in and check-out as YYYY-MM-DD (today is ${withDay(DateTime.now().toIso8601String().substring(0, 10))}).');
+          if (to.compareTo(from) <= 0) throw AppDataError('${stay.to.label} must be after ${stay.from.label.toLowerCase()}.');
+          final guests = (args[stay.guests?.id] as num?)?.toInt() ?? int.tryParse('${args[stay.guests?.id] ?? ''}') ?? 0;
+          final a = await data.freeStay(t, from, to, guests: guests);
+          final label = spec.table(stay.room.link!)!.labelField;
+          final nights = DateTime.parse('${to}T00:00:00Z').difference(DateTime.parse('${from}T00:00:00Z')).inDays;
+          final booked = a.taken.isEmpty ? '' : 'Booked then: ${a.taken.map((r) => r[label]).join(', ')}. ';
+          if (a.free.isEmpty) return 'Nothing is free for all $nights nights, ${withDay(from)} to ${withDay(to)}${guests > 0 ? ' for $guests' : ''}. ${booked}Ask whether other dates suit them.';
+          return 'Free for all $nights nights, ${withDay(from)} to ${withDay(to)}${guests > 0 ? ' for $guests' : ''}: ${a.free.map((r) => r[label]).join(', ')}. $booked'
+              'This only checked — NOTHING IS BOOKED YET. Once you have the caller\'s name and phone and they agree, call add_${t.id} with one of the free ones.';
+        }
         final b = BookingShape.of(spec, t)!;
         final date = parseDate('${args['date'] ?? ''}') ?? (throw AppDataError('Give the date as YYYY-MM-DD (today is ${withDay(DateTime.now().toIso8601String().substring(0, 10))}).'));
         final time = parseTime('${args['time'] ?? ''}') ?? (throw AppDataError('Give the time as HH:MM, 24-hour (7pm = 19:00).'));
@@ -502,6 +544,8 @@ class AppServer {
           }
         }
         if (!manager) {
+          // The stylist, doctor or barber the caller asked for (else the first free one is given).
+          args = await _keepNamed(t, args, heard);
           // Saved already in this call (the caller corrected something, or the AI saved twice): change that one.
           final shape = BookingShape.of(spec, t);
           final prev = await data.recentByPhone(t, '${args[t.fields.where((f) => f.type == 'phone').firstOrNull?.id] ?? ''}',

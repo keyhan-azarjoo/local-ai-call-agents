@@ -351,27 +351,44 @@ class AppData {
     }
   }
 
-  /// A stay (a room from check-in to check-out, no times): the room must be free for those nights.
-  Future<void> _holdStay(TableSpec t, Map<String, Object?> clean) async {
+  /// A stay table (a room from check-in to check-out, no times): its two dates, the room and the guests.
+  static ({FieldSpec from, FieldSpec to, FieldSpec room, FieldSpec? guests})? stayOf(TableSpec t) {
     final dates = t.fields.where((f) => f.type == 'date').toList();
     final res = t.fields.where((f) => f.type == 'link' && BookingShape._bookable.hasMatch('${f.id} ${f.link}')).firstOrNull;
-    if (dates.length < 2 || res == null || t.fields.any((f) => f.type == 'time')) return;
-    final from = '${clean[dates[0].id] ?? ''}', to = '${clean[dates[1].id] ?? ''}', want = clean[res.id];
-    if (from.isEmpty || to.isEmpty || want == null) return;
-    if (to.compareTo(from) <= 0) throw AppDataError('${dates[1].label} must be after ${dates[0].label.toLowerCase()}.');
+    if (dates.length < 2 || res == null || t.fields.any((f) => f.type == 'time')) return null;
+    return (from: dates[0], to: dates[1], room: res,
+        guests: t.fields.where((f) => f.type == 'number' && RegExp(r'guest|people|party|person|size').hasMatch(f.id)).firstOrNull);
+  }
+
+  /// Rooms free for every night from [from] to [to] that sleep [guests], and the ones taken then.
+  Future<({List<Map<String, Object?>> free, List<Map<String, Object?>> taken})> freeStay(TableSpec t, String from, String to, {int guests = 0, int? ignore}) async {
+    final s = stayOf(t)!;
     final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
-    final rooms = await list(res.link!, manager: true);
-    final label = spec.table(res.link!)!.labelField;
+    final rooms = await list(s.room.link!, manager: true);
+    final sleeps = spec.table(s.room.link!)!.fields.where((f) => f.type == 'number' && RegExp(r'seat|capacity|guest|size|people|places|sleeps').hasMatch(f.id)).firstOrNull;
     final taken = <Object?>{};
     for (final r in await list(t.id, manager: true)) {
-      if (status != null && RegExp(r'cancel|no.?show|declin|reject', caseSensitive: false).hasMatch('${r[status.id] ?? ''}')) continue;
-      final a = '${r[dates[0].id] ?? ''}', b = '${r[dates[1].id] ?? ''}';
-      if (a.isNotEmpty && b.isNotEmpty && from.compareTo(b) < 0 && to.compareTo(a) > 0) taken.add(r[res.id]);
+      if (r['id'] == ignore || (status != null && RegExp(r'cancel|no.?show|declin|reject', caseSensitive: false).hasMatch('${r[status.id] ?? ''}'))) continue;
+      final a = '${r[s.from.id] ?? ''}', b = '${r[s.to.id] ?? ''}';
+      if (a.isNotEmpty && b.isNotEmpty && from.compareTo(b) < 0 && to.compareTo(a) > 0) taken.add(r[s.room.id]);
     }
-    if (!taken.contains(want)) return;
-    final name = rooms.where((r) => r['id'] == want).firstOrNull?[label] ?? want;
-    final free = [for (final r in rooms) if (!taken.contains(r['id'])) '${r[label]}'];
-    throw AppDataError('$name is already booked for some of those nights ($from to $to). ${free.isEmpty ? 'Nothing else is free then.' : 'Free then: ${free.join(', ')}.'}');
+    bool fits(Map<String, Object?> r) => guests <= 0 || sleeps == null || ((r[sleeps.id] as num?) ?? 999) >= guests;
+    return (free: [for (final r in rooms) if (!taken.contains(r['id']) && fits(r)) r], taken: [for (final r in rooms) if (taken.contains(r['id'])) r]);
+  }
+
+  /// A stay: the room must be free for those nights.
+  Future<void> _holdStay(TableSpec t, Map<String, Object?> clean, {int? ignore}) async {
+    final s = stayOf(t);
+    if (s == null) return;
+    final from = '${clean[s.from.id] ?? ''}', to = '${clean[s.to.id] ?? ''}', want = clean[s.room.id];
+    if (from.isEmpty || to.isEmpty || want == null) return;
+    if (to.compareTo(from) <= 0) throw AppDataError('${s.to.label} must be after ${s.from.label.toLowerCase()}.');
+    final a = await freeStay(t, from, to, guests: (clean[s.guests?.id] as num?)?.toInt() ?? 0, ignore: ignore);
+    final hit = a.taken.where((r) => r['id'] == want).firstOrNull;
+    if (hit == null) return;
+    final label = spec.table(s.room.link!)!.labelField;
+    throw AppDataError('${hit[label] ?? want} is already booked for some of those nights ($from to $to). '
+        '${a.free.isEmpty ? 'Nothing else is free then.' : 'Free then: ${a.free.map((r) => '${r[label]}').join(', ')}.'}');
   }
 
   /// The day plan: every resource and its bookings, for the website (no names) or the manager.
@@ -418,6 +435,8 @@ class AppData {
     final clean = await _clean(t, values, manager: false, partial: true)..removeWhere((k, v) => v == null);
     final merged = {...old, ...clean};
     final shape = BookingShape.of(spec, t);
+    // A stay moved to other nights or another room: never onto a taken one.
+    if (shape == null) await _holdStay(t, merged, ignore: id);
     if (shape != null && merged[shape.dateField.id] != null && merged[shape.timeField.id] != null) {
       final res = shape.resourceField.id;
       final a = await availability(shape, '${merged[shape.dateField.id]}', '${merged[shape.timeField.id]}',
@@ -437,6 +456,35 @@ class AppData {
       if (!f.appliesTo(out)) out.remove(f.id);
     }
     await db.raw.update('app_rows', {'data': jsonEncode(out), 'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// The stylist, doctor, barber… the caller asked for by name in [heard] (their words; the last one named
+  /// wins, not one they said no to: "Priya, not Marcus"). Not tables or numbered rooms.
+  Future<String?> namedResource(BookingShape b, String heard) async {
+    if (b.seatsField != null || heard.trim().isEmpty) return null;
+    const titles = {'dr', 'doctor', 'mr', 'mrs', 'ms', 'miss', 'prof', 'the'};
+    final labels = [for (final r in await list(b.resources.id, manager: true)) '${r[b.resources.labelField] ?? ''}'];
+    List<String> words(String l) => plain(l).split(RegExp(r'[^a-z0-9]+')).where((w) => w.length >= 3 && !titles.contains(w) && int.tryParse(w) == null).toList();
+    // Only words that pick one out ("Hannah", "Reid"), not "Room" in "Room 1" and "Room 2".
+    final count = <String, int>{};
+    for (final l in labels) {
+      for (final w in words(l).toSet()) {
+        count[w] = (count[w] ?? 0) + 1;
+      }
+    }
+    final said = plain(heard);
+    String? found;
+    var at = -1;
+    for (final l in labels) {
+      for (final w in words(l).where((w) => count[w] == 1)) {
+        for (final m in RegExp('\\b${RegExp.escape(w)}\\b').allMatches(said)) {
+          if (m.start <= at || RegExp(r'\b(not|than|instead of|this is|i.?m|i am|name is)\s+(dr\.?\s+|doctor\s+)?$').hasMatch(said.substring(0, m.start))) continue;
+          at = m.start;
+          found = l;
+        }
+      }
+    }
+    return found;
   }
 
   /// What this phone number saved by phone in the last [minutes] (not cancelled): a second save

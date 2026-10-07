@@ -453,6 +453,8 @@ class AppState extends ChangeNotifier {
   Future<({bool ok, String text})?> commitClaimed(List<ChatMessage> convo, String reply, Set<String> scopes, {String? callerNumber}) async {
     // A promise while still asking for details ("I'll book it — what's your name?") isn't a save yet.
     final stillAsking = RegExp(r'\b(name|number|phone|postcode|address|email|time|day|date)\b[^.?!]*\?', caseSensitive: false).hasMatch(reply);
+    // "The Loft is already booked" / "sorry, all rooms are booked": a refusal, not a save.
+    if (RegExp(r"\b(sorry|already (booked|taken|reserved)|not (free|available)|isn.t (free|available)|fully booked|all\b.{0,25}\bbooked)\b", caseSensitive: false).hasMatch(reply)) return null;
     if (!(_confirmed.hasMatch(reply) || (_promisedAction.hasMatch(reply) && !stillAsking && !_waitsForCaller.hasMatch(reply.trim()))) || !llmReady || !_askedForNew(convo)) return null;
     final tools = await builtAppTools(scopes);
     final said = [for (final m in convo.reversed.take(6)) m.content, reply].join(' ');
@@ -474,6 +476,23 @@ class AppState extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// The caller's own words in this call, for the business's app: it keeps the stylist, doctor or barber
+  /// they asked for by name (small models leave them out, and the first free one is given).
+  static Map<String, dynamic> withHeard(Map<String, dynamic> args, Iterable<ChatMessage> convo) =>
+      {...args, '_heard': [for (final m in convo) if (m.role == 'user') callerWords(m.content)]};
+
+  /// The caller enrolling their child is the parent ("This is Yusuf Ahmed… my son Ravi"): small models leave them out.
+  static Map<String, dynamic> saidParent(ToolBinding b, Map<String, dynamic> args, Iterable<ChatMessage> convo) {
+    final key = ((b.tool.inputSchema['properties'] as Map?) ?? const {}).keys.map((k) => '$k').where((k) => RegExp(r'parent|guardian').hasMatch(k)).firstOrNull;
+    if (key == null || '${args[key] ?? ''}'.trim().isNotEmpty) return args;
+    for (final m in convo.where((m) => m.role == 'user')) {
+      final h = RegExp(r"\b(?:[Tt]his is|I[’']?m|I am|[Mm]y name is)\s+([A-Z][a-z’'-]+(?: [A-Z][a-z’'-]+)?)").firstMatch(callerWords(m.content));
+      if (h == null) continue;
+      return args.values.any((v) => '$v'.trim().toLowerCase() == h[1]!.toLowerCase()) ? args : {...args, key: h[1]};
+    }
+    return args;
   }
 
   static bool _sameNumber(Object? a, Object? b) {
@@ -514,7 +533,7 @@ class AppState extends ChangeNotifier {
         final spoken = saidPhone(convo);
         if (spoken != null && args['phone'] != null && !_sameNumber(args['phone'], spoken)) args = {...args, 'phone': spoken};
         if (unsaidPostcode(args, convo)) return result = (text: 'Ask the caller for their postcode first, then save it.', isError: true);
-        result = await run(saidDays(args, convo)); // the day the caller said, here too; refused (e.g. a typo)? it may try again, once
+        result = await run(saidParent(b, withHeard(saidDays(args, convo), convo), convo)); // the day (and who) the caller said, here too; refused? it may try again, once
         // Saved: that's all we need — no sentence to wait for.
         if (!result!.isError || ++tries >= 2) throw const Cancelled();
         return result!;
@@ -590,7 +609,7 @@ class AppState extends ChangeNotifier {
   static bool promisesCheck(String reply) => _promisedCheck.hasMatch(reply);
 
   /// Promised to book / cancel / order (an action, not just a look).
-  static final _promisedAction = RegExp(r"\b(let me|i[’']?ll|i will|i[’']?m going to|going to)\s+(just\s+|now\s+|go ahead and\s+)?(book|reserve|cancel|place|save|put|make)\b", caseSensitive: false);
+  static final _promisedAction = RegExp(r"\b(let me|i[’']?ll|i will|i[’']?m going to|going to)\s+(just\s+|now\s+|go ahead and\s+)?(book|reserve|cancel|place|save|put|make|enrol+|sign (you|them|him|her) up|register)\b", caseSensitive: false);
   static bool promisesAction(String reply) => _promisedAction.hasMatch(reply);
 
   /// The turn isn't finished: it promised a look and looked at nothing, or an action that wasn't done.
@@ -606,6 +625,19 @@ class AppState extends ChangeNotifier {
     return d.isEmpty ? '' : ' The day they mean is ${withDay(d.first)}${d.length > 1 ? ' (or ${withDay(d.last)} if they mean the week after)' : ''}: use that date, never ask for the exact date.';
   }
 
+  /// "four nights from tomorrow": the stay's dates (small models take nights for guests).
+  static String stayNote(String said) {
+    const counts = {'a': 1, 'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7};
+    final n = RegExp(r'\b(\d{1,2}|a|one|two|three|four|five|six|seven)[\s-]+nights?\b', caseSensitive: false).firstMatch(said);
+    if (n == null) return '';
+    final nights = int.tryParse(n[1]!) ?? counts[n[1]!.toLowerCase()]!;
+    final d = spokenDates(said);
+    if (d.isEmpty) return ' "$nights night${nights == 1 ? '' : 's'}" is how long they stay, not how many guests.';
+    final f = DateTime.parse(d.first);
+    final out = DateTime(f.year, f.month, f.day + nights).toIso8601String().substring(0, 10);
+    return ' Their stay: check-in ${withDay(d.first)}, check-out ${withDay(out)} ($nights night${nights == 1 ? '' : 's'}) — nights are not guests.';
+  }
+
   /// Small models repeat their last answer whatever is said: tell them what it was and not to.
   static String noRepeat(String lastSaid) => lastSaid.length < 20
       ? ''
@@ -619,7 +651,7 @@ class AppState extends ChangeNotifier {
     final book = _appToolFor(tools, 'booking'), order = _appToolFor(tools, 'order');
     final check = tools.where((t) => t.tool.name.startsWith('check_')).firstOrNull;
     return ' You answer for $name. Its system is where bookings and orders are kept'
-        '${check == null ? '' : '; before offering a time, call ${check.fnName} to see what is free (that only looks, it does not book)'}'
+        '${check == null ? '' : '; before offering a time or a room, call ${check.fnName} to see what is free (that only looks, it does not book)'}'
         '${book == null ? '' : '; save a booking with ${book.fnName}'}${order == null ? '' : '; save an order with ${order.fnName}'}. '
         '${order == null ? '' : _orderHow(order, book)}'
         '${book == null ? '' : 'For a booking, ${book.fnName} needs: ${_needs(book)} — ask for those, nothing it does not need. '}'
@@ -846,8 +878,9 @@ class AppState extends ChangeNotifier {
         }
         // The day the caller said, not the one a small model worked out: "next Thursday" saved as a Friday.
         if (callerNumber != null && RegExp(r'^(add|check|change_my)_').hasMatch(b.tool.name)) args = saidDays(args, messages);
+        if (callerNumber != null && RegExp(r'^(add|change_my)_').hasMatch(b.tool.name) && appTools.any((t) => t.fnName == b.fnName)) args = saidParent(b, withHeard(args, messages), messages);
         // Checked one day, saving another (small models drift): ask the model to make sure, once.
-        if (callerNumber != null && b.tool.name.startsWith('check_')) _lastCheck[callerNumber] = parseDate('${args['date'] ?? ''}') ?? '';
+        if (callerNumber != null && b.tool.name.startsWith('check_')) _lastCheck[callerNumber] = parseDate('${args['date'] ?? args['check_in'] ?? ''}') ?? '';
         if (callerNumber != null && b.tool.name.startsWith('add_') && args['date'] != null) {
           final checked = _lastCheck[callerNumber];
           final saving = parseDate('${args['date']}') ?? '${args['date']}';
@@ -1658,6 +1691,12 @@ class AppState extends ChangeNotifier {
     return agent['handles'] == 'incoming' ? {'message'} : const {};
   }
 
+  /// The caller is correcting what was said or saved ("No, my number is…", "with Priya, not Marcus").
+  static final _correcting = RegExp(r"^\W*(no|nope|wrong)\b|\b(not (right|correct)|isn.t (right|correct)|is wrong|instead|i meant|should be)\b", caseSensitive: false);
+
+  /// The app's own line after a save: when the model writes it, nothing was saved.
+  static final _appDone = RegExp(r"\s*That[’']s all done\b");
+
   static final _yes = RegExp(r"^\W*(yes|yeah|yep|yup|sure|ok(ay)?|please do|please|go ahead|correct|that'?s (right|correct|fine|perfect|great|it)|book it|perfect|sounds (good|great)|absolutely|definitely|do it|confirm(ed)?|lovely|great)\b", caseSensitive: false);
   static final _proposal = RegExp(
       r"\b(book|reserve|confirm|proceed|place (the|your|this) order|go ahead|save (it|that)|shall i|should i|would you like me to|want me to|"
@@ -1678,7 +1717,13 @@ class AppState extends ChangeNotifier {
       return null;
     }
     final offer = convo[convo.length - 2].content;
-    if (!_proposal.hasMatch(offer)) return null;
+    // A yes to "is your number 0771…?" is about the number, not the booking.
+    if (RegExp(r'\d{7,}|\b(number|phone)\b', caseSensitive: false).hasMatch(offer) &&
+        !RegExp(r'\b(today|tomorrow|tonight|\w+day|\d{1,2}(:\d{2})?\s*(am|pm)|\d{1,2}:\d{2})\b', caseSensitive: false).hasMatch(offer)) {
+      return null;
+    }
+    // Asked "shall I book it?", or said "I'll enrol you for that." and they said yes.
+    if (!_proposal.hasMatch(offer) && !_promisedAction.hasMatch(offer)) return null;
     final tools = await builtAppTools(scopes);
     final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
     if (RegExp(r'\bcancel', caseSensitive: false).hasMatch(offer)) {
@@ -1723,7 +1768,7 @@ class AppState extends ChangeNotifier {
       final i = kv.indexOf(': ');
       if (i < 0) continue;
       final k = kv.substring(0, i).trim(), v = kv.substring(i + 2).trim();
-      if (RegExp(r'^(id|name|your name|phone|email|status|notes?|patient name|student name)$', caseSensitive: false).hasMatch(k) || v.isEmpty) continue;
+      if (RegExp(r'^(id|name|your name|phone|email|status|notes?|patient name|student name)$', caseSensitive: false).hasMatch(k) || k.endsWith('?') || v.isEmpty) continue;
       final d = RegExp(r'^(\w+day) (\d{4})-(\d{2})-(\d{2})').firstMatch(v);
       final t = RegExp(r'^(\d{2}):(\d{2})$').firstMatch(v);
       if (d != null) {
@@ -1741,7 +1786,7 @@ class AppState extends ChangeNotifier {
   /// The caller asked for a new booking/order in this call (not about an existing one, not cancelling).
   static bool _askedForNew(List<ChatMessage> convo) {
     final asked = [for (final m in convo.reversed.where((m) => m.role == 'user').take(6)) m.content].join(' ');
-    return RegExp(r"\b(book|reserv|table for|order|appointment|i.?d like|i want|i need|i.?m after|looking (for|to)|(can|could) (i|you|we) (get|have|book|do)|sign me up|put me down|get me)", caseSensitive: false).hasMatch(asked) &&
+    return RegExp(r"\b(book|reserv|table for|order|appointment|i.?d like|i want|i need|i.?m after|looking (for|to)|(can|could) (i|you|we) (get|have|book|do)|sign me up|put me down|get me|interested in|view(ing)?\b|enrol|register|a place on)", caseSensitive: false).hasMatch(asked) &&
         !RegExp(r"\b(cancel|change|move|reschedul|my (booking|reservation|appointment|table|order|stay)|(i|we)(.ve| have| had)? (already )?(booked|reserved|ordered)\b)", caseSensitive: false).hasMatch(asked);
   }
 
@@ -1920,6 +1965,8 @@ class AppState extends ChangeNotifier {
       final ranked = await knowledge.rankToolsScored(question, cands, k: 2);
       if (ranked.isEmpty || ranked.first.$2 < 0.42 || (ranked.length > 1 && ranked.first.$2 - ranked[1].$2 < 0.10)) return null;
       final a = flow.others.firstWhere((a) => '${a['id']}' == ranked.first.$1);
+      // A real person only when asked for one: "a fade with Jay" is a booking, not "put me through to Jay".
+      if (a['handles'] == 'human' && !RegExp(r"\b(speak|talk|put me through|in person|a (real )?person|human|manager|complain\w*|someone)\b", caseSensitive: false).hasMatch(question)) return null;
       final said = [for (final m in convo) if (m.role == 'user') m.content].reversed.take(3).toList().reversed.join(' ');
       return (name: '${a['name']}', brief: 'The caller said: "$said"');
     } catch (_) {
@@ -2313,16 +2360,18 @@ class AppState extends ChangeNotifier {
         ? null
         : (RegExp(r'^pstn-in-\d+-_(\+?\d{6,})_').firstMatch(room)?.group(1) ?? (await _taskOf(mode))?['number']?.toString());
     final lastSaid = convo.lastWhere((m) => m.role == 'assistant', orElse: () => ChatMessage('assistant', '')).content.trim();
+    // A stay said earlier ("four nights from tomorrow"): its dates every turn.
+    final stay = [for (final m in convo.reversed) if (m.role == 'user') stayNote(callerWords(m.content))].firstWhere((s) => s.isNotEmpty, orElse: () => '');
     final messages = [
       ChatMessage('system', await _callSystem(mode, lang, flow, scopes, callerNumber)),
       // What changes every turn goes with the caller's words, so the long system prompt stays cached.
       for (final (i, m) in convo.indexed)
-        i == convo.length - 1 && m.role == 'user' && '${noRepeat(lastSaid)}${dayNote(m.content)}'.isNotEmpty
-            ? ChatMessage('user', '${m.content}\n\n(System note:${noRepeat(lastSaid)}${dayNote(m.content)})')
+        i == convo.length - 1 && m.role == 'user' && '${noRepeat(lastSaid)}${dayNote(m.content)}$stay'.isNotEmpty
+            ? ChatMessage('user', '${m.content}\n\n(System note:${noRepeat(lastSaid)}${dayNote(m.content)}$stay)')
             : m,
     ];
     ({String name, String brief})? passTo;
-    var saved = false, usedTool = false;
+    var saved = false, usedTool = false, refused = false;
     // Where the time of this turn went (kept in voice-turns.jsonl): ms per stage.
     final stages = <String, int>{};
     final clock = Stopwatch()..start();
@@ -2443,6 +2492,8 @@ class AppState extends ChangeNotifier {
       // The caller just said yes to saving it; small models often ask again instead of saving: tell it
       // to save now, in this same reply (no extra model call). If it still doesn't, it's saved after.
       final yesTool = routed == null && mode != 'owner' && !gone ? await _yesTool(convo, scopes, callerNumber).catchError((_) => null) : null;
+      // Correcting what this call saved: saving again updates that one (not a second), so it may.
+      final fixing = _savedOn.contains(room) && [for (final m in convo.reversed.where((m) => m.role == 'user').take(2)) callerWords(m.content)].any(_correcting.hasMatch);
       if (yesTool != null) {
         final last = messages.removeLast();
         messages.add(ChatMessage(last.role,
@@ -2462,6 +2513,7 @@ class AppState extends ChangeNotifier {
         callerNumber: callerNumber,
         onEvent: (e) {
           usedTool = true;
+          if (!e.ok && e.binding.tool.name.startsWith('add_')) refused = true; // the app said no (e.g. taken): it was told
           if (e.ok && (e.binding.serverId == Abilities.serverId || RegExp(r'^(add_|cancel_my_|change_my_)').hasMatch(e.binding.tool.name))) saved = true;
         },
         approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later
@@ -2481,6 +2533,7 @@ class AppState extends ChangeNotifier {
           final cut = t.toLowerCase().indexOf('[transfer');
           if (cut >= 0) t = t.substring(0, cut);
           t = spokenText(t);
+          if (!saved) t = t.split(_appDone).first; // copying the app's "That's all done" without saving
           // Nobody listens to a minute-long answer: stop at a sentence end and offer the rest.
           if (t.length > _maxSpoken && passTo == null) {
             final end = t.lastIndexOf(RegExp(r'[.!?؟。]\s'), _maxSpoken);
@@ -2495,7 +2548,7 @@ class AppState extends ChangeNotifier {
       );
       // "Let me check…" and nothing checked: check now and say the answer in the same turn.
       mark('reply');
-      if (routed == null && passTo == null && !gone && unfinished(full, usedTool: usedTool, acted: saved) && (live || multilingual is! LocalTarget)) {
+      if (routed == null && passTo == null && !gone && unfinished(full, usedTool: usedTool, acted: saved || (_savedOn.contains(room) && !fixing)) && (live || multilingual is! LocalTarget)) {
         var more = '';
         var skip = -1;
         await agentReply(
@@ -2517,11 +2570,12 @@ class AppState extends ChangeNotifier {
               return;
             }
             t = spokenText(t.split('[transfer').first);
+            if (!saved) t = t.split(_appDone).first;
             // Small models often start by saying the last answer again: hold it back while it's only
             // a repeat, then say just the new part.
             if (skip < 0) {
-              if (_saidAlready(sent, t)) return;
-              skip = _repeatedStart(sent, t);
+              if (_saidAlready('$lastSaid $sent', t)) return;
+              skip = _repeatedStart('$lastSaid $sent', t);
             }
             final fresh = t.substring(skip);
             if (fresh.length > more.length) {
@@ -2535,7 +2589,7 @@ class AppState extends ChangeNotifier {
       mark('follow_up');
       // Agreed but still not saved: save it now (cancel by their number, or the agreed booking/order).
       // Not when this call already saved one (a duplicate), nor while the model is asking for a missing detail.
-      if (yesTool != null && !saved && !gone && !_savedOn.contains(room) &&
+      if (yesTool != null && !saved && !gone && (!_savedOn.contains(room) || fixing) &&
           !RegExp(r'\b(name|number|phone|postcode|address|email|time|date)\b[^.?!]*\?', caseSensitive: false).hasMatch(full)) {
         final pre = await _runYes(yesTool, convo, callerNumber).catchError((_) => null);
         if (pre != null) {
@@ -2550,7 +2604,7 @@ class AppState extends ChangeNotifier {
       // Said it's done but didn't save it (small models do that): save it now, into the business's
       // app if it has one; if that fails (e.g. the table is taken), say so straight away.
       // (Not when this call already saved something: "your table is booked, see you!" again is no new booking.)
-      if (!saved && mode != 'owner' && passTo == null && !_savedOn.contains(room)) {
+      if (!saved && !refused && mode != 'owner' && passTo == null && (!_savedOn.contains(room) || fixing)) {
         final c = gone ? null : await commitClaimed(convo, sent, scopes, callerNumber: callerNumber).catchError((_) => null);
         if (c == null) {
           if (flow != null) unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', full)], '${flow.agent['name']}'));

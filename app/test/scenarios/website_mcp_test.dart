@@ -300,6 +300,24 @@ void main() {
     expect(AppState.doneLine('Cancelled. id 9 · Name: X'), 'That’s cancelled for you.');
   });
 
+  test('the stylist, doctor or barber the caller asked for is kept', () async {
+    final s = await spec('clinic');
+    final d = data('clinic', s);
+    final shape = BookingShape.of(s, s.table('appointments')!)!;
+    expect(await d.namedResource(shape, 'Could I see Dr Reid on Friday?'), 'Dr Hannah Reid');
+    expect(await d.namedResource(shape, 'with Omar please'), 'Dr Omar Khalil');
+    expect(await d.namedResource(shape, 'Hannah, not Omar'), 'Dr Hannah Reid');
+    expect(await d.namedResource(shape, 'any dentist is fine'), isNull);
+    final b = await spec('barber');
+    final bshape = BookingShape.of(b, b.table('appointments')!)!;
+    expect(await data('barber', b).namedResource(bshape, 'A skin fade with Jay, not Tony'), 'Jay');
+    // The phone tool keeps it even when the AI leaves it out.
+    final r = await tool('clinic', 'add_appointments', {'name': 'Ana Lima', 'phone': '07700 900950', 'treatment': 'Check-up & clean', 'date': ymd(DateTime.now().add(const Duration(days: 33))), 'time': '10:00',
+      '_heard': ['Hi, a check-up please', 'With Dr Khalil if he is free']});
+    expect(r.error, false, reason: r.text);
+    expect(r.text, contains('Omar Khalil'));
+  });
+
   test('the day a caller means', () {
     final wed = DateTime(2026, 10, 7); // a Wednesday
     expect(spokenDates('a table for two tomorrow at 7', now: wed), {'2026-10-08'});

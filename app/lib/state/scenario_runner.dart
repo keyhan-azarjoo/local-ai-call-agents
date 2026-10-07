@@ -281,6 +281,55 @@ class ScenarioRunner {
 
   final _paused = <int>{};
 
+  /// This scenario's own seeds (e.g. "The Loft is taken"): never cancelled to make room.
+  final _keep = <Object?>{};
+
+  /// In your app earlier scenarios' bookings stay on the websites, and fill the slots later ones
+  /// need. Before a call that should book a given slot, earlier TEST bookings holding exactly that
+  /// slot are cancelled (they stay visible, marked Cancelled); real customers' never are.
+  Future<void> _makeRoom(String app, Map<String, dynamic> ex, Map<String, String> numbers) async {
+    final table = ex['table'] as String?;
+    final want = (ex['fields'] as Map?)?.cast<String, dynamic>();
+    if (isolated || table == null || want == null || ex['new'] != 1) return;
+    final d = data(app);
+    final t = d.spec.table(table);
+    if (t == null) return;
+    final ours = {for (final n in numbers.values) _digits(n)};
+    bool test(Map<String, Object?> r) {
+      final p = _digits('${r['phone'] ?? ''}');
+      return (p.startsWith('447700') || r['via'] == 'seed') && !ours.contains(p) && !_keep.contains(r['id']);
+    }
+    final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+    final off = status?.options.where((o) => RegExp('cancel', caseSensitive: false).hasMatch(o)).firstOrNull;
+    if (status == null || off == null) return;
+    Future<void> cancel(Map<String, Object?> r) async {
+      try {
+        await d.update(table, r['id'] as int, {status.id: off});
+      } catch (_) {}
+    }
+
+    final shape = BookingShape.of(d.spec, t);
+    if (shape != null && want['date'] != null && want['time'] is String) {
+      final date = '${resolve(want['date'], numbers)}';
+      final at = parseTime('${want['time']}');
+      if (at == null) return;
+      int m(String hhmm) => int.parse(hhmm.substring(0, 2)) * 60 + int.parse(hhmm.substring(3, 5));
+      for (final h in await d.busy(shape, date)) {
+        if (h.from < m(at) + d.bookingMinutes && m(at) < h.to && test(h.row)) await cancel(h.row);
+      }
+      return;
+    }
+    final stay = AppData.stayOf(t);
+    if (stay != null && want[stay.from.id] != null) {
+      final from = '${resolve(want[stay.from.id], numbers)}';
+      final to = want[stay.to.id] != null ? '${resolve(want[stay.to.id], numbers)}' : from;
+      for (final r in await d.list(table, manager: true)) {
+        final a = '${r[stay.from.id] ?? ''}', b = '${r[stay.to.id] ?? ''}';
+        if (a.isNotEmpty && b.isNotEmpty && from.compareTo(b) < 0 && (to == from ? from : to).compareTo(a) >= 0 && test(r) && '${r[status.id]}' != off) await cancel(r);
+      }
+    }
+  }
+
   // ---------------- dates ----------------
 
   static String ymd(DateTime d) => d.toIso8601String().substring(0, 10);
@@ -437,7 +486,7 @@ class ScenarioRunner {
         'How you talk: ${c['style_text'] ?? 'Natural and brief.'}\n'
         'Rules: speak like a real phone caller, ONE or TWO short sentences, no lists, no stage directions. Answer the question the assistant just asked. '
         'A fixed timetable time for your course or class is fine. If asked to confirm details that are right, say yes. If the assistant suggests or reads back a day, time, number of people, item or detail that is NOT in your facts, '
-        'say no and give the right one from your facts — never accept a wrong suggestion. A calendar date the assistant adds (like "Saturday 2026-10-10") is fine when the weekday '
+        'say no and give the right one from your facts — never accept a wrong suggestion (except: when a fact says flexible, or your goal says to take another option, and they say yours is not free, say yes to the first other option they offer). A calendar date the assistant adds (like "Saturday 2026-10-10") is fine when the weekday '
         'matches yours: never argue about date numbers, and never say date numbers yourself (no "10 October", no "the 10th"): say the day only as your facts do. '
         'Never say the same sentence twice in a row; if asked for a time or detail you have no fact for, say any time is fine / not needed. '
         'If asked something not in your facts (e.g. allergies, special requests, email) say no / not needed. '
@@ -498,21 +547,23 @@ class ScenarioRunner {
 
     // Records already in the app (someone's booking, a full evening…).
     final seeded = <int>[];
+    _keep.clear();
     final seedTable = <int, String>{};
     for (final sd in (sc['seed'] as List? ?? []).cast<Map>()) {
       final v = {for (final e in (sd['values'] as Map).entries) '${e.key}': resolve(e.value, numbers)};
       final id = await data(app).add('${sd['table']}', v, manager: true, via: 'seed');
       seedTable[seeded.length] = '${sd['table']}';
       seeded.add(id);
+      _keep.add(id);
       // "Wednesday" on a Wednesday: the caller may mean today or next week (both pass the check),
       // so someone else's booking fills both.
       final vals = sd['values'] as Map;
       final dow = DateTime.now().weekday;
       if (vals.values.any((x) => x is Map && x['plus'] == null && (x['weekday'] as num?)?.toInt() == dow) && !vals.values.any((x) => x is String && x.startsWith('\$'))) {
-        await data(app).add('${sd['table']}', {
+        _keep.add(await data(app).add('${sd['table']}', {
           for (final e in vals.entries)
             '${e.key}': e.value is Map && (e.value as Map)['weekday'] != null ? resolveDate({...(e.value as Map)}..remove('weekday')..['offset'] = 0) : resolve(e.value, numbers),
-        }, manager: true, via: 'seed');
+        }, manager: true, via: 'seed'));
       }
     }
 
@@ -558,6 +609,7 @@ class ScenarioRunner {
       for (final t in tables) {
         before[t] = {for (final r in await siteRows(curApp, t)) r['id'] as int};
       }
+      await _makeRoom(curApp, ex, numbers);
       final auditFrom = DateTime.now().millisecondsSinceEpoch;
       final used = <String>[];
       AppServer.onToolCall = (app, tool, args, result, error) {
@@ -606,7 +658,7 @@ class ScenarioRunner {
 
   // ---------------- checks ----------------
 
-  static final _claimed = RegExp(r"\b(you're all set|you are all set|is (now )?(booked|confirmed|reserved|placed)|(have|'ve) (booked|reserved|placed)|booking is confirmed|order is (placed|confirmed|in)|confirmed for)\b", caseSensitive: false);
+  static final _claimed = RegExp(r"\b(you're all set|you are all set|is (now )?(booked|confirmed|reserved|placed)|(have|'ve) (booked|reserved|placed)|booking is confirmed|order is (placed|confirmed|in)|confirmed for|(that|it).?s (all )?(booked|confirmed|reserved))\b", caseSensitive: false);
 
   Future<List<String>> check(String app, Map<String, dynamic> ex, List<Map<String, String>> turns, Map<String, Set<int>> before, List<int> seeded,
       Map<int, String> seedTable, Map<String, String> numbers, List<String> passedTo, List<String> audit) async {
@@ -745,13 +797,14 @@ class ScenarioRunner {
         ok = wants.every((x) => have.entries.any((h) => h.key.toLowerCase() == x.name.toLowerCase() && (x.qty == null || h.value == x.qty))) && have.length == wants.length;
       } else if (f.type == 'number' || f.type == 'money') {
         ok = got != null && num.tryParse('$got') == num.tryParse('$w');
-      } else if (f.type == 'date' && e.value is Map && (e.value as Map)['weekday'] != null && (e.value as Map)['plus'] == null) {
+      } else if (f.type == 'date' && e.value is Map && (e.value as Map)['weekday'] != null) {
         // "Thursday" / "next Thursday": the coming one (today too) or the week after — both are fair.
         final now = DateTime.now();
         var d = DateTime(now.year, now.month, now.day);
         while (d.weekday != ((e.value as Map)['weekday'] as num).toInt()) {
           d = d.add(const Duration(days: 1));
         }
+        d = d.add(Duration(days: ((e.value as Map)['plus'] as num?)?.toInt() ?? 0)); // a check-out: + the nights
         final ok2 = {ymd(d), ymd(d.add(const Duration(days: 7))), '$w'};
         ok = ok2.contains('$got'.trim());
         w = ok2.join(' or ');

@@ -180,7 +180,7 @@ class _SetupWizardState extends State<SetupWizard> {
             Field(
               label: 'Password',
               hint: 'At least 10 characters. Stored as an Argon2id hash on this computer.',
-              child: TextField(controller: password, obscureText: true, enabled: owner == null, onSubmitted: (_) => _createOwner()),
+              child: PasswordField(controller: password, enabled: owner == null, onSubmitted: (_) => _createOwner()),
             ),
             if (error != null) ...[const SizedBox(height: 12), Text(error!, style: const TextStyle(color: LL.red))],
           ]),
@@ -301,7 +301,7 @@ class _SignInPageState extends State<SignInPage> {
               const SizedBox(height: 20),
               Field(label: 'Username', child: TextField(controller: username, autofocus: true)),
               const SizedBox(height: 14),
-              Field(label: 'Password', child: TextField(controller: password, obscureText: true, onSubmitted: (_) => _signIn())),
+              Field(label: 'Password', child: PasswordField(controller: password, onSubmitted: (_) => _signIn())),
               if (error != null) ...[const SizedBox(height: 12), Text(error!, style: const TextStyle(color: LL.red))],
               const SizedBox(height: 18),
               SizedBox(width: double.infinity, child: Btn(busy ? 'Signing in…' : 'Sign in', kind: BtnKind.primary, large: true, onPressed: busy ? null : _signIn)),

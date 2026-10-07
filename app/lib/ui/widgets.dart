@@ -478,3 +478,32 @@ String ago(int ms) {
   if (diff.inDays == 1) return 'Yesterday ${two(d.hour)}:${two(d.minute)}';
   return '${d.day}/${d.month} ${two(d.hour)}:${two(d.minute)}';
 }
+
+
+/// A password box with an eye to show or hide what was typed.
+class PasswordField extends StatefulWidget {
+  const PasswordField({super.key, required this.controller, this.enabled = true, this.onSubmitted});
+  final TextEditingController controller;
+  final bool enabled;
+  final ValueChanged<String>? onSubmitted;
+  @override
+  State<PasswordField> createState() => _PasswordFieldState();
+}
+
+class _PasswordFieldState extends State<PasswordField> {
+  bool shown = false;
+  @override
+  Widget build(BuildContext context) => TextField(
+        controller: widget.controller,
+        obscureText: !shown,
+        enabled: widget.enabled,
+        onSubmitted: widget.onSubmitted,
+        decoration: InputDecoration(
+          suffixIcon: IconButton(
+            tooltip: shown ? 'Hide password' : 'Show password',
+            icon: Icon(shown ? Icons.visibility_off_outlined : Icons.visibility_outlined, size: 20),
+            onPressed: () => setState(() => shown = !shown),
+          ),
+        ),
+      );
+}

@@ -779,8 +779,13 @@ class ScenarioRunner {
         }
       }
       // The caller said goodbye: the assistant says goodbye too and ends the call.
-      final lastCaller = r.turns.lastWhere((t) => t['role'] == 'user', orElse: () => {'content': ''})['content']!;
-      if (AppState.callerDone(lastCaller) && !r.hungUp) f.add('did not say goodbye and hang up when the caller finished');
+      final lastAt = r.turns.lastIndexWhere((t) => t['role'] == 'user');
+      final lastCaller = lastAt < 0 ? '' : r.turns[lastAt]['content']!;
+      final askedBefore = lastAt < 1 ? '' : r.turns.sublist(0, lastAt).lastWhere((t) => t['role'] == 'assistant', orElse: () => {'content': ''})['content']!;
+      final done = AppState.callerDone(lastCaller, asked: askedBefore);
+      if (done && !r.hungUp) f.add('did not say goodbye and hang up when the caller finished');
+      // …and never before: only after the caller said goodbye, or "no" to "anything else?".
+      if (r.hungUp && !done) f.add('hung up before checking the caller had nothing else (they said "$lastCaller")');
       // Spoken in its voice and heard back: the words must come through (prices, times, names).
       final unclear = r.times.where((t) => t['ai_match'] is num && (t['ai_match'] as num) < 0.5).firstOrNull;
       if (unclear != null) f.add('speech: the AI\'s words came out unclear (heard "${unclear['ai_heard']}")');

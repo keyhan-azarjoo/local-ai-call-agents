@@ -1938,14 +1938,46 @@ class AppState extends ChangeNotifier {
     return wanted && !isBooking;
   }
 
-  /// The caller is finished: a goodbye, or "no, that's all, thanks" (not a question, not a new request).
-  static bool callerDone(String said) {
+  /// The caller is finished, so the call can end: they said goodbye, or "that's all", or — after
+  /// being asked if there's anything else — "no, thank you". A plain "thank you" is not the end:
+  /// they're asked if there's anything else first (see [thanksOnly]).
+  static bool callerDone(String said, {String asked = ''}) {
     final s = callerWords(said).trim();
     if (s.contains('?') || s.length > 160) return false;
-    final bye = RegExp(r"\b(bye|goodbye|good-bye|cheers|see you|take care|have a (good|nice|great|lovely) (day|one|evening|night|weekend)|that.?s (all|everything|it)( for (now|today))?|nothing else|no,? that.?s fine)\b|adi[oó]s|au revoir|auf wiedersehen|tsch[uü]ss|arrivederci|ciao|خداحافظ|مع السلامة|ho[sş][cç]a ?kal|g[oö]r[uü][sş][uü]r[uü]z|do widzenia|na razie", caseSensitive: false);
     final more = RegExp(r"\b(and also|also|one more|another|can i|could i|i.?d like|i want|book|order|change|cancel|but)\b", caseSensitive: false);
-    return bye.hasMatch(s) && !more.hasMatch(s.replaceAll(RegExp(r"that.?s all", caseSensitive: false), ''));
+    if (more.hasMatch(s.replaceAll(RegExp(r"that.?s all", caseSensitive: false), ''))) return false;
+    if (_goodbye.hasMatch(s) || _allDone.hasMatch(s)) return true;
+    return askedAnythingElse(asked) && (_declined.hasMatch(s) || _thanks.hasMatch(s));
   }
+
+  /// They said goodbye.
+  static final _goodbye = RegExp(r"\b(bye|goodbye|good-bye|bye-bye|see you|take care|have a (good|nice|great|lovely) (day|one|evening|night|weekend))\b|adi[oó]s|au revoir|auf wiedersehen|tsch[uü]ss|arrivederci|خداحافظ|مع السلامة|ho[sş][cç]a ?kal|g[oö]r[uü][sş][uü]r[uü]z|do widzenia|na razie", caseSensitive: false);
+
+  /// They said they have nothing more.
+  static final _allDone = RegExp(r"\b(that.?s (all|everything)|that.?s it for (now|today)|nothing else|nothing more|no(,)? that.?s (fine|it|all))\b|eso es todo|nada más|c.est tout|rien d.autre|das wäre alles|nichts weiter|è tutto|nient.altro|همین|كذا|bu kadar|to wszystko", caseSensitive: false);
+
+  /// "No" (thanks) — the end only after being asked if there's anything else.
+  static final _declined = RegExp(r"^\W*(no|nope|nah|no thanks?|no thank you|not today|i.?m (good|fine|ok(ay)?|all set)|all good|we.?re (good|fine)|that.?s (fine|great|perfect)|non|nein|نه|لا|hayır|nie)\b", caseSensitive: false);
+
+  /// Thanks or an "OK" — on its own, without asking for anything.
+  static final _thanks = RegExp(r"\b(thanks?|thank you|thankyou|cheers|ta|great|perfect|lovely|brilliant|wonderful|fantastic|awesome|ok(ay)?|alright|sounds good|appreciate it)\b|gracias|merci|danke|grazie|ممنون|مرسی|متشکر|شكرا|teşekkür|sağ ?ol|dzięki|dziękuję", caseSensitive: false);
+
+  static bool thanksOnly(String said) {
+    final s = callerWords(said).trim();
+    if (s.contains('?') || s.length > 80 || !_thanks.hasMatch(s)) return false;
+    return !RegExp(r"\b(and|also|can|could|would|what|when|where|how|book|order|change|cancel|but|yes|yeah|yep|sure|please)\b", caseSensitive: false).hasMatch(s);
+  }
+
+  /// The assistant asked if there's anything else.
+  static bool askedAnythingElse(String ai) => RegExp(
+          r"\b(anything else|something else|else (i|we) can|help (you )?with anything|anything more)\b|algo más|autre chose|sonst noch|qualcos.altro|دیگه|دیگری|آخر|başka bir|w czymś",
+          caseSensitive: false)
+      .hasMatch(ai);
+
+  /// What the assistant says to check the caller has nothing else.
+  static const anythingElse = {'en': 'Is there anything else I can help you with?', 'es': '¿Hay algo más en lo que pueda ayudarle?', 'fr': 'Puis-je vous aider avec autre chose ?',
+    'de': 'Kann ich Ihnen sonst noch helfen?', 'it': 'Posso aiutarla in qualcos’altro?', 'fa': 'کار دیگه‌ای هست که بتونم براتون انجام بدم؟', 'ar': 'هل هناك أي شيء آخر يمكنني مساعدتك به؟',
+    'tr': 'Size yardımcı olabileceğim başka bir şey var mı?', 'pl': 'Czy mogę jeszcze w czymś pomóc?'};
 
   static const _bye = {'en': 'Thanks for calling — goodbye!', 'es': '¡Gracias por llamar, adiós!', 'fr': 'Merci de votre appel, au revoir !', 'de': 'Danke für Ihren Anruf, auf Wiedersehen!',
     'it': 'Grazie per la chiamata, arrivederci!', 'fa': 'ممنون از تماستون، خداحافظ!', 'ar': 'شكراً لاتصالك، مع السلامة!', 'tr': 'Aradığınız için teşekkürler, hoşça kalın!', 'pl': 'Dziękuję za telefon, do widzenia!'};
@@ -2286,7 +2318,7 @@ class AppState extends ChangeNotifier {
         ? Persona.ownerSystem('${agent?['name'] ?? 'Ava'}', ownerName)
         : '${Persona.callerSystem(agent)} Reply in the caller’s language.';
     final speak = _languageNames[lang];
-    final hangup = mode == 'owner' ? '' : ' Only when the call is over — the caller has nothing else and your reply says goodbye — end that goodbye reply with [hangup]. Never add it to a question.';
+    final hangup = mode == 'owner' ? '' : ' When the caller seems finished or thanks you, ask if there is anything else you can help with. Only when they say there is nothing else (or say goodbye), say goodbye and end that reply with [hangup]. Never add it to a question.';
     return '$system$hangup This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
         'If there are many items, say the three or four most useful ones and ask if they want to hear more. '
         'The person’s words come from speech recognition and may contain mis-heard words: work out what they most likely meant and answer that; never repeat their words back. '
@@ -2824,6 +2856,13 @@ class AppState extends ChangeNotifier {
           } catch (_) {}
         }
       }
+      // The end of the call only once they have nothing else; a "thank you" is answered with "is there anything else?".
+      final ending = mode != 'owner' && callerDone(question, asked: lastSaid);
+      final thanked = mode != 'owner' && !ending && routed == null && yesTool == null && thanksOnly(question) && !lastSaid.endsWith('?');
+      if (thanked) {
+        final last = messages.removeLast();
+        messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: they only thanked you. Say you are welcome and ask if there is anything else you can help with. Do not say goodbye yet.)'));
+      }
       mark('save_on_yes');
       var repeating = lastSaid.length > 30;
       // Still waiting for the detail the app needs (their name, postcode): no saving again until they give it.
@@ -2879,6 +2918,8 @@ class AppState extends ChangeNotifier {
           if (cut >= 0) t = t.substring(0, cut);
           // Never hang up on a question ("…thanks for calling! Would you like to order? [hangup]").
           if (t.contains('[hangup]') && t.split('[hangup]').first.trim().endsWith('?')) t = t.replaceAll('[hangup]', '');
+          // …nor before the caller has said they have nothing else.
+          if (!ending) t = t.replaceAll('[hangup]', '');
           t = spokenText(t);
           if (!saved) t = t.split(_appDone).first.replaceFirst(_appDoneStart, ''); // copying the app's "That's all done" without saving
           // Its last answer again, word for word: held back while it's only that.
@@ -2989,7 +3030,12 @@ class AppState extends ChangeNotifier {
         }
       }
       // They're done ("no, that's all, thanks, bye"): say goodbye and end the call, so neither side is left waiting.
-      if (mode != 'owner' && passTo == null && !gone && callerDone(question) && !sent.contains('[hangup]')) {
+      if (thanked && passTo == null && !gone && !sent.trim().endsWith('?') && !askedAnythingElse(sent)) {
+        final line = ' ${anythingElse[lang] ?? anythingElse['en']!}';
+        chunk({'content': line});
+        sent += line;
+      }
+      if (ending && passTo == null && !gone && !sent.contains('[hangup]')) {
         final bye = RegExp(r'\b(bye|goodbye|take care|have a (great|good|nice|lovely)|see you|thanks for calling)\b|adi[oó]s|au revoir|auf wiedersehen|arrivederci|خداحافظ|مع السلامة|ho[sş][cç]a kal|do widzenia', caseSensitive: false).hasMatch(sent) ? '' : ' ${_bye[lang] ?? _bye['en']!}';
         chunk({'content': '$bye [hangup]'});
         sent = '$sent$bye';

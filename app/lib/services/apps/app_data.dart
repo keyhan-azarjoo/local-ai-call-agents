@@ -538,7 +538,7 @@ class AppData {
     final merged = {...old, ...clean};
     // Items or delivery changed: the total follows (unless the manager typed a new one).
     final tf = _totalField(t);
-    if (tf != null && clean[tf.id] == old[tf.id] && t.fields.any((f) => (f.type == 'links' || f.type == 'choice') && !f.managerOnly && jsonEncode(old[f.id]) != jsonEncode(merged[f.id]))) {
+    if (tf != null && (!clean.containsKey(tf.id) || clean[tf.id] == old[tf.id]) && t.fields.any((f) => (f.type == 'links' || f.type == 'choice') && !f.managerOnly && jsonEncode(old[f.id]) != jsonEncode(merged[f.id]))) {
       await _fillTotal(t, merged);
     }
     await db.raw.update('app_rows', {'data': jsonEncode(merged), 'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);

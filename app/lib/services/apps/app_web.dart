@@ -218,6 +218,7 @@ label.lbl .req{color:var(--accent)}
 .dark .err{background:#2b1414;border-color:#5c2020;color:#ffb4ab}
 .floatcart{position:fixed;left:50%;bottom:20px;transform:translate(-50%,160%);z-index:30;transition:transform .35s cubic-bezier(.2,.8,.2,1);box-shadow:var(--shadow-lg)}
 .floatcart.show{transform:translate(-50%,0)}
+.floatcart:not(.show){visibility:hidden;transition:transform .35s,visibility 0s .35s}
 
 /* uploads */
 .drop{border:1.5px dashed var(--line);border-radius:var(--radius);padding:22px;text-align:center;color:var(--muted);cursor:pointer;transition:all .2s;background:var(--soft)}
@@ -375,6 +376,252 @@ table.data tr.new{background:color-mix(in srgb,var(--accent) 9%,transparent)}
 .pagebox .blk{border-top:1px dashed var(--line);padding-top:16px;margin-top:4px}
 .colorrow{display:flex;gap:12px;align-items:center;margin-top:18px;flex-wrap:wrap}
 .colorrow input[type=color]{width:52px;height:40px;padding:3px;cursor:pointer}
+
+/* status colours: new (blue), in hand (amber), good (green), over (grey), off (red) */
+.t-blue{--pc:#1d4ed8;--pb:#eef4ff}.t-amber{--pc:#b45309;--pb:#fff6e6}.t-green{--pc:#047857;--pb:#ecfdf3}.t-grey{--pc:#52525b;--pb:#f4f4f5}.t-red{--pc:#b91c1c;--pb:#fef2f2}
+.dark .t-blue{--pc:#bfdbfe;--pb:#172554}.dark .t-amber{--pc:#fde68a;--pb:#422006}.dark .t-green{--pc:#bbf7d0;--pb:#052e16}.dark .t-grey{--pc:#d4d4d8;--pb:#27272a}.dark .t-red{--pc:#fecaca;--pb:#450a0a}
+.status[class*=t-]{background-color:var(--pb);color:var(--pc)}
+.spill{display:inline-flex;align-items:center;gap:6px;font:600 12.5px/1 var(--body);padding:6px 10px;border-radius:999px;background:var(--pb,var(--soft));color:var(--pc,var(--ink));white-space:nowrap}
+.spill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.8}
+.small{font-size:13px}
+.count{font:600 14px var(--body);color:var(--muted);background:var(--soft);border-radius:999px;padding:4px 10px;vertical-align:middle;margin-left:6px;letter-spacing:0}
+.count:empty{display:none}
+
+/* nav on phones, sticky actions */
+.burger[aria-expanded=true]{background:var(--soft)}
+.topnav.many .links a{padding:8px 11px;font-size:14px}
+@media (max-width:1100px){
+  .topnav.many .links{display:none;position:absolute;top:72px;left:0;right:0;flex-direction:column;align-items:stretch;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px 18px;box-shadow:var(--shadow-lg)}
+  .topnav.many .links.open{display:flex}
+  .topnav.many .links a{padding:14px 16px;font-size:16px;border-radius:12px}
+  .topnav.many .burger{display:inline-grid}
+}
+.links.open{animation:rise .25s ease both}
+.mbar{display:none}
+@media (max-width:760px){
+  .mbar{display:flex;gap:8px;position:fixed;left:0;right:0;bottom:0;z-index:29;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line)}
+  .mbar .btn{flex:1;padding:13px 12px}
+  .mbar .btn.call{flex:none;width:48px;padding:0}
+  .has-mbar .footer{padding-bottom:76px}
+  .has-mbar .floatcart{bottom:84px}
+}
+
+/* footer extras */
+.cta-band{background:color-mix(in srgb,var(--accent) 8%,var(--surface));border-bottom:1px solid var(--line)}
+.cta-band .wrap{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;padding-top:40px;padding-bottom:40px}
+.cta-band h2{font-size:clamp(24px,3vw,34px)}
+.cta-band p{color:var(--muted);margin-top:6px}
+.cta-band .actions{display:flex;gap:10px;flex-wrap:wrap}
+.footer .soft{color:var(--muted)}
+.footer .dirs{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-weight:600}
+.st-bold .footer .dirs{color:var(--ink)}
+
+/* menu layout */
+.menu-nav{position:sticky;top:72px;z-index:5;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:10px 0;margin:-6px 0 18px;background:color-mix(in srgb,var(--bg) 90%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.menu-nav::-webkit-scrollbar{display:none}
+.menu-nav a{flex:none;text-decoration:none;font-weight:600;font-size:14px;padding:8px 16px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.menu-nav a:hover{border-color:var(--accent)}
+.has-admin .menu-nav{top:118px}
+.menu-cols{display:grid;gap:8px 56px;grid-template-columns:1fr}
+@media (min-width:980px){.menu-cols{grid-template-columns:1fr 1fr;align-items:start}}
+.menu-cat{scroll-margin-top:140px;margin-bottom:26px}
+.menu-h{position:sticky;top:124px;z-index:2;background:var(--bg);font-size:clamp(24px,2.6vw,30px);padding:8px 0 10px;border-bottom:2px solid var(--ink);margin-bottom:6px}
+.has-admin .menu-h{top:170px}
+.mi{position:relative;display:flex;gap:16px;align-items:flex-start;padding:16px 0;border-bottom:1px solid var(--line)}
+.mi:last-child{border-bottom:0}
+.mi-img{width:76px;height:76px;border-radius:calc(var(--radius) * .6 + 4px);overflow:hidden;flex:none;background:var(--soft)}
+.mi-img img{width:100%;height:100%;object-fit:cover}
+.mi-b{flex:1;min-width:0}
+.mi-top{display:flex;align-items:baseline;gap:10px}
+.mi-top h4{font-size:18px;font-family:var(--head);font-weight:var(--head-weight)}
+.mi-top .dots{flex:1;border-bottom:2px dotted color-mix(in srgb,var(--muted) 45%,transparent);transform:translateY(-4px);min-width:16px}
+.mi-d{color:var(--muted);font-size:15px;margin-top:4px}
+.mi-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
+.mi-meta:empty{display:none}
+.mi-add{display:flex;align-items:center;gap:8px;flex:none;align-self:center}
+.mi.out{opacity:.55}
+.mi .edit-btn{top:12px;right:auto;left:-6px;width:30px;height:30px;font-size:13px}
+.dbadge{display:inline-flex;align-items:center;gap:4px;font:700 11.5px/1 var(--body);letter-spacing:.02em;padding:5px 8px;border-radius:999px;background:var(--soft);color:var(--muted)}
+.dbadge .icon{font-size:12px}
+.dbadge.vg,.dbadge.v{background:#e8f6ec;color:#166534}.dbadge.gf{background:#fdf3e1;color:#92400e}.dbadge.sp{background:#fdecec;color:#b91c1c}
+.dbadge.pop{background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent)}.dbadge.out{background:var(--ink);color:var(--bg)}
+.dark .dbadge.vg,.dark .dbadge.v{background:#052e16;color:#bbf7d0}.dark .dbadge.gf{background:#422006;color:#fde68a}.dark .dbadge.sp{background:#450a0a;color:#fecaca}.st-bold .dbadge.pop{color:var(--ink)}
+.allerg{font-size:12.5px;color:var(--muted)}
+.menu-note{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:14px;margin-top:8px;padding:14px 16px;border:1px dashed var(--line);border-radius:var(--radius)}
+
+/* gallery */
+.gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));grid-auto-rows:200px;grid-auto-flow:dense;gap:12px}
+.g-item{position:relative;border:0;padding:0;border-radius:var(--radius);overflow:hidden;cursor:zoom-in;background:var(--soft)}
+.g-item:nth-child(5n+1){grid-row:span 2}
+.g-item img{width:100%;height:100%;object-fit:cover;transition:transform .6s}
+.g-item:hover img{transform:scale(1.05)}
+.g-item span{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.55);color:#fff;font-size:13px;font-weight:600;padding:5px 10px;border-radius:999px;backdrop-filter:blur(6px)}
+.lightbox{position:fixed;inset:0;z-index:90;background:rgba(8,9,12,.92);display:flex;align-items:center;justify-content:center;gap:12px;padding:20px;animation:rise .2s ease both}
+.lightbox figure{margin:0;max-width:min(1100px,86vw);text-align:center}
+.lightbox img{max-height:80vh;max-width:100%;border-radius:12px;margin:0 auto}
+.lightbox figcaption{color:#e5e7eb;margin-top:12px;font-weight:600}
+.lightbox .iconbtn{background:rgba(255,255,255,.12);border-color:transparent;color:#fff}
+.lb-x{position:absolute;top:18px;right:18px}
+
+/* reviews */
+.avg{display:flex;align-items:center;gap:10px}.avg b{font:var(--head-weight) 28px var(--head)}
+.quotes{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:18px}
+.quote{position:relative;margin:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:14px;animation:rise .5s ease both}
+.quote blockquote{margin:0;font-size:17px;line-height:1.6;flex:1}
+.st-elegant .quote blockquote{font-family:var(--head);font-style:italic}
+.quote figcaption{display:flex;align-items:center;gap:12px}
+.quote figcaption small{display:block;color:var(--muted);font-size:13px}
+.stars{color:#f59e0b;letter-spacing:2px;font-size:16px}.stars span{color:var(--line)}
+.avatar{display:grid;place-items:center;width:36px;height:36px;border-radius:50%;flex:none;font-weight:700;font-size:14px;color:hsl(var(--h) 45% 32%);background:hsl(var(--h) 60% 90%)}
+.dark .avatar{color:hsl(var(--h) 60% 85%);background:hsl(var(--h) 30% 22%)}
+
+/* contact */
+.lead2{color:var(--muted);font-size:17px;max-width:60ch;margin:-12px 0 22px}
+.contact{display:grid;grid-template-columns:1fr 1.2fr;gap:18px}
+@media (max-width:820px){.contact{grid-template-columns:1fr}}
+.contact .info-row b a{text-decoration:none}
+.small-link{display:inline-flex;align-items:center;gap:5px;margin-left:10px;font-size:13.5px;color:var(--accent);font-weight:600;text-decoration:none}
+.sub2{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);font-weight:500;margin-top:4px}
+.mapcard{position:relative;display:block;min-height:280px;border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);text-decoration:none;color:var(--ink);box-shadow:var(--shadow)}
+.map-bg{position:absolute;inset:0;background:linear-gradient(115deg,transparent 46%,color-mix(in srgb,var(--accent) 22%,transparent) 46.5%,color-mix(in srgb,var(--accent) 22%,transparent) 49%,transparent 49.5%),linear-gradient(25deg,transparent 60%,color-mix(in srgb,var(--muted) 18%,transparent) 60.5%,color-mix(in srgb,var(--muted) 18%,transparent) 62%,transparent 62.5%),repeating-linear-gradient(0deg,transparent 0 38px,color-mix(in srgb,var(--line) 80%,transparent) 38px 40px),repeating-linear-gradient(90deg,transparent 0 38px,color-mix(in srgb,var(--line) 80%,transparent) 38px 40px),color-mix(in srgb,var(--accent) 4%,var(--surface));transition:transform .8s}
+.mapcard:hover .map-bg{transform:scale(1.04)}
+.map-pin{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);display:grid;place-items:center;width:58px;height:58px;border-radius:50%;background:var(--accent);color:var(--on-accent);font-size:26px;box-shadow:0 0 0 10px color-mix(in srgb,var(--accent) 20%,transparent),var(--shadow-lg)}
+.map-cap{position:absolute;left:14px;right:14px;bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;flex-wrap:wrap}
+.map-cap span{display:inline-flex;align-items:center;gap:6px;color:var(--accent);font-weight:600;font-size:14px}
+.st-bold .map-cap span,.st-bold .small-link{color:var(--ink)}
+
+/* highlights */
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
+.feature{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:26px;box-shadow:var(--shadow);animation:rise .5s ease both}
+.f-ic{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:color-mix(in srgb,var(--accent) 12%,transparent);color:var(--accent);font-size:22px;margin-bottom:16px}
+.st-bold .f-ic{color:var(--ink)}
+.feature h3{font-size:19px;margin-bottom:6px}
+.feature p{color:var(--muted);font-size:15px}
+
+/* cart extras */
+.sub-line{display:flex;justify-content:space-between;color:var(--muted);font-size:15px;padding-top:10px}
+.minwarn{margin-top:12px;font-size:14px;padding:10px 12px;border-radius:10px;background:#fff7e6;color:#92400e}
+.dark .minwarn{background:#422006;color:#fde68a}
+.cart-hint{font-size:13px;color:var(--muted);margin-top:10px}
+.closed-note{display:flex;align-items:center;gap:10px;padding:14px 16px;border-radius:12px;background:#fef2f2;color:#991b1b;font-weight:600;margin-bottom:12px}
+.dark .closed-note{background:#450a0a;color:#fecaca}
+
+/* manager: dashboard */
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:16px;margin-bottom:22px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;box-shadow:var(--shadow)}
+.kpi small{display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:600;font-size:13px}
+.kpi small .icon{color:var(--accent)}
+.st-bold .kpi small .icon{color:var(--ink)}
+.kpi b{display:block;font:var(--head-weight) 32px/1.1 var(--head);margin:10px 0 4px;font-variant-numeric:tabular-nums}
+.kpi span{font-size:12.5px;color:var(--muted)}
+.dash{display:grid;grid-template-columns:1.35fr 1fr;gap:22px;align-items:start}
+@media (max-width:1100px){.dash{grid-template-columns:1fr}}
+.dcol{display:flex;flex-direction:column;gap:22px;min-width:0}
+.card-h .small{margin-left:auto}
+.card-h h3+.small{margin-left:0}
+.minis{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:20px}
+.mini{cursor:pointer;border-radius:12px;padding:6px;margin:-6px}
+.mini:hover{background:var(--soft)}
+.mini-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:8px;font-size:14px}
+.mini-h span{color:var(--muted);font-size:12.5px}
+svg.bars{width:100%;height:auto;display:block;overflow:visible}
+svg.bars .base{stroke:var(--line);stroke-width:1}
+svg.bars path{fill:color-mix(in srgb,var(--accent) 42%,var(--surface))}
+svg.bars .today path{fill:var(--accent)}
+svg.bars .hit{fill:transparent}
+svg.bars g:hover path{fill:var(--accent)}
+svg.bars text{fill:var(--muted);font:500 11px var(--body)}
+.hours{display:flex;gap:3px;margin-bottom:10px}
+.hcell{flex:1;min-width:0;text-align:center}
+.hcell i{display:block;height:34px;border-radius:5px}
+.hcell.peak i{box-shadow:inset 0 0 0 2px var(--ink)}
+.hcell small{display:block;font-size:10.5px;color:var(--muted);margin-top:4px;height:14px}
+.tline{display:flex;flex-direction:column;gap:2px;max-height:430px;overflow:auto}
+.trow{display:grid;grid-template-columns:56px 1fr auto;gap:12px;align-items:center;width:100%;text-align:left;border:0;background:transparent;color:var(--ink);font:inherit;padding:10px 8px;border-radius:10px;cursor:pointer}
+.trow:hover{background:var(--soft)}
+.trow>b{font-variant-numeric:tabular-nums;font-size:15px}
+.trow .tn{font-weight:600}
+.trow small{color:var(--muted);font-size:13px}
+.trow.past{opacity:.55}
+.nowrow{display:flex;align-items:center;gap:8px;margin:4px 0;color:#dc2626;font:700 12px var(--body)}
+.nowrow i{flex:1;height:2px;background:#dc2626;border-radius:2px}
+.att{display:flex;flex-direction:column;gap:4px}
+.arow{display:flex;align-items:center;gap:12px;padding:10px 8px;border-radius:10px;cursor:pointer}
+.arow:hover{background:var(--soft)}
+.a-ic{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#eef4ff;color:#1d4ed8;flex:none}
+.dark .a-ic{background:#172554;color:#bfdbfe}
+.a-b{flex:1;min-width:0}.a-b b{display:block}.a-b small{color:var(--muted);font-size:13px}
+.allgood{display:flex;gap:12px;align-items:center;padding:6px}
+.allgood>.icon{font-size:22px;color:#16a34a}
+.nb-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nb-n{font:700 11.5px var(--body);background:var(--accent);color:var(--on-accent);border-radius:999px;padding:2px 7px}
+.nb-n:empty{display:none}
+
+/* manager: tables, board */
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;padding:3px;background:var(--surface);gap:2px}
+.seg button{display:inline-flex;align-items:center;gap:6px;border:0;background:transparent;color:var(--muted);font:600 13.5px var(--body);padding:7px 12px;border-radius:9px;cursor:pointer}
+.seg button.on{background:var(--soft);color:var(--ink)}
+.seg.wide{display:flex;flex-wrap:wrap;margin-bottom:18px}
+.seg.wide button{flex:1}
+.st-seg button.on{background:var(--pb);color:var(--pc)}
+table.data th.num,table.data td.num{text-align:right;font-variant-numeric:tabular-nums}
+table.data.sortable th{cursor:pointer;user-select:none}
+table.data.sortable th:hover{color:var(--ink)}
+table.data th.sorted{color:var(--ink)}
+.sort-ic{font-style:normal;font-size:9px;margin-left:5px;opacity:.8}
+table.data td small{display:block}
+.yes{color:#16a34a}
+a.tel{text-decoration:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+a.tel:hover{color:var(--accent)}
+.card.plain{background:transparent;border:0;box-shadow:none}
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(250px,1fr);gap:14px;overflow-x:auto;padding-bottom:10px}
+.col{background:var(--soft);border-radius:var(--radius);padding:10px;min-height:200px;transition:background .15s}
+.col.over{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.col-h{display:flex;justify-content:space-between;align-items:center;padding:4px 4px 10px}
+.col-b{display:flex;flex-direction:column;gap:10px}
+.kcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);cursor:grab;display:flex;flex-direction:column;gap:6px}
+.kcard.drag{opacity:.5}
+.kcard:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.k-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+.kcard small{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:13px}
+.k-items{display:block!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.k-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px}
+.k-foot .btn{padding:6px 10px;font-size:12.5px}
+
+/* manager: one record */
+.dh-t{margin-right:auto;min-width:0}
+.dh-t small{color:var(--muted);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em}
+.drawer .dh-t h3{margin:0;font-size:22px}
+.rec-img{border-radius:var(--radius);overflow:hidden;margin-bottom:18px;max-height:220px}
+.rec-img img{width:100%;height:100%;object-fit:cover}
+.rec-contact{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px}
+.rec-dl{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;margin:0 0 16px}
+.rec-dl>div{padding:10px 0;border-bottom:1px solid var(--line);min-width:0}
+.rec-dl>div.full{grid-column:1/-1}
+.rec-dl dt{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:flex;gap:6px;align-items:center}
+.rec-dl dd{margin:4px 0 0;font-weight:500;overflow-wrap:anywhere;white-space:pre-wrap}
+.mo{color:var(--muted)}
+.receipt{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.receipt h4{display:flex;align-items:center;gap:8px;font-size:16px;margin-bottom:10px}
+.rl{display:flex;justify-content:space-between;gap:12px;padding:6px 0;font-variant-numeric:tabular-nums}
+.rl.sub{color:var(--muted);font-size:14.5px}
+.rl.sub:first-of-type,.rl.tot{border-top:1px dashed var(--line);margin-top:6px;padding-top:10px}
+.rl.tot{font-weight:800;font-size:18px}
+.rec-meta{margin-bottom:12px}
+.rec-others h4{font-size:15px;margin:18px 0 8px}
+.orow{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;padding:10px 14px;border-radius:12px;cursor:pointer;margin-bottom:8px}
+.orow:hover{border-color:var(--accent)}
+.orow small{display:block;color:var(--muted);font-size:13px}
+.tl{position:relative}
+.nowline{position:absolute;top:0;bottom:0;width:2px;background:#dc2626;z-index:2;pointer-events:none}
+.nowline span{position:absolute;top:2px;left:4px;font:700 10.5px var(--body);color:#fff;background:#dc2626;border-radius:4px;padding:1px 4px}
+.gal-edit{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:6px}
+.gal-th{position:relative;width:110px;height:84px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.gal-th img{width:100%;height:100%;object-fit:cover}
+.gal-th .iconbtn{position:absolute;top:4px;right:4px;width:26px;height:26px;font-size:13px}
+.gal-add{width:180px}
+.gal-add .drop{padding:12px}
+.item.out{opacity:.6}
 ''';
 
 const appJs = r'''
@@ -401,6 +648,16 @@ const I = {
   trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', upload: '<path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/>', bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
   palette: '<circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2a10 10 0 0 0 0 20c1 0 1.8-.8 1.8-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.8-.5-1.2 0-1 .8-1.8 1.8-1.8H16a6 6 0 0 0 6-6c0-4.4-4.5-8-10-8z"/>',
   list: '<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
+  board: '<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/>',
+  download: '<path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 18v1a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-1"/>', edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+  lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2l1.1-6.2L3 9.6l6.2-.9z"/>',
+  leaf: '<path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10z"/><path d="M2 21c0-3 1.9-5.4 5.1-6"/>',
+  truck: '<path d="M3 6h11v10H3zM14 9h4l3 3v4h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>', gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v9h14v-9M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  glass: '<path d="M8 22h8M12 15v7M6 3h12l-1 7a5 5 0 0 1-10 0z"/>', award: '<circle cx="12" cy="9" r="6"/><path d="m8.5 14-1.5 8 5-3 5 3-1.5-8"/>',
+  chef: '<path d="M6 13.9A4 4 0 0 1 7 6a5 5 0 0 1 10 0 4 4 0 0 1 1 7.9V20H6z"/><path d="M6 17h12"/>', flame: '<path d="M12 22a7 7 0 0 0 7-7c0-4-3-6-4-10-2 2-3 4-3 6-1-1-2-2-2-4-2 2-5 5-5 8a7 7 0 0 0 7 7z"/>',
+  heart: '<path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/>', sparkle: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+  left: '<path d="m15 18-6-6 6-6"/>', right: '<path d="m9 18 6-6-6-6"/>', chart: '<path d="M3 3v18h18"/><path d="M8 17v-5M13 17V8M18 17v-9"/>',
 };
 const icon = (n) => '<svg class="icon" viewBox="0 0 24 24">' + (I[n] || I.tag) + '</svg>';
 
@@ -456,7 +713,8 @@ async function hours() {
     const now = new Date(), m = now.getHours() * 60 + now.getMinutes();
     const mins = (s) => { const [h, mm] = String(s).split(':').map(Number); return h * 60 + (mm || 0); };
     const open = mins(c) > mins(o) ? m >= mins(o) && m < mins(c) : m >= mins(o) || m < mins(c);
-    return {open: o, close: c, isOpen: open, table: t, times};
+    const daysF = visible(t).find((f) => f.type === 'text');
+    return {open: o, close: c, isOpen: open, table: t, times, days: daysF ? r[daysF.id] : ''};
   }
   return null;
 }
@@ -566,9 +824,18 @@ async function fieldInput(f, value, ctx = {}) {
             const p = priceF ? Number(r[priceF.id] || 0) : 0; sum += p * q;
             h += '<div class="cart-line"><div class="thumb">' + media(imgF && r[imgF.id], nameOf(t, r), 'sm') + '</div><div class="nm">' + esc(nameOf(t, r)) + (priceF ? '<small>' + money(p) + '</small>' : '') + '</div><div class="stepper"><button type="button" data-d="-1" data-id="' + id + '">' + icon('minus') + '</button><b>' + q + '</b><button type="button" data-d="1" data-id="' + id + '">' + icon('plus') + '</button></div></div>';
           }
-          if (priceF && items.length) h += '<div class="total"><span>Total</span><span class="price">' + money(sum) + '</span></div>';
+          // Delivery: its fee on top, and the least an order may come to.
+          const ex = ctx.extras ? ctx.extras() : {fee: 0, min: 0, delivery: false};
+          const fee = ex.delivery ? ex.fee : 0;
+          if (priceF && items.length) {
+            if (fee) h += '<div class="sub-line"><span>Items</span><span>' + money(sum) + '</span></div><div class="sub-line"><span>Delivery</span><span>' + money(fee) + '</span></div>';
+            h += '<div class="total"><span>Total</span><span class="price">' + money(sum + fee) + '</span></div>';
+            if (ex.delivery && ex.min && sum < ex.min) h += '<div class="minwarn">The minimum for delivery is ' + money(ex.min) + ': add ' + money(Math.round((ex.min - sum) * 100) / 100) + ' more, or choose collection.</div>';
+          }
+          if (priceF && !ex.delivery && (ex.fee || ex.min) && ex.canDeliver) h += '<div class="cart-hint">' + icon('truck') + ' Delivery ' + (ex.fee ? money(ex.fee) : 'free') + (ex.min ? ' · minimum order ' + money(ex.min) : '') + '</div>';
           box.innerHTML = h; box.append(adder);
-          ctx.onChange && ctx.onChange(items.reduce((a, [, q]) => a + q, 0), sum);
+          ctx.sum = sum;
+          ctx.onChange && ctx.onChange(items.reduce((a, [, q]) => a + q, 0), sum + fee);
         };
         box.onclick = (e) => { const b = e.target.closest('button[data-id]'); if (!b) return; const id = b.dataset.id; sel[id] = Math.max(0, (sel[id] || 0) + Number(b.dataset.d)); if (!sel[id]) delete sel[id]; draw(); };
         adder.onchange = () => { if (adder.value) { sel[adder.value] = (sel[adder.value] || 0) + 1; adder.value = ''; draw(); } };
@@ -580,6 +847,156 @@ async function fieldInput(f, value, ctx = {}) {
     default: { const n = add(el('<input type="text">')); n.value = value ?? ''; if (/name/.test(f.id)) n.autocomplete = 'name'; get = () => n.value; }
   }
   return {node: wrap, get, set, f};
+}
+
+// ---------- statuses, orders, people ----------
+/// A colour for a status, by what it means: new (blue), in hand (amber), good (green), over (grey), off (red).
+function tone(o) {
+  const s = String(o || '').toLowerCase();
+  if (/cancel|no.?show|declin|reject|refund/.test(s)) return 'red';
+  if (/unpaid|prepar|packing|progress|workshop|cooking|out for|deposit|waiting|seated|checked in/.test(s)) return 'amber';
+  if (/done|finish|complet|collected|delivered|redeem|closed|served|viewed|attended|checked out/.test(s)) return 'grey';
+  if (/ready|confirm|paid|sent|booked|offer/.test(s)) return 'green';
+  return 'blue';
+}
+const pill = (o) => o ? '<span class="spill t-' + tone(o) + '">' + esc(o) + '</span>' : '';
+/// The same number however it's written (07700 900124 = 07700 900124).
+const digits9 = (p) => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : ''; };
+const phoneOf = (t) => t.fields.find((f) => f.type === 'phone');
+const dateOf = (t) => t.fields.find((f) => f.type === 'date' || f.type === 'datetime');
+const timeOf = (t) => t.fields.find((f) => f.type === 'time');
+const siteNum = (k) => { const n = parseFloat(String((SPEC.site || {})[k] || '').replace(/[^0-9.]/g, '')); return isNaN(n) ? 0 : n; };
+const isDelivery = (t, r) => t.fields.some((f) => f.type === 'choice' && !f.manager_only && /^deliver/i.test(String(r[f.id] || '')));
+const isOrders = (t) => t.fields.some((f) => f.type === 'links' && f.qty && table(f.link)?.fields.some((x) => x.type === 'money'));
+/// An order's lines and total (with the delivery fee on a delivery), from the prices of what's in it.
+function orderCalc(t, r, links) {
+  let items = 0, any = false; const lines = [];
+  for (const f of t.fields) {
+    if (f.type !== 'links' || !f.qty || !Array.isArray(r[f.id])) continue;
+    const lt = table(f.link), pf = lt && lt.fields.find((x) => x.type === 'money'); if (!pf) continue;
+    for (const x of r[f.id]) { const it = links[f.link]?.[x.id]; if (!it) continue; const p = Number(it[pf.id] || 0), q = Number(x.qty || 1); items += p * q; any = true; lines.push({name: nameOf(lt, it), qty: q, price: p}); }
+  }
+  if (!any) { const tf = t.fields.find((f) => f.type === 'money' && /^(order_)?total$/.test(f.id)); return tf && r[tf.id] != null ? {items: Number(r[tf.id]), fee: 0, total: Number(r[tf.id]), lines} : null; }
+  const fee = isDelivery(t, r) ? siteNum('delivery_fee') : 0;
+  return {items, fee, total: Math.round((items + fee) * 100) / 100, lines};
+}
+/// Days off (holidays): a list with a date, called closures / holidays / closed days.
+const isClosures = (t) => /closure|holiday|closed/i.test(t.id + ' ' + (t.purpose || '')) && t.fields.some((f) => f.type === 'date');
+
+// ---------- menu, gallery, reviews, contact, highlights ----------
+const BADGES = [[/^vegan$/, 'Vegan', 'vg'], [/vegetarian|^veg$/, 'Vegetarian', 'v'], [/gluten/, 'Gluten free', 'gf'], [/spicy|hot|chilli/, 'Spicy', 'sp'], [/popular|favourite|bestseller|signature/, 'Popular', 'pop'], [/^new$/, 'New', 'new']];
+const badgesOf = (t, r) => t.fields.filter((f) => f.type === 'yesno' && !f.manager_only && r[f.id] === true && !/stock|availab|sold/.test(f.id))
+  .map((f) => { const b = BADGES.find(([re]) => re.test(f.id)); return '<span class="dbadge ' + (b ? b[2] : '') + '">' + (b && b[2] === 'pop' ? icon('star') : '') + esc(b ? b[1] : f.label) + '</span>'; }).join('');
+const soldOut = (t, r) => t.fields.some((f) => f.type === 'yesno' && ((/stock|availab/.test(f.id) && r[f.id] === false) || (/sold/.test(f.id) && r[f.id] === true)));
+
+/// A printed-menu look: a section per category (headings stay in view), dotted lines to the price,
+/// dietary badges and allergens.
+function menuBlock(b, t, all, pick, state) {
+  const priceF = visible(t).find((f) => f.type === 'money'), descF = visible(t).find((f) => f.type === 'longtext'), catF = visible(t).find((f) => f.type === 'choice'), imgF = firstOf(t, 'image');
+  const allergF = visible(t).find((f) => /allerg/.test(f.id) && f.type !== 'yesno');
+  const cats = catF ? [...catF.options.filter((o) => all.some((r) => r[catF.id] === o)), ...(all.some((r) => !catF.options.includes(r[catF.id])) ? [''] : [])] : [''];
+  const n = el('<section class="sec menu-sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2>' + (SPEC.manager ? '<div class="sec-actions"><button class="btn sm" data-a="photo">' + icon('image') + ' Add from a photo</button><button class="btn primary sm" data-a="add">' + icon('plus') + ' Add</button></div>' : '') + '</div>'
+    + (cats.length > 1 ? '<nav class="menu-nav">' + cats.map((c, i) => '<a href="#m-' + t.id + '-' + i + '">' + esc(c || 'More') + '</a>').join('') + '</nav>' : '')
+    + '<div class="menu-cols"></div>' + (allergF ? '<p class="menu-note">' + icon('leaf') + ' Tell us about any allergy or intolerance when you order: the kitchen will look after you.</p>' : '') + '</div></section>');
+  if (SPEC.manager) { $('[data-a=add]', n).onclick = () => drawer(t, null, () => site()); $('[data-a=photo]', n).onclick = () => importPhoto(t, () => site()); }
+  const box = $('.menu-cols', n);
+  const draw = () => {
+    box.innerHTML = '';
+    cats.forEach((c, i) => {
+      const items = all.filter((r) => !catF || (c ? r[catF.id] === c : !catF.options.includes(r[catF.id])));
+      if (!items.length) return;
+      const sec = el('<section class="menu-cat" id="m-' + t.id + '-' + i + '">' + (catF ? '<h3 class="menu-h">' + esc(c || 'More') + '</h3>' : '') + '<div class="menu-list"></div></section>');
+      for (const r of items) {
+        const out = soldOut(t, r), q2 = state.sel[t.id]?.[r.id] || 0;
+        const row = el('<article class="mi' + (out ? ' out' : '') + '">' + (imgF && r[imgF.id] ? '<div class="mi-img">' + media(r[imgF.id], nameOf(t, r)) + '</div>' : '')
+          + '<div class="mi-b"><div class="mi-top"><h4>' + esc(nameOf(t, r)) + '</h4><span class="dots"></span>' + (priceF && r[priceF.id] != null ? '<span class="price">' + money(r[priceF.id]) + '</span>' : '') + '</div>'
+          + (descF && r[descF.id] ? '<p class="mi-d">' + esc(r[descF.id]) + '</p>' : '')
+          + '<div class="mi-meta">' + badgesOf(t, r) + (allergF && r[allergF.id] ? '<span class="allerg">Contains: ' + esc(r[allergF.id]) + '</span>' : '') + (out ? '<span class="dbadge out">Sold out today</span>' : '') + '</div></div>'
+          + (pick && !out ? '<div class="mi-add">' + (q2 ? '<span class="qtybadge">' + q2 + '×</span>' : '') + '<button class="iconbtn" aria-label="Add ' + esc(nameOf(t, r)) + '">' + icon('plus') + '</button></div>' : '') + '</article>');
+        if (pick && !out) $('.mi-add button', row).onclick = () => state.add(t.id, r.id);
+        if (SPEC.manager) { const e = el('<button class="edit-btn" title="Edit">✎</button>'); e.onclick = () => drawer(t, r, () => site()); row.prepend(e); }
+        $('.menu-list', sec).append(row);
+      }
+      box.append(sec);
+    });
+    if (!box.children.length) box.innerHTML = '<div class="empty">Nothing here yet.</div>';
+  };
+  state.redrawLists.push(draw);
+  draw();
+  return n;
+}
+
+/// Photos in a grid; tap one to see it big.
+async function galleryBlock(b) {
+  const pics = (b.images || []).map((u) => ({url: u, name: ''}));
+  const t = b.table && table(b.table);
+  if (t) { const imgF = firstOf(t, 'image'); if (imgF) for (const r of await rows(t.id).catch(() => [])) if (r[imgF.id]) pics.push({url: r[imgF.id], name: nameOf(t, r)}); }
+  if (!pics.length) return null;
+  const list = pics.slice(0, 24);
+  const n = el('<section class="sec"><div class="wrap">' + (b.title ? '<div class="sec-head"><h2>' + esc(b.title) + '</h2></div>' : '') + '<div class="gallery">'
+    + list.map((p, i) => '<button class="g-item" data-i="' + i + '"><img src="' + esc(p.url) + '" alt="' + esc(p.name) + '" loading="lazy">' + (p.name ? '<span>' + esc(p.name) + '</span>' : '') + '</button>').join('') + '</div></div></section>');
+  $('.gallery', n).onclick = (e) => { const g = e.target.closest('.g-item'); if (g) lightbox(list, +g.dataset.i); };
+  return n;
+}
+function lightbox(pics, i) {
+  const bx = el('<div class="lightbox" role="dialog"><button class="iconbtn lb-x" aria-label="Close">' + icon('x') + '</button><button class="iconbtn lb-p" aria-label="Previous">' + icon('left') + '</button><figure><img alt=""><figcaption></figcaption></figure><button class="iconbtn lb-n" aria-label="Next">' + icon('right') + '</button></div>');
+  const show = () => { $('img', bx).src = pics[i].url; $('figcaption', bx).textContent = pics[i].name; };
+  const step = (k) => { i = (i + k + pics.length) % pics.length; show(); };
+  const close = () => { bx.remove(); document.removeEventListener('keydown', key); };
+  const key = (e) => { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') step(1); if (e.key === 'ArrowLeft') step(-1); };
+  bx.onclick = (e) => { if (e.target === bx || e.target.closest('.lb-x')) close(); };
+  $('.lb-p', bx).onclick = () => step(-1); $('.lb-n', bx).onclick = () => step(1);
+  document.addEventListener('keydown', key); document.body.append(bx); show();
+}
+
+/// What people say: quotes with stars, from a table of reviews the manager keeps.
+async function testimonialsBlock(b, t) {
+  const all = await rows(t.id, true).catch(() => []);
+  const label = labelOf(t);
+  const quoteF = visible(t).find((f) => f.type === 'longtext') || visible(t).find((f) => f.type === 'text' && f.id !== label);
+  const rateF = visible(t).find((f) => f.type === 'number' && /rat|star|score/.test(f.id));
+  const srcF = visible(t).find((f) => f.type === 'text' && f.id !== label && f !== quoteF);
+  const list = all.filter((r) => quoteF && r[quoteF.id]).slice(0, 9);
+  if (!list.length && !SPEC.manager) return null;
+  const stars = (v) => { const k = Math.max(0, Math.min(5, Math.round(Number(v) || 0))); return k ? '<div class="stars" aria-label="' + k + ' out of 5">' + '★'.repeat(k) + '<span>' + '★'.repeat(5 - k) + '</span></div>' : ''; };
+  const rated = rateF ? list.filter((r) => Number(r[rateF.id]) > 0) : [];
+  const avg = rated.length ? rated.reduce((a, r) => a + Number(r[rateF.id]), 0) / rated.length : 0;
+  const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2>' + (avg ? '<div class="avg"><b>' + avg.toFixed(1) + '</b>' + stars(avg) + '<span class="muted">' + rated.length + ' review' + (rated.length === 1 ? '' : 's') + '</span></div>' : '')
+    + (SPEC.manager ? '<button class="btn primary sm" data-a="add">' + icon('plus') + ' Add a review</button>' : '') + '</div><div class="quotes">'
+    + (list.length ? list.map((r, i) => '<figure class="quote" style="animation-delay:' + i * 60 + 'ms">' + (rateF ? stars(r[rateF.id]) : '') + '<blockquote>“' + esc(r[quoteF.id]) + '”</blockquote><figcaption><div class="avatar" style="--h:' + hue(nameOf(t, r)) + '">' + esc((nameOf(t, r).trim()[0] || '?').toUpperCase()) + '</div><div><b>' + esc(nameOf(t, r)) + '</b>' + (srcF && r[srcF.id] ? '<small>' + esc(r[srcF.id]) + '</small>' : '') + '</div></figcaption></figure>').join('') : '<div class="empty">No reviews yet: add the ones you’re proud of.</div>')
+    + '</div></div></section>');
+  if (SPEC.manager) $('[data-a=add]', n).onclick = () => drawer(t, null, () => site());
+  if (SPEC.manager) $$('.quote', n).forEach((q, i) => { const e = el('<button class="edit-btn" title="Edit">✎</button>'); e.onclick = () => drawer(t, list[i], () => site()); q.prepend(e); });
+  return n;
+}
+
+/// Address, phone, email and hours, with directions on OpenStreetMap (no key needed).
+async function contactBlock(b) {
+  const s = SPEC.site || {}, h = await hours();
+  const map = s.address ? 'https://www.openstreetmap.org/search?query=' + encodeURIComponent(s.address) : '';
+  const row = (ic, l, v) => '<div class="info-row"><div class="info-ic">' + icon(ic) + '</div><div><small>' + esc(l) + '</small><b>' + v + '</b></div></div>';
+  let rows2 = '';
+  if (s.address) rows2 += row('pin', 'Address', esc(s.address) + '<a class="small-link" href="' + map + '" target="_blank" rel="noopener">Get directions ' + icon('ext') + '</a>');
+  if (s.phone) rows2 += row('phone', 'Phone', '<a href="tel:' + esc(s.phone.replace(/\s/g, '')) + '">' + esc(s.phone) + '</a>');
+  if (s.email) rows2 += row('mail', 'Email', '<a href="mailto:' + esc(s.email) + '">' + esc(s.email) + '</a>');
+  if (h) rows2 += row('clock', 'Opening hours', esc(h.open) + ' – ' + esc(h.close) + (h.days ? '<span class="sub2">' + esc(h.days) + '</span>' : '') + '<span class="sub2"><span class="dot' + (h.isOpen ? '' : ' off') + '"></span> ' + (h.isOpen ? 'Open now' : 'Closed now') + '</span>');
+  if (!rows2 && !SPEC.manager) return null;
+  return el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || 'Find us') + '</h2></div>' + (b.text ? '<p class="lead2">' + esc(b.text) + '</p>' : '')
+    + '<div class="contact"><div class="info-card">' + (rows2 || '<div class="muted">Add your address, phone and email in Design & texts.</div>') + '</div>'
+    + (map ? '<a class="mapcard" href="' + map + '" target="_blank" rel="noopener"><div class="map-bg"></div><div class="map-pin">' + icon('pin') + '</div><div class="map-cap"><b>' + esc(s.address) + '</b><span>Open the map ' + icon('arrow') + '</span></div></a>' : '')
+    + '</div></div></section>');
+}
+
+const FEATURE_ICONS = [[/oven|fire|wood|grill|bake|hot/i, 'flame'], [/vegan|vegetar|fresh|organic|garden|leaf|local|grow|seasonal/i, 'leaf'], [/deliver|collect|takeaway|van|parking/i, 'truck'], [/gift|voucher|present/i, 'gift'],
+  [/family|team|people|private|room|group|guest|seat|party/i, 'users'], [/wine|drink|bar|cocktail/i, 'glass'], [/award|best|quality|expert|qualified|star/i, 'award'], [/menu|dish|food|pasta|pizza|chef|kitchen|cake|cook/i, 'chef'],
+  [/price|amount|£|\$|€|value|cost/i, 'tag'], [/time|hour|quick|fast|minute|valid|month/i, 'clock'], [/love|care|heart|welcome|friendly/i, 'heart'], [/phone|call|text|sent|message/i, 'phone'], [/book|reserv|calendar|date/i, 'cal']];
+/// Highlights: one card per line ("Title: what it means"), each with a fitting icon.
+function featuresBlock(b) {
+  const items = String(b.text || '').split('\n').map((l) => l.trim()).filter(Boolean).map((l) => { const m = /^(.{1,60}?)\s*[:—–-]\s+(.+)$/.exec(l); return m ? {title: m[1], text: m[2]} : {title: l, text: ''}; });
+  if (!items.length) return null;
+  return el('<section class="sec"><div class="wrap">' + (b.title ? '<div class="sec-head"><h2>' + esc(b.title) + '</h2></div>' : '') + '<div class="features">'
+    + items.map((it, i) => '<div class="feature" style="animation-delay:' + i * 70 + 'ms"><div class="f-ic">' + icon((FEATURE_ICONS.find(([re]) => re.test(it.title + ' ' + it.text)) || [0, 'sparkle'])[1]) + '</div><h3>' + esc(it.title) + '</h3>' + (it.text ? '<p>' + esc(it.text) + '</p>' : '') + '</div>').join('')
+    + '</div></div></section>');
 }
 
 // ================= bookings =================
@@ -653,7 +1070,11 @@ async function availabilityBlock(b, t, state) {
   };
   tl.onclick = (e) => { const c = e.target.closest('td.f'); if (!c) return; at = +c.dataset.m; picked = +c.dataset.r; drawSlots(); drawRes(); fill(); $('#form-' + t.id)?.scrollIntoView({behavior: 'smooth', block: 'start'}); };
   $('[data-a=day]', n).onclick = (e) => { tl.hidden = !tl.hidden; e.target.textContent = tl.hidden ? 'See the whole day' : 'Hide the day'; };
-  const load = async () => { plan = await api('_plan/' + t.id + '?date=' + day.value); if (at != null && (at <= nowMin())) at = null; drawSlots(); drawRes(); drawDay(); fill(); };
+  const load = async () => {
+    plan = await api('_plan/' + t.id + '?date=' + day.value);
+    if (plan.closed) { at = null; picked = null; slotsBox.innerHTML = '<div class="closed-note">' + icon('cal') + ' We’re closed that day' + (plan.closed !== 'closed' ? ' (' + esc(plan.closed) + ')' : '') + '. Please choose another day.</div>'; grid.innerHTML = ''; tl.innerHTML = ''; return; }
+    if (at != null && (at <= nowMin())) at = null; drawSlots(); drawRes(); drawDay(); fill();
+  };
   day.onchange = () => { picked = null; load(); };
   $$('.guests button', n).forEach((x) => x.onclick = () => { guests = Math.max(1, Math.min(30, guests + +x.dataset.d)); $('.guests b', n).textContent = guests + (guests === 1 ? ' person' : ' people'); picked = null; drawSlots(); drawRes(); fill(); });
   if (sh.guests) $('.guests b', n).textContent = '2 people';
@@ -666,21 +1087,35 @@ function ctaText(p) { const f = p.blocks.find((b) => b.type === 'form'); return 
 
 function navbar(pages, current) {
   const formPage = pages.find((p) => p.blocks.some((b) => b.type === 'form'));
-  const n = el('<header class="topnav"><div class="wrap"><a class="brand" href="/">' + monogram() + '<span>' + esc(SPEC.name) + '</span></a>'
+  const n = el('<header class="topnav' + (pages.length > 5 ? ' many' : '') + '"><div class="wrap"><a class="brand" href="/">' + monogram() + '<span>' + esc(SPEC.name) + '</span></a>'
     + '<nav class="links">' + pages.map((p) => '<a href="/p/' + p.id + '"' + (p.id === current ? ' class="on"' : '') + '>' + esc(p.title) + '</a>').join('') + '</nav>'
     + (formPage && formPage.id !== current ? '<a class="btn primary sm cta" href="/p/' + formPage.id + '">' + esc(formPage.title) + '</a>' : '')
-    + '<button class="iconbtn burger" aria-label="Menu">' + icon('menu') + '</button></div></header>');
-  $('.burger', n).onclick = () => $('.links', n).classList.toggle('open');
+    + '<button class="iconbtn burger" aria-label="Menu" aria-expanded="false">' + icon('menu') + '</button></div></header>');
+  const burger = $('.burger', n), links = $('.links', n);
+  const set = (open) => { links.classList.toggle('open', open); burger.setAttribute('aria-expanded', String(open)); burger.innerHTML = icon(open ? 'x' : 'menu'); };
+  burger.onclick = () => set(!links.classList.contains('open'));
+  links.onclick = (e) => { if (e.target.closest('a')) set(false); };
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') set(false); });
   return n;
 }
+
+/// Where to book or order (a page with free times first, then one with a form).
+const actionPages = (pages) => {
+  const rank = (p) => p.blocks.some((b) => b.type === 'availability') ? 0 : p.blocks.some((b) => b.type === 'form' && table(b.table) && isOrders(table(b.table))) ? 1 : p.blocks.some((b) => b.type === 'form') ? 2 : 9;
+  return pages.filter((p) => rank(p) < 9).sort((a, b) => rank(a) - rank(b));
+};
 
 async function footer(pages) {
   const s = SPEC.site || {}, h = await hours();
   const col = (title, body) => body ? '<div><h4>' + esc(title) + '</h4>' + body + '</div>' : '';
-  return el('<footer class="footer"><div class="wrap cols">'
+  const cta = actionPages(pages)[0];
+  const map = s.address ? 'https://www.openstreetmap.org/search?query=' + encodeURIComponent(s.address) : '';
+  return el('<footer class="footer">'
+    + (cta ? '<div class="cta-band"><div class="wrap"><div><h2>' + esc(cta.title) + '</h2><p>' + esc(s.tagline || 'We’d love to see you.') + '</p></div><div class="actions"><a class="btn primary lg" href="/p/' + cta.id + '">' + esc(ctaText(cta)) + ' ' + icon('arrow') + '</a>' + (s.phone ? '<a class="btn lg" href="tel:' + esc(s.phone.replace(/\s/g, '')) + '">' + icon('phone') + ' ' + esc(s.phone) + '</a>' : '') + '</div></div></div>' : '')
+    + '<div class="wrap cols">'
     + '<div><a class="brand" href="/">' + monogram() + '<span>' + esc(SPEC.name) + '</span></a>' + (s.about || s.tagline ? '<p class="about">' + esc(s.about || s.tagline) + '</p>' : '') + '</div>'
-    + col('Visit us', (s.address ? '<p>' + esc(s.address) + '</p>' : '') + (s.phone ? '<a href="tel:' + esc(s.phone.replace(/\s/g, '')) + '">' + esc(s.phone) + '</a>' : '') + (s.email ? '<a href="mailto:' + esc(s.email) + '">' + esc(s.email) + '</a>' : ''))
-    + col('Hours', h ? '<p>' + esc(h.open) + ' – ' + esc(h.close) + '</p><p style="color:var(--muted)">' + (h.isOpen ? 'Open now' : 'Closed now') + '</p>' : '')
+    + col('Visit us', (s.address ? '<p>' + esc(s.address) + '</p><a class="dirs" href="' + map + '" target="_blank" rel="noopener">' + icon('pin') + ' Get directions</a>' : '') + (s.phone ? '<a href="tel:' + esc(s.phone.replace(/\s/g, '')) + '">' + esc(s.phone) + '</a>' : '') + (s.email ? '<a href="mailto:' + esc(s.email) + '">' + esc(s.email) + '</a>' : ''))
+    + col('Hours', h ? '<p>' + esc(h.open) + ' – ' + esc(h.close) + '</p>' + (h.days ? '<p class="soft">' + esc(h.days) + '</p>' : '') + '<p class="soft"><span class="dot' + (h.isOpen ? '' : ' off') + '" style="display:inline-block;margin-right:8px"></span>' + (h.isOpen ? 'Open now' : 'Closed now') + '</p>' : '')
     + col('Explore', pages.map((p) => '<a href="/p/' + p.id + '">' + esc(p.title) + '</a>').join(''))
     + '</div><div class="wrap bottom"><span>© ' + new Date().getFullYear() + ' ' + esc(SPEC.name) + (s.footer ? ' · ' + esc(s.footer) : '') + '</span><span><a href="/manage">Manager sign-in</a></span></div></footer>');
 }
@@ -713,7 +1148,12 @@ async function listBlock(b, t, page, state) {
   const fields = (b.fields ? b.fields.map((x) => t.fields.find((f) => f.id === x)).filter(Boolean) : visible(t)).filter((f) => !f.manager_only);
   const label = labelOf(t), imgF = firstOf(t, 'image'), priceF = fields.find((f) => f.type === 'money'), descF = fields.find((f) => f.type === 'longtext'), catF = fields.find((f) => f.type === 'choice');
   const pick = page.blocks.some((o) => o.type === 'form' && table(o.table)?.fields.some((f) => f.type === 'links' && f.qty && f.link === t.id));
-  const all = await rows(t.id, true), links = await linkMaps(t);
+  let all = await rows(t.id, true);
+  const links = await linkMaps(t);
+  // Only the ones ticked (e.g. popular dishes); closed days that are over aren't shown.
+  if (b.only) all = all.filter((r) => r[b.only] === true);
+  if (isClosures(t)) { const ds = t.fields.filter((f) => f.type === 'date'); all = all.filter((r) => String(r[ds[1]?.id] || r[ds[0].id] || '') >= todayISO()); }
+  if (b.layout === 'menu') return menuBlock(b, t, all, pick, state);
   const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2>' + (SPEC.manager ? '<div class="sec-actions"><button class="btn sm" data-a="photo">' + icon('image') + ' Add from a photo</button><button class="btn primary sm" data-a="add">' + icon('plus') + ' Add</button></div>' : '') + '</div><div class="toolbar"></div><div class="grid' + (imgF ? '' : ' compact') + '"></div></div></section>');
   if (SPEC.manager) {
     $('[data-a=add]', n).onclick = () => drawer(t, null, () => site());
@@ -737,12 +1177,12 @@ async function listBlock(b, t, page, state) {
     list.forEach((r, i) => {
       const tags = fields.filter((f) => ![label, priceF?.id, descF?.id].includes(f.id) && f.type !== 'image' && r[f.id] !== undefined && r[f.id] !== '' && r[f.id] !== null && r[f.id] !== false)
         .slice(0, 4).map((f) => '<span class="tag' + (f === catF ? ' acc' : '') + '">' + (f.type === 'yesno' ? icon('check') + ' ' + esc(f.label) : (f.type === 'choice' ? '' : esc(f.label) + ': ') + esc(fmt(f, r[f.id], links))) + '</span>').join('');
-      const q2 = state.sel[t.id]?.[r.id] || 0;
-      const card = el('<article class="item" style="animation-delay:' + Math.min(i, 12) * 40 + 'ms">' + (imgF ? '<div class="media">' + media(r[imgF.id], nameOf(t, r)) + '</div>' : '')
+      const q2 = state.sel[t.id]?.[r.id] || 0, out = soldOut(t, r);
+      const card = el('<article class="item' + (out ? ' out' : '') + '" style="animation-delay:' + Math.min(i, 12) * 40 + 'ms">' + (imgF ? '<div class="media">' + media(r[imgF.id], nameOf(t, r)) + '</div>' : '')
         + '<div class="body"><div class="top"><h3>' + esc(nameOf(t, r)) + '</h3>' + (priceF && r[priceF.id] !== undefined && r[priceF.id] !== null ? '<span class="price">' + money(r[priceF.id]) + '</span>' : '') + '</div>'
         + (descF && r[descF.id] ? '<p class="desc">' + esc(r[descF.id]) + '</p>' : '') + (tags ? '<div class="meta">' + tags + '</div>' : '')
-        + (pick ? '<div class="foot"><span class="qtybadge">' + (q2 ? q2 + ' in your ' + esc(state.formName) : '') + '</span><button class="btn primary sm">' + icon('plus') + ' Add</button></div>' : '') + '</div></article>');
-      if (pick) $('.foot button', card).onclick = () => state.add(t.id, r.id);
+        + (pick ? '<div class="foot"><span class="qtybadge">' + (out ? 'Sold out today' : q2 ? q2 + ' in your ' + esc(state.formName) : '') + '</span>' + (out ? '' : '<button class="btn primary sm">' + icon('plus') + ' Add</button>') + '</div>' : '') + '</div></article>');
+      if (pick && !out) $('.foot button', card).onclick = () => state.add(t.id, r.id);
       if (SPEC.manager) { const e = el('<button class="edit-btn" title="Edit">✎</button>'); e.onclick = () => drawer(t, r, () => site()); card.prepend(e); }
       grid.append(card);
     });
@@ -778,7 +1218,8 @@ async function formBlock(b, t, page, state) {
   const n = el('<section class="sec" id="form-' + t.id + '"><div class="wrap"><div class="formwrap' + (cartF ? '' : ' single') + '"><form class="panel" novalidate><h2>' + esc(cartF ? 'Your details' : (b.title || t.title)) + '</h2><p class="sub">Fill in the details and we’ll take care of the rest.</p><div class="fgrid"></div><div class="msg"></div><button class="btn primary lg block" type="submit">' + esc(b.submit || 'Send') + '</button></form></div></div></section>');
   const form = $('form', n), grid = $('.fgrid', n), wrap = $('.formwrap', n);
   const inputs = [];
-  let aside = null, fc = null, inView = false;
+  let aside = null, fc = null, inView = false, cartCtx = null, valuesOf = null;
+  const canDeliver = t.fields.some((f) => f.type === 'choice' && !f.manager_only && f.options.some((o) => /^deliver/i.test(o)));
   if (cartF) {
     state.formName = (b.title || t.title).toLowerCase().replace(/^(place |make |book )?(your |an? )?/, '').trim() || 'order';
     aside = el('<aside class="panel aside"><h3>' + esc(b.title || 'Your ' + state.formName) + '</h3><div class="cartbox"></div></aside>');
@@ -788,7 +1229,7 @@ async function formBlock(b, t, page, state) {
   }
   for (const f of fields) {
     if (f === cartF) {
-      const ctx = {sel: state.sel[cartF.link] = state.sel[cartF.link] || {}, hasList, onChange: (count, sum) => {
+      const ctx = cartCtx = {sel: state.sel[cartF.link] = state.sel[cartF.link] || {}, hasList, extras: () => ({fee: siteNum('delivery_fee'), min: siteNum('min_order'), canDeliver, delivery: canDeliver && !!valuesOf && isDelivery(t, valuesOf())}), onChange: (count, sum) => {
         state.redrawLists.forEach((d) => d());
         $('span', fc).textContent = count ? 'View ' + state.formName + ' · ' + count + ' item' + (count > 1 ? 's' : '') + (sum ? ' · ' + money(sum) : '') : '';
         fc.classList.toggle('show', count > 0 && !inView);
@@ -808,7 +1249,8 @@ async function formBlock(b, t, page, state) {
   if (fc) new IntersectionObserver((e) => { inView = e[0].isIntersecting; fc.classList.toggle('show', !inView && $('span', fc).textContent !== ''); }).observe(n);
   // Fields that only apply in some cases (an address only for delivery) show when they do.
   const applies = (f, body) => !f.when || Object.entries(f.when).every(([k, vals]) => vals.some((v) => String(v).toLowerCase() === String(body[k] ?? '').toLowerCase()));
-  const values = () => { const body = {}; for (const i of inputs) body[i.f.id] = i.get(); return body; };
+  const values = valuesOf = () => { const body = {}; for (const i of inputs) body[i.f.id] = i.get(); return body; };
+  if (cartCtx && canDeliver) { ['click', 'change'].forEach((ev) => form.addEventListener(ev, () => setTimeout(() => cartCtx.redraw && cartCtx.redraw()))); cartCtx.redraw && cartCtx.redraw(); }
   const showWhen = () => { const body = values(); for (const i of inputs) if (i.f.when) i.node.style.display = applies(i.f, body) ? '' : 'none'; };
   if (inputs.some((i) => i.f.when)) { ['click', 'input', 'change'].forEach((ev) => form.addEventListener(ev, () => setTimeout(showWhen))); showWhen(); }
   form.onsubmit = async (e) => {
@@ -819,6 +1261,7 @@ async function formBlock(b, t, page, state) {
     const msg = $('.msg', form);
     if (missing) { msg.innerHTML = '<div class="err">Please fill in “' + esc(missing.f.label) + '”.</div>'; return; }
     if (cartF && !body[cartF.id].length) { msg.innerHTML = '<div class="err">Choose at least one item first.</div>'; return; }
+    if (cartCtx && isDelivery(t, body) && siteNum('min_order') && (cartCtx.sum || 0) < siteNum('min_order')) { msg.innerHTML = '<div class="err">The minimum order for delivery is ' + money(siteNum('min_order')) + '. Add something more, or choose collection.</div>'; return; }
     const btn = $('button[type=submit]', form); btn.disabled = true; msg.innerHTML = '';
     try {
       await api('t/' + t.id, {method: 'POST', body: JSON.stringify(body)});
@@ -872,10 +1315,19 @@ async function site() {
       else if (b.type === 'list' && table(b.table)) nodes[i] = await listBlock(b, table(b.table), pg, state);
       else if (b.type === 'info' && table(b.table)) nodes[i] = await infoBlock(b, table(b.table));
       else if (b.type === 'availability' && table(b.table)) nodes[i] = await availabilityBlock(b, table(b.table), state);
+      else if (b.type === 'gallery') nodes[i] = await galleryBlock(b);
+      else if (b.type === 'testimonials' && table(b.table)) nodes[i] = await testimonialsBlock(b, table(b.table));
+      else if (b.type === 'contact') nodes[i] = await contactBlock(b);
+      else if (b.type === 'features') nodes[i] = featuresBlock(b);
     } catch (e) { nodes[i] = fail(e); }
   }
   nodes.filter(Boolean).forEach((n) => main.append(n));
   app.append(await footer(pages));
+  const acts = actionPages(pages).filter((p) => p.id !== id).slice(0, 2), ph2 = (SPEC.site || {}).phone;
+  if (acts.length || ph2) {
+    app.append(el('<nav class="mbar">' + (ph2 ? '<a class="btn call" aria-label="Call us" href="tel:' + esc(ph2.replace(/\s/g, '')) + '">' + icon('phone') + '</a>' : '') + acts.map((p, k) => '<a class="btn' + (k === 0 ? ' primary' : '') + '" href="/p/' + p.id + '">' + esc(p.title) + '</a>').join('') + '</nav>'));
+    document.body.classList.add('has-mbar');
+  }
 }
 
 // ================= manager =================
@@ -898,21 +1350,37 @@ async function login() {
 let VIEW = '', TIMER = null;
 const SEEN = {};
 const addTables = () => SPEC.tables.filter((t) => t.access.includes('add') && t.kind !== 'single');
-const statusField = (t) => t.fields.find((f) => f.type === 'choice' && f.manager_only) || t.fields.find((f) => f.type === 'choice' && /status|state|stage/.test(f.id));
+// The status: the choice called "status", else the first one only the manager sets (payment is never the status).
+const statusField = (t) => t.fields.find((f) => f.type === 'choice' && f.id === 'status') || t.fields.find((f) => f.type === 'choice' && f.manager_only) || t.fields.find((f) => f.type === 'choice' && /status|state|stage/.test(f.id));
 function beep() { try { const a = new AudioContext(), o = a.createOscillator(), g = a.createGain(); o.connect(g); g.connect(a.destination); o.frequency.value = 880; g.gain.setValueAtTime(.12, a.currentTime); g.gain.exponentialRampToValueAtTime(.001, a.currentTime + .5); o.start(); o.stop(a.currentTime + .5); } catch (_) {} }
+const singular = (s) => String(s).replace(/ies$/, 'y').replace(/s$/, '');
+const ago = (s) => { const d = new Date(String(s).replace(' ', 'T')); const m = Math.round((Date.now() - d) / 60000); if (isNaN(m)) return ''; if (m < 1) return 'just now'; if (m < 60) return m + ' min ago'; if (m < 1440) return Math.round(m / 60) + ' h ago'; return Math.round(m / 1440) + ' d ago'; };
+const nowMins = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+const dayLabel = (iso, opts = {weekday: 'short', day: 'numeric', month: 'short'}) => { const d = new Date(String(iso).slice(0, 10) + 'T12:00'); return isNaN(d) ? String(iso) : d.toLocaleDateString(undefined, opts); };
 
 async function admin() {
   const app = document.getElementById('app');
   app.innerHTML = '';
+  const people = addTables().some((t) => phoneOf(t));
   const shell = el('<div class="admin"><aside class="side"><a class="brand" href="/manage">' + monogram() + '<span>' + esc(SPEC.name) + '</span></a>'
-    + '<button class="nav-btn" data-v="overview">' + icon('home') + 'Overview</button><div class="grp">Your data</div>'
-    + SPEC.tables.map((t) => '<button class="nav-btn" data-v="t:' + t.id + '">' + icon(t.kind === 'single' ? 'file' : (t.access.includes('add') ? 'bell' : (t.fields.some((f) => f.type === 'image') ? 'image' : 'list'))) + esc(t.title) + '</button>').join('')
+    + '<button class="nav-btn" data-v="overview">' + icon('home') + 'Dashboard</button>' + (people ? '<button class="nav-btn" data-v="customers">' + icon('users') + 'Customers</button>' : '') + '<div class="grp">Your data</div>'
+    + SPEC.tables.map((t) => '<button class="nav-btn" data-v="t:' + t.id + '">' + icon(t.kind === 'single' ? 'file' : (t.access.includes('add') ? 'bell' : (t.fields.some((f) => f.type === 'image') ? 'image' : 'list'))) + '<span class="nb-t">' + esc(t.title) + '</span><b class="nb-n" data-n="' + t.id + '"></b></button>').join('')
     + '<div class="grp">Website</div><button class="nav-btn" data-v="website">' + icon('palette') + 'Design & texts</button>'
     + '<div class="spacer"></div><a class="nav-btn" href="/" target="_blank">' + icon('ext') + 'View website</a><button class="nav-btn" data-v="logout">' + icon('out') + 'Sign out</button></aside><section class="content"></section></div>');
   app.append(shell);
   $$('.nav-btn[data-v]', shell).forEach((b) => b.onclick = () => go(b.dataset.v));
   window.onhashchange = () => { const v = decodeURIComponent(location.hash.slice(1)); if (v && v !== VIEW) go(v); };
   go(decodeURIComponent(location.hash.slice(1)) || 'overview');
+}
+
+/// The little numbers in the menu: what is waiting in each table (new orders, requests).
+async function badges() {
+  for (const t of addTables()) {
+    const sf = statusField(t), n = $('[data-n="' + t.id + '"]'); if (!n || !sf) continue;
+    const first = sf.options[0];
+    const k = tone(first) === 'blue' ? (await rows(t.id).catch(() => [])).filter((r) => r[sf.id] === first).length : 0;
+    n.textContent = k ? String(k) : '';
+  }
 }
 
 async function go(v) {
@@ -924,27 +1392,76 @@ async function go(v) {
   try {
     if (v === 'overview') await overview(c);
     else if (v === 'website') await website(c);
+    else if (v === 'customers') await customers(c);
     else await manageTable(table(v.slice(2)), c);
   } catch (e) { c.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; }
+  badges().catch(() => {});
+}
+
+// ---------- charts ----------
+/// Bars for the last 14 days (today last, in the main colour); hover a bar for its number.
+function bars(counts, days) {
+  const w = 300, h = 84, n = counts.length, gap = 3, bw = (w - gap * (n - 1)) / n, max = Math.max(1, ...counts);
+  let s = '<svg class="bars" viewBox="0 0 ' + w + ' ' + (h + 20) + '" role="img" aria-label="Last 14 days">';
+  s += '<line class="base" x1="0" x2="' + w + '" y1="' + (h + .5) + '" y2="' + (h + .5) + '"/>';
+  counts.forEach((v, i) => {
+    const x = i * (bw + gap), bh = v ? Math.max(4, v / max * (h - 6)) : 0, y = h - bh, r = Math.min(4, bw / 2, bh);
+    s += '<g class="b' + (i === n - 1 ? ' today' : '') + '"><title>' + esc(dayLabel(days[i])) + ': ' + v + '</title><rect class="hit" x="' + x + '" y="0" width="' + (bw + gap) + '" height="' + h + '"/>'
+      + (v ? '<path d="M' + x + ' ' + h + 'V' + (y + r) + 'Q' + x + ' ' + y + ' ' + (x + r) + ' ' + y + 'H' + (x + bw - r) + 'Q' + (x + bw) + ' ' + y + ' ' + (x + bw) + ' ' + (y + r) + 'V' + h + 'Z"/>' : '') + '</g>';
+  });
+  s += '<text x="0" y="' + (h + 16) + '">' + esc(dayLabel(days[0], {day: 'numeric', month: 'short'})) + '</text><text x="' + w + '" y="' + (h + 16) + '" text-anchor="end">Today</text>';
+  return s + '</svg>';
+}
+
+/// When it is busy: one cell per hour, darker = busier.
+function hourStrip(hours) {
+  const max = Math.max(1, ...hours);
+  let lo = hours.findIndex((v) => v > 0), hi = 23 - [...hours].reverse().findIndex((v) => v > 0);
+  if (lo < 0) { lo = 9; hi = 21; }
+  lo = Math.max(0, Math.min(lo - 1, 9)); hi = Math.min(23, Math.max(hi + 1, lo + 9));
+  const peak = hours.indexOf(Math.max(...hours));
+  let h = '<div class="hours">';
+  for (let i = lo; i <= hi; i++) {
+    const v = hours[i], k = v / max;
+    h += '<div class="hcell' + (i === peak && v ? ' peak' : '') + '" title="' + String(i).padStart(2, '0') + ':00 – ' + v + '"><i style="background:color-mix(in srgb,var(--accent) ' + Math.round(6 + k * 84) + '%,var(--surface))"></i><small>' + (i % 2 === lo % 2 ? String(i).padStart(2, '0') : '') + '</small></div>';
+  }
+  return h + '</div>' + (hours[peak] ? '<p class="muted small">Busiest around <b>' + String(peak).padStart(2, '0') + ':00</b>.</p>' : '<p class="muted small">Nothing yet: this fills in as orders and bookings come in.</p>');
 }
 
 async function overview(c) {
+  const st = await api('_stats');
   const hr = new Date().getHours();
   const hello = hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening';
-  const counts = {}; for (const t of SPEC.tables) if (t.kind !== 'single') counts[t.id] = (await rows(t.id, true)).length;
+  for (const t of addTables()) await rows(t.id, true);
+  const kinds = Object.values(st.tables || {}).map((x) => x.kind);
   c.innerHTML = '';
-  c.append(el('<div class="head"><h1>' + hello + '</h1><a class="btn sm" href="/" target="_blank">' + icon('ext') + ' View website</a><p class="sub">Here’s what’s happening at ' + esc(SPEC.name) + '.</p></div>'));
-  const st = el('<div class="stats"></div>');
-  for (const t of SPEC.tables.filter((t) => t.kind !== 'single')) { const n = el('<div class="stat"><small>' + icon(t.access.includes('add') ? 'bell' : 'list') + esc(t.title) + '</small><b>' + counts[t.id] + '</b></div>'); n.onclick = () => go('t:' + t.id); st.append(n); }
-  c.append(st);
+  c.append(el('<div class="head"><h1>' + hello + '</h1><a class="btn sm" href="/" target="_blank">' + icon('ext') + ' View website</a><p class="sub">' + esc(dayLabel(todayISO(), {weekday: 'long', day: 'numeric', month: 'long'})) + ' · here’s what’s happening at ' + esc(SPEC.name) + '.</p></div>'));
+  const tiles = [];
+  if (kinds.includes('bookings')) tiles.push(['cal', 'Bookings today', st.bookings_today, 'Not counting cancellations']);
+  if (kinds.includes('orders')) tiles.push(['bag', 'Open orders', st.open_orders, 'Not done or cancelled yet'], ['tag', 'Takings today', money(st.revenue_today), st.orders_today + ' order' + (st.orders_today === 1 ? '' : 's') + ' today'], ['chart', 'Last 7 days', money(st.revenue_7d), 'Orders, by when they came in']);
+  tiles.push(['bell', 'New today', st.new_today, 'Everything that came in today']);
+  const k = el('<div class="kpis">' + tiles.map(([ic, l, v, sub]) => '<div class="kpi"><small>' + icon(ic) + esc(l) + '</small><b>' + esc(String(v)) + '</b><span>' + esc(sub) + '</span></div>').join('') + '</div>');
+  c.append(k);
+  const dash = el('<div class="dash"><div class="dcol"></div><div class="dcol"></div></div>'); c.append(dash);
+  const [left, right] = $$('.dcol', dash);
+  // Last 14 days, one small chart per kind of record.
+  const charts = el('<div class="card"><div class="card-h"><h3>Last 14 days</h3><span class="muted small">By the day they came in</span></div><div class="card-b"><div class="minis"></div></div></div>');
+  for (const [id, x] of Object.entries(st.tables || {})) {
+    const m = el('<div class="mini"><div class="mini-h"><b>' + esc(x.title) + '</b><span>' + x.counts.reduce((a, b) => a + b, 0) + ' in 14 days</span></div>' + bars(x.counts, st.days) + '</div>');
+    m.onclick = () => go('t:' + id); $('.minis', charts).append(m);
+  }
+  left.append(charts);
+  left.append(el('<div class="card"><div class="card-h"><h3>Busiest hours</h3><span class="muted small">Booked times, and when orders come in</span></div><div class="card-b">' + hourStrip(st.hours || []) + '</div></div>'));
+  right.append(await todayCard());
+  right.append(await attentionCard());
   for (const t of addTables()) {
-    const box = el('<div class="card" style="margin-bottom:22px"><div class="card-h"><h3>Latest ' + esc(t.title.toLowerCase()) + '</h3><button class="btn sm">See all</button></div><div class="tablewrap"></div></div>');
+    const box = el('<div class="card" style="margin-top:22px"><div class="card-h"><h3>Latest ' + esc(t.title.toLowerCase()) + '</h3><button class="btn sm">See all</button></div><div class="tablewrap"></div></div>');
     $('button', box).onclick = () => go('t:' + t.id);
     c.append(box);
-    await dataTable(t, $('.tablewrap', box), {limit: 8, fresh: false});
+    await dataTable(t, $('.tablewrap', box), {limit: 6, fresh: false});
   }
   // New orders and bookings show up by themselves, with a soft ping.
-  for (const t of addTables()) SEEN[t.id] = SEEN[t.id] ?? counts[t.id];
+  for (const t of addTables()) SEEN[t.id] = SEEN[t.id] ?? (await rows(t.id)).length;
   TIMER = setInterval(async () => {
     if (VIEW !== 'overview') return;
     let grew = false;
@@ -953,28 +1470,149 @@ async function overview(c) {
   }, 15000);
 }
 
-/// A table of records: picture + name, a few columns, and a status you can change in place.
-async function dataTable(t, box, {limit = 0, q = '', filter = '', fresh = true} = {}) {
+/// Today, in time order, with a line at "now".
+async function todayCard() {
+  const items = [];
+  for (const t of addTables()) {
+    const df = dateOf(t), tf = timeOf(t), sf = statusField(t), sh = shapeOf(t);
+    if (!df) continue;
+    const links = await linkMaps(t);
+    for (const r of await rows(t.id)) {
+      if (!String(r[df.id] || '').startsWith(todayISO()) || (sf && tone(r[sf.id]) === 'red')) continue;
+      const at = tf ? r[tf.id] : (df.type === 'datetime' ? String(r[df.id]).slice(11, 16) : '');
+      const g = sh && sh.guests && r[sh.guests.id] ? r[sh.guests.id] + ' people' : '';
+      const where = sh && r[sh.link.id] ? sh.res.title.replace(/s$/, '') + ' ' + fmt(sh.link, r[sh.link.id], links) : '';
+      items.push({t, r, at: at || '', sub: [singular(t.title), g, where].filter(Boolean).join(' · '), st: sf ? r[sf.id] : ''});
+    }
+  }
+  items.sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const box = el('<div class="card"><div class="card-h"><h3>Today</h3><span class="muted small">' + items.length + ' booked</span></div><div class="card-b tline"></div></div>');
+  const body = $('.tline', box), now = nowMins();
+  let lined = false;
+  const line = () => { if (lined) return; lined = true; body.append(el('<div class="nowrow"><span>' + toHHMM(now) + '</span><i></i></div>')); };
+  if (!items.length) body.innerHTML = '<div class="muted">Nothing booked for today yet.</div>';
+  for (const it of items) {
+    if (toMin(it.at) !== null && toMin(it.at) > now) line();
+    const n = el('<button class="trow' + (toMin(it.at) !== null && toMin(it.at) + 60 < now ? ' past' : '') + '"><b>' + esc(it.at || '–') + '</b><div><div class="tn">' + esc(nameOf(it.t, it.r)) + '</div><small>' + esc(it.sub) + '</small></div>' + pill(it.st) + '</button>');
+    n.onclick = () => record(it.t, it.r, () => go(VIEW));
+    body.append(n);
+  }
+  if (items.length) line();
+  return box;
+}
+
+/// New things nobody has looked at: orders still "New", requests, enquiries.
+async function attentionCard() {
+  const list = [];
+  for (const t of addTables()) {
+    const sf = statusField(t); if (!sf) continue;
+    const first = sf.options[0]; if (tone(first) !== 'blue') continue;
+    const df = dateOf(t);
+    for (const r of await rows(t.id)) if ((r[sf.id] || first) === first && (!df || !r[df.id] || String(r[df.id]).slice(0, 10) >= todayISO())) list.push({t, r, sf});
+  }
+  list.sort((a, b) => String(b.r.created_at).localeCompare(String(a.r.created_at)));
+  const box = el('<div class="card"><div class="card-h"><h3>Needs attention</h3><span class="muted small">' + list.length + ' waiting</span></div><div class="card-b att"></div></div>');
+  const body = $('.att', box);
+  if (!list.length) body.innerHTML = '<div class="allgood">' + icon('check') + '<div><b>All caught up</b><div class="muted small">New orders and requests show here.</div></div></div>';
+  for (const {t, r, sf} of list.slice(0, 8)) {
+    const next = sf.options[1];
+    const n = el('<div class="arow"><div class="a-ic">' + icon(isOrders(t) ? 'bag' : 'bell') + '</div><div class="a-b"><b>' + esc(nameOf(t, r)) + '</b><small>' + esc(singular(t.title)) + ' · ' + esc(ago(r.created_at)) + (r.via === 'phone' ? ' · by phone' : '') + '</small></div>' + (next ? '<button class="btn sm">' + esc(next) + '</button>' : '') + '</div>');
+    n.onclick = () => record(t, r, () => go(VIEW));
+    const b = $('button', n);
+    if (b) b.onclick = async (e) => { e.stopPropagation(); await api('t/' + t.id + '/' + r.id, {method: 'PUT', body: JSON.stringify({[sf.id]: next})}); delete cache[t.id]; toast(sf.label + ': ' + next); go(VIEW); };
+    body.append(n);
+  }
+  return box;
+}
+
+/// A table of records: sortable columns, status you can change in place, totals for orders.
+async function dataTable(t, box, o = {}) {
+  const {limit = 0, q = '', filter = '', when = '', fresh = true} = o;
   let all = [...await rows(t.id, fresh)].reverse();
-  const links = await linkMaps(t), sf = statusField(t), imgF = t.fields.find((f) => f.type === 'image');
+  const links = await linkMaps(t), sf = statusField(t), imgF = t.fields.find((f) => f.type === 'image'), df = dateOf(t), orders = isOrders(t);
   const label = labelOf(t);
   if (q) all = all.filter((r) => JSON.stringify(r).toLowerCase().includes(q) || t.fields.some((f) => f.link && fmt(f, r[f.id], links).toLowerCase().includes(q)));
   if (filter && sf) all = all.filter((r) => r[sf.id] === filter);
+  if (when && df) { const d0 = todayISO(); all = all.filter((r) => { const d = String(r[df.id] || '').slice(0, 10); return when === 'today' ? d === d0 : when === 'upcoming' ? d >= d0 : (d && d < d0); }); }
+  const sort = box._sort || (box._sort = {k: '', dir: 1});
+  if (sort.k) {
+    const f = t.fields.find((x) => x.id === sort.k);
+    const key = (r) => sort.k === '_total' ? (orderCalc(t, r, links)?.total ?? -1) : sort.k === '_added' ? String(r.created_at || '') : f && (f.type === 'number' || f.type === 'money') ? Number(r[f.id] ?? -1e15) : (f && f.link ? fmt(f, r[f.id], links) : String(r[sort.k] ?? '')).toLowerCase();
+    all.sort((a, b) => { const x = key(a), y = key(b); return (x > y ? 1 : x < y ? -1 : 0) * sort.dir; });
+  }
+  if (o.out) { o.out.rows = all; o.out.links = links; }
+  if (o.onCount) o.onCount(all.length);
   if (limit) all = all.slice(0, limit);
-  const cols = t.fields.filter((f) => f.id !== label && f !== sf && f.type !== 'image' && f.type !== 'longtext').slice(0, 4);
-  if (!all.length) { box.innerHTML = '<div class="empty" style="margin:20px;border:0">' + icon(q ? 'search' : 'list') + '<div>' + (q || filter ? 'Nothing matches.' : 'Nothing here yet.') + '</div></div>'; return; }
-  box.innerHTML = '<table class="data"><thead><tr><th>' + esc(t.fields.find((f) => f.id === label)?.label || 'Name') + '</th>' + cols.map((f) => '<th>' + esc(f.label) + '</th>').join('') + (sf ? '<th>' + esc(sf.label) + '</th>' : '') + '<th>Added · from</th></tr></thead><tbody></tbody></table>';
+  const totalF = t.fields.find((f) => f.type === 'money' && /^(order_)?total$/.test(f.id));
+  const cols = t.fields.filter((f) => f.id !== label && f !== sf && f !== totalF && f.type !== 'image' && f.type !== 'longtext' && !(f.when && limit)).slice(0, limit ? 3 : 5);
+  if (!all.length) { box.innerHTML = '<div class="empty" style="margin:20px;border:0">' + icon(q ? 'search' : 'list') + '<div>' + (q || filter || when ? 'Nothing matches.' : 'Nothing here yet.') + '</div></div>'; return; }
+  const th = (k, l, cls = '') => '<th data-k="' + esc(k) + '" class="' + cls + (sort.k === k ? ' sorted' : '') + '">' + esc(l) + (limit ? '' : '<i class="sort-ic">' + (sort.k === k ? (sort.dir > 0 ? '▲' : '▼') : '') + '</i>') + '</th>';
+  box.innerHTML = '<table class="data' + (limit ? '' : ' sortable') + '"><thead><tr>' + th(label, t.fields.find((f) => f.id === label)?.label || 'Name') + cols.map((f) => th(f.id, f.label, f.type === 'money' || f.type === 'number' ? 'num' : '')).join('')
+    + (orders ? th('_total', 'Total', 'num') : '') + (sf ? th(sf.id, sf.label) : '') + th('_added', 'Added · from') + '</tr></thead><tbody></tbody></table>';
+  if (!limit) $$('th[data-k]', box).forEach((h) => h.onclick = () => { const k = h.dataset.k; sort.dir = sort.k === k ? -sort.dir : (k === '_added' || k === '_total' ? -1 : 1); sort.k = k; dataTable(t, box, {...o, fresh: false}); });
   const tb = $('tbody', box);
+  const cell = (f, v) => {
+    if (v === null || v === undefined || v === '') return '<td class="muted">–</td>';
+    if (f.type === 'choice') return '<td>' + (f.manager_only ? pill(v) : '<span class="tag">' + esc(v) + '</span>') + '</td>';
+    if (f.type === 'yesno') return '<td>' + (v ? '<span class="yes">' + icon('check') + '</span>' : '<span class="muted">–</span>') + '</td>';
+    if (f.type === 'phone') return '<td><a class="tel" href="tel:' + esc(String(v).replace(/\s/g, '')) + '">' + esc(v) + '</a></td>';
+    return '<td class="' + (f.type === 'money' || f.type === 'number' ? 'num' : '') + '">' + esc(fmt(f, v, links)) + '</td>';
+  };
   for (const r of all) {
     const fresh10 = Date.now() - new Date(String(r.created_at).replace(' ', 'T')).getTime() < 600000;
-    const tr = el('<tr' + (fresh10 && t.access.includes('add') ? ' class="new"' : '') + '><td><div class="cell-main">' + (imgF ? '<div class="thumb-sm">' + media(r[imgF.id], nameOf(t, r), 'sm') + '</div>' : '') + esc(nameOf(t, r)) + '</div></td>'
-      + cols.map((f) => '<td>' + esc(fmt(f, r[f.id], links)) + '</td>').join('')
-      + (sf ? '<td><select class="status s' + Math.max(0, sf.options.indexOf(r[sf.id])) % 5 + '">' + sf.options.map((o) => '<option' + (o === r[sf.id] ? ' selected' : '') + '>' + esc(o) + '</option>').join('') + '</select></td>' : '')
+    const calc = orders ? orderCalc(t, r, links) : null;
+    const tr = el('<tr' + (fresh10 && t.access.includes('add') ? ' class="new"' : '') + '><td><div class="cell-main">' + (imgF ? '<div class="thumb-sm">' + media(r[imgF.id], nameOf(t, r), 'sm') + '</div>' : '') + '<span>' + esc(nameOf(t, r)) + '</span></div></td>'
+      + cols.map((f) => cell(f, r[f.id])).join('')
+      + (orders ? '<td class="num"><b>' + (calc ? esc(money(calc.total)) : '–') + '</b>' + (calc && calc.fee ? '<small class="muted"> incl. delivery</small>' : '') + '</td>' : '')
+      + (sf ? '<td><select class="status t-' + tone(r[sf.id]) + '">' + sf.options.map((x) => '<option' + (x === r[sf.id] ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select></td>' : '')
       + '<td class="muted" style="white-space:nowrap">' + esc(r.created_at || '') + (r.via === 'phone' ? ' <span class="tag acc">' + icon('phone') + ' Phone</span>' : (r.via === 'website' ? ' <span class="tag">Website</span>' : '')) + '</td></tr>');
-    if (sf) { const s = $('select', tr); s.onclick = (e) => e.stopPropagation(); s.onchange = async () => { await api('t/' + t.id + '/' + r.id, {method: 'PUT', body: JSON.stringify({[sf.id]: s.value})}); s.className = 'status s' + sf.options.indexOf(s.value) % 5; delete cache[t.id]; toast(sf.label + ': ' + s.value); }; }
-    tr.onclick = () => drawer(t, r, () => go(VIEW));
+    if (sf) { const s = $('select', tr); s.onclick = (e) => e.stopPropagation(); s.onchange = async () => { await api('t/' + t.id + '/' + r.id, {method: 'PUT', body: JSON.stringify({[sf.id]: s.value})}); s.className = 'status t-' + tone(s.value); r[sf.id] = s.value; delete cache[t.id]; toast(sf.label + ': ' + s.value); badges().catch(() => {}); }; }
+    $$('a.tel', tr).forEach((a) => a.onclick = (e) => e.stopPropagation());
+    tr.onclick = () => record(t, r, () => go(VIEW));
     tb.append(tr);
   }
+}
+
+/// Columns per status; drag a card (or press its arrow) to move it on.
+async function boardView(t, box, {q = '', when = ''} = {}) {
+  const sf = statusField(t), links = await linkMaps(t), df = dateOf(t), tf = timeOf(t), orders = isOrders(t);
+  let all = [...await rows(t.id)].reverse();
+  if (q) all = all.filter((r) => JSON.stringify(r).toLowerCase().includes(q) || t.fields.some((f) => f.link && fmt(f, r[f.id], links).toLowerCase().includes(q)));
+  if (when && df) { const d0 = todayISO(); all = all.filter((r) => { const d = String(r[df.id] || '').slice(0, 10); return when === 'today' ? d === d0 : when === 'upcoming' ? d >= d0 : (d && d < d0); }); }
+  box.innerHTML = '<div class="board">' + sf.options.map((o) => '<div class="col" data-s="' + esc(o) + '"><div class="col-h">' + pill(o) + '<span class="muted small">' + all.filter((r) => (r[sf.id] || sf.options[0]) === o).length + '</span></div><div class="col-b"></div></div>').join('') + '</div>';
+  const move = async (r, to) => { if (r[sf.id] === to) return; await api('t/' + t.id + '/' + r.id, {method: 'PUT', body: JSON.stringify({[sf.id]: to})}); r[sf.id] = to; delete cache[t.id]; toast(nameOf(t, r) + ': ' + to); boardView(t, box, {q, when}); badges().catch(() => {}); };
+  for (const r of all) {
+    const st = r[sf.id] || sf.options[0], i = sf.options.indexOf(st), next = sf.options[i + 1];
+    const calc = orders ? orderCalc(t, r, links) : null;
+    const when2 = df && r[df.id] ? dayLabel(r[df.id]) + (tf && r[tf.id] ? ' · ' + r[tf.id] : '') : '';
+    const items = calc ? calc.lines.map((l) => l.qty + '× ' + l.name).join(', ') : '';
+    const card = el('<div class="kcard" draggable="true"><div class="k-top"><b>' + esc(nameOf(t, r)) + '</b>' + (calc ? '<span class="price">' + esc(money(calc.total)) + '</span>' : '') + '</div>'
+      + (when2 ? '<small>' + icon('cal') + ' ' + esc(when2) + '</small>' : '') + (items ? '<small class="k-items">' + esc(items) + '</small>' : '')
+      + '<div class="k-foot"><span class="muted small">' + esc(ago(r.created_at)) + (r.via === 'phone' ? ' · phone' : '') + '</span>' + (next && tone(next) !== 'red' ? '<button class="btn sm" title="Move to ' + esc(next) + '">' + esc(next) + ' ' + icon('arrow') + '</button>' : '') + '</div></div>');
+    card.ondragstart = (e) => { e.dataTransfer.setData('text/plain', String(r.id)); card.classList.add('drag'); };
+    card.ondragend = () => card.classList.remove('drag');
+    card.onclick = () => record(t, r, () => boardView(t, box, {q, when}));
+    const b = $('.k-foot button', card); if (b) b.onclick = (e) => { e.stopPropagation(); move(r, next); };
+    $('.col[data-s="' + CSS.escape(st) + '"] .col-b', box)?.append(card);
+  }
+  $$('.col', box).forEach((col) => {
+    col.ondragover = (e) => { e.preventDefault(); col.classList.add('over'); };
+    col.ondragleave = () => col.classList.remove('over');
+    col.ondrop = (e) => { e.preventDefault(); col.classList.remove('over'); const r = all.find((x) => String(x.id) === e.dataTransfer.getData('text/plain')); if (r) move(r, col.dataset.s); };
+  });
+}
+
+/// The records as a spreadsheet file (opens in Excel or Numbers).
+function exportCsv(t, list, links) {
+  const orders = isOrders(t);
+  const fs = t.fields.filter((f) => f.type !== 'image');
+  const head = ['id', ...fs.map((f) => f.label), ...(orders ? ['Total'] : []), 'Added', 'From'];
+  const q = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [head.map(q).join(',')];
+  for (const r of list) lines.push([r.id, ...fs.map((f) => f.type === 'money' || f.type === 'number' ? (r[f.id] ?? '') : fmt(f, r[f.id], links)), ...(orders ? [orderCalc(t, r, links)?.total ?? ''] : []), r.created_at || '', r.via || ''].map(q).join(','));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\n')], {type: 'text/csv'}));
+  a.download = t.id + '-' + todayISO() + '.csv'; document.body.append(a); a.click(); a.remove();
 }
 
 async function manageTable(t, c) {
@@ -988,17 +1626,33 @@ async function manageTable(t, c) {
     c.append(card);
     return;
   }
-  const sf = statusField(t);
-  const head = el('<div class="head"><h1>' + esc(t.title) + '</h1><button class="btn" data-a="photo">' + icon('image') + ' Add from a photo</button><button class="btn primary" data-a="add">' + icon('plus') + ' Add</button><p class="sub">' + esc(t.purpose || '') + '</p></div>');
+  const sf = statusField(t), df = dateOf(t), canBoard = sf && sf.options.length >= 3;
+  const modeKey = 'view_' + location.port + '_' + t.id;
+  let mode = canBoard && localStorage.getItem(modeKey) === 'board' ? 'board' : 'table';
+  const head = el('<div class="head"><h1>' + esc(t.title) + ' <span class="count"></span></h1>'
+    + (canBoard ? '<div class="seg"><button data-m="table">' + icon('list') + ' Table</button><button data-m="board">' + icon('board') + ' Board</button></div>' : '')
+    + '<button class="btn" data-a="csv">' + icon('download') + ' Export</button><button class="btn" data-a="photo">' + icon('image') + ' Add from a photo</button><button class="btn primary" data-a="add">' + icon('plus') + ' Add</button><p class="sub">' + esc(t.purpose || '') + '</p></div>');
   $('[data-a=add]', head).onclick = () => drawer(t, null, () => go(VIEW));
   $('[data-a=photo]', head).onclick = () => importPhoto(t, () => go(VIEW));
   c.append(head);
   const bar = el('<div class="toolbar"><div class="search">' + icon('search') + '<input placeholder="Search"></div></div>');
-  let q = '', filter = '';
-  if (sf) { const chips = el('<div class="chips"></div>'); for (const o of ['', ...sf.options]) { const b = el('<button class="pill-opt' + (o ? '' : ' on') + '">' + esc(o || 'All') + '</button>'); b.onclick = () => { filter = o; $$('.pill-opt', chips).forEach((x) => x.classList.toggle('on', x === b)); draw(); }; chips.append(b); } bar.append(chips); }
+  let q = '', filter = '', when = '';
+  const chips = (opts, onPick) => { const box = el('<div class="chips"></div>'); for (const [v, l] of opts) { const b = el('<button class="pill-opt' + (v ? '' : ' on') + '">' + esc(l) + '</button>'); b.onclick = () => { onPick(v); $$('.pill-opt', box).forEach((x) => x.classList.toggle('on', x === b)); draw(); }; box.append(b); } bar.append(box); return box; };
+  if (df) chips([['', 'All dates'], ['today', 'Today'], ['upcoming', 'Upcoming'], ['past', 'Past']], (v) => when = v);
+  const stChips = sf ? chips([['', 'All'], ...sf.options.map((o) => [o, o])], (v) => filter = v) : null;
   c.append(bar);
   const box = el('<div class="card"><div class="tablewrap"></div></div>'); c.append(box);
-  const draw = () => dataTable(t, $('.tablewrap', box), {q, filter, fresh: false});
+  const out = {};
+  const count = (n) => { $('.count', head).textContent = n + ' ' + (n === 1 ? singular(t.title).toLowerCase() : t.title.toLowerCase()); };
+  const draw = async () => {
+    $$('.seg button', head).forEach((b) => b.classList.toggle('on', b.dataset.m === mode));
+    if (stChips) stChips.style.display = mode === 'board' ? 'none' : '';
+    box.classList.toggle('plain', mode === 'board');
+    if (mode === 'board') { await boardView(t, $('.tablewrap', box), {q, when}); const n = $$('.kcard', box).length; count(n); }
+    else await dataTable(t, $('.tablewrap', box), {q, filter, when, fresh: false, out, onCount: count});
+  };
+  $$('.seg button', head).forEach((b) => b.onclick = () => { mode = b.dataset.m; localStorage.setItem(modeKey, mode); draw(); });
+  $('[data-a=csv]', head).onclick = async () => { if (!out.rows) await dataTable(t, el('<div></div>'), {q, filter, when, fresh: false, out}); exportCsv(t, out.rows || [], out.links || {}); };
   $('input', bar).oninput = (e) => { q = e.target.value.toLowerCase(); draw(); };
   // Bookings of tables, stylists, rooms…: a day plan as well as the list.
   if (shapeOf(t)) {
@@ -1009,7 +1663,7 @@ async function manageTable(t, c) {
   await rows(t.id, true); await draw();
 }
 
-/// The manager's day: every table (stylist, room…) across the opening hours, bookings by name.
+/// The manager's day: every table (stylist, room…) across the opening hours, bookings by name, a line at now.
 async function dayPlanView(t, box, date) {
   const sh = shapeOf(t);
   date = date || todayISO();
@@ -1019,7 +1673,8 @@ async function dayPlanView(t, box, date) {
   const label = new Date(date + 'T12:00').toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
   const count = new Set(plan.busy.map((h) => h.id)).size;
   let h = '<div class="card-h"><h3>Day plan · ' + esc(label) + '</h3><div class="daynav"><button class="btn sm" data-d="-1">←</button><input type="date" style="width:auto" value="' + date + '"><button class="btn sm" data-d="1">→</button><button class="btn sm" data-d="0">Today</button></div></div>'
-    + '<div class="card-b"><div class="muted" style="margin-bottom:8px">' + count + ' booking' + (count === 1 ? '' : 's') + ' · each holds a ' + esc(sh.res.title.toLowerCase().replace(/s$/, '')) + ' for ' + plan.minutes + ' minutes (change it in Design & texts). Click an empty slot to add a booking.</div><div class="tl"><table><tr><th class="rn">' + esc(sh.res.title) + '</th>' + ss.map((m) => '<th>' + toHHMM(m) + '</th>').join('') + '</tr>';
+    + '<div class="card-b">' + (plan.closed ? '<div class="closed-note">' + icon('cal') + ' Closed this day' + (plan.closed !== 'closed' ? ': ' + esc(plan.closed) : '') + '. Customers can’t book it.</div>' : '')
+    + '<div class="muted" style="margin-bottom:8px">' + count + ' booking' + (count === 1 ? '' : 's') + ' · each holds a ' + esc(sh.res.title.toLowerCase().replace(/s$/, '')) + ' for ' + plan.minutes + ' minutes (change it in Design & texts). Click an empty slot to add a booking.</div><div class="tl"><table><tr><th class="rn">' + esc(sh.res.title) + '</th>' + ss.map((m) => '<th>' + toHHMM(m) + '</th>').join('') + '</tr>';
   for (const r of plan.resources) {
     h += '<tr><th class="rn">' + esc(r.name) + (r.seats ? ' <span style="color:var(--muted);font-weight:400">· ' + r.seats + '</span>' : '') + '</th>';
     for (let i = 0; i < ss.length; i++) {
@@ -1028,18 +1683,141 @@ async function dayPlanView(t, box, date) {
         let k = 1; while (i + k < ss.length && ss[i + k] < toMin(b.from) + plan.minutes) k++;
         h += '<td class="b" colspan="' + k + '" data-id="' + b.id + '" title="' + esc(b.who + (b.guests ? ' · ' + b.guests + ' people' : '') + ' · ' + b.from + '–' + b.to) + '">' + esc(b.who) + (b.guests ? ' · ' + b.guests : '') + ' <span style="opacity:.75;font-weight:500">' + esc(b.from) + '</span></td>';
         i += k - 1;
-      } else h += '<td class="f" data-r="' + r.id + '" data-m="' + ss[i] + '"></td>';
+      } else h += '<td class="f' + (date === todayISO() && ss[i] + 30 <= nowMins() ? ' past' : '') + '" data-r="' + r.id + '" data-m="' + ss[i] + '"></td>';
     }
     h += '</tr>';
   }
   box.innerHTML = h + '</table></div></div>';
+  // Now, as a line across the plan.
+  if (date === todayISO()) {
+    const now = nowMins(), i = ss.findIndex((m) => now >= m && now < m + 30), ths = $$('.tl tr:first-child th', box).slice(1);
+    if (i >= 0 && ths[i]) { const x = ths[i].offsetLeft + (now - ss[i]) / 30 * ths[i].offsetWidth; $('.tl', box).append(el('<div class="nowline" style="left:' + x + 'px"><span>' + toHHMM(now) + '</span></div>')); }
+  }
   $$('[data-d]', box).forEach((b) => b.onclick = () => dayPlanView(t, box, +b.dataset.d === 0 ? todayISO() : shift(+b.dataset.d)));
   $('input[type=date]', box).onchange = (e) => dayPlanView(t, box, e.target.value);
   $('table', box).onclick = async (e) => {
     const c = e.target.closest('td'); if (!c) return;
-    if (c.dataset.id) { const r = (await rows(t.id, true)).find((x) => String(x.id) === c.dataset.id); if (r) drawer(t, r, () => go(VIEW)); return; }
+    if (c.dataset.id) { const r = (await rows(t.id, true)).find((x) => String(x.id) === c.dataset.id); if (r) record(t, r, () => go(VIEW)); return; }
     if (c.dataset.r) drawer(t, null, () => go(VIEW), {[sh.date.id]: date, [sh.time.id]: toHHMM(+c.dataset.m), [sh.link.id]: +c.dataset.r});
   };
+}
+
+/// One record, to read first: its status, the order as a receipt, how to reach them, what else they have.
+async function record(t, r, done) {
+  $$('.drawer,.drawer-bg').forEach((x) => x.remove());
+  const links = await linkMaps(t), sf = statusField(t), pf = phoneOf(t), calc = isOrders(t) ? orderCalc(t, r, links) : null;
+  const imgF = t.fields.find((f) => f.type === 'image'), totalF = t.fields.find((f) => f.type === 'money' && /^(order_)?total$/.test(f.id)), label = labelOf(t);
+  const bg = el('<div class="drawer-bg"></div>'), d = el('<div class="drawer"><div class="dh"><div class="dh-t"><small>' + esc(singular(t.title)) + ' · #' + r.id + '</small><h3>' + esc(nameOf(t, r)) + '</h3></div><span class="dh-pill">' + (sf ? pill(r[sf.id]) : '') + '</span><button class="iconbtn">' + icon('x') + '</button></div><div class="db"></div><div class="df"><button class="btn danger">' + icon('trash') + ' Delete</button><span class="sp"></span><button class="btn cancel">Close</button><button class="btn primary">' + icon('edit') + ' Edit</button></div></div>');
+  document.body.append(bg, d);
+  requestAnimationFrame(() => requestAnimationFrame(() => { bg.classList.add('show'); d.classList.add('show'); }));
+  const close = () => { bg.classList.remove('show'); d.classList.remove('show'); setTimeout(() => { bg.remove(); d.remove(); }, 300); };
+  bg.onclick = close; $('.dh .iconbtn', d).onclick = close; $('.df .cancel', d).onclick = close;
+  const body = $('.db', d);
+  let h = imgF && r[imgF.id] ? '<div class="rec-img"><img src="' + esc(r[imgF.id]) + '" alt=""></div>' : '';
+  if (sf) h += '<div class="seg wide st-seg">' + sf.options.map((o) => '<button class="' + (o === r[sf.id] ? 'on ' : '') + 't-' + tone(o) + '" data-s="' + esc(o) + '">' + esc(o) + '</button>').join('') + '</div>';
+  const contact = [];
+  if (pf && r[pf.id]) contact.push('<a class="btn" href="tel:' + esc(String(r[pf.id]).replace(/\s/g, '')) + '">' + icon('phone') + ' ' + esc(r[pf.id]) + '</a>');
+  for (const f of t.fields.filter((f) => f.type === 'email' && r[f.id])) contact.push('<a class="btn" href="mailto:' + esc(r[f.id]) + '">' + icon('mail') + ' ' + esc(r[f.id]) + '</a>');
+  if (contact.length) h += '<div class="rec-contact">' + contact.join('') + '</div>';
+  const skip = new Set([label, sf?.id, imgF?.id, totalF?.id, pf?.id, ...t.fields.filter((f) => f.type === 'email').map((f) => f.id), ...(calc ? t.fields.filter((f) => f.type === 'links' && f.qty).map((f) => f.id) : [])]);
+  const dl = t.fields.filter((f) => !skip.has(f.id) && r[f.id] !== null && r[f.id] !== undefined && r[f.id] !== '' && (!f.when || Object.entries(f.when).every(([k, vals]) => vals.some((v) => String(v).toLowerCase() === String(r[k] ?? '').toLowerCase()))));
+  h += '<dl class="rec-dl">' + dl.map((f) => '<div class="' + (f.type === 'longtext' ? 'full' : '') + '"><dt>' + esc(f.label) + (f.manager_only ? ' <span class="mo" title="Only you see this">' + icon('lock') + '</span>' : '') + '</dt><dd>' + (f.type === 'choice' && f.manager_only ? pill(r[f.id]) : esc(fmt(f, r[f.id], links))) + '</dd></div>').join('') + '</dl>';
+  if (calc) {
+    h += '<div class="receipt"><h4>' + icon('bag') + ' Order</h4>' + calc.lines.map((l) => '<div class="rl"><span><b>' + l.qty + '×</b> ' + esc(l.name) + '</span><span>' + esc(money(l.price * l.qty)) + '</span></div>').join('')
+      + (calc.fee ? '<div class="rl sub"><span>Items</span><span>' + esc(money(calc.items)) + '</span></div><div class="rl sub"><span>Delivery</span><span>' + esc(money(calc.fee)) + '</span></div>' : '')
+      + '<div class="rl tot"><span>Total</span><span>' + esc(money(calc.total)) + '</span></div></div>';
+  }
+  h += '<p class="rec-meta muted small">Added ' + esc(r.created_at || '') + ' (' + esc(ago(r.created_at)) + ')' + (r.via ? ' · from ' + esc(r.via === 'phone' ? 'a phone call' : r.via === 'website' ? 'the website' : 'you') : '') + '</p>';
+  body.innerHTML = h;
+  // Everything else from the same phone number.
+  if (pf && digits9(r[pf.id])) {
+    const others = [];
+    for (const ot of addTables()) { const op = phoneOf(ot); if (!op) continue; for (const x of await rows(ot.id).catch(() => [])) if (!(ot.id === t.id && x.id === r.id) && digits9(x[op.id]) === digits9(r[pf.id])) others.push({t: ot, r: x}); }
+    if (others.length) {
+      const box = el('<div class="rec-others"><h4>Also from this number <span class="muted">(' + others.length + ')</span></h4></div>');
+      for (const o of others.sort((a, b) => String(b.r.created_at).localeCompare(String(a.r.created_at))).slice(0, 12)) {
+        const osf = statusField(o.t), odf = dateOf(o.t);
+        const n = el('<button class="orow"><div><b>' + esc(nameOf(o.t, o.r)) + '</b><small>' + esc(singular(o.t.title)) + ' · ' + esc(odf && o.r[odf.id] ? dayLabel(o.r[odf.id]) : String(o.r.created_at || '').slice(0, 10)) + '</small></div>' + (osf ? pill(o.r[osf.id]) : '') + '</button>');
+        n.onclick = () => record(o.t, o.r, done);
+        box.append(n);
+      }
+      body.append(box);
+    }
+  }
+  $$('.st-seg button', d).forEach((b) => b.onclick = async () => {
+    await api('t/' + t.id + '/' + r.id, {method: 'PUT', body: JSON.stringify({[sf.id]: b.dataset.s})});
+    r[sf.id] = b.dataset.s; delete cache[t.id];
+    $$('.st-seg button', d).forEach((x) => x.classList.toggle('on', x === b)); $('.dh-pill', d).innerHTML = pill(b.dataset.s);
+    toast(sf.label + ': ' + b.dataset.s); done(); badges().catch(() => {});
+  });
+  $('.df .primary', d).onclick = () => { close(); drawer(t, r, done); };
+  $('.df .danger', d).onclick = async () => { if (!confirm('Delete “' + nameOf(t, r) + '”?')) return; await api('t/' + t.id + '/' + r.id, {method: 'DELETE'}); delete cache[t.id]; close(); toast('Deleted'); done(); };
+}
+
+/// Everyone who has ordered or booked, by phone number: how often, how much, when last.
+async function customers(c) {
+  const people = new Map(), d0 = todayISO();
+  for (const t of addTables()) {
+    const pf = phoneOf(t); if (!pf) continue;
+    const links = await linkMaps(t), df = dateOf(t), sf = statusField(t), orders = isOrders(t);
+    for (const r of await rows(t.id, true)) {
+      const k = digits9(r[pf.id]); if (!k) continue;
+      const p = people.get(k) || {key: k, phone: r[pf.id], name: '', visits: 0, spend: 0, last: '', next: '', added: '', recs: [], kinds: new Set()};
+      const cancelled = sf && tone(r[sf.id]) === 'red';
+      p.recs.push({t, r}); p.kinds.add(singular(t.title));
+      if (!cancelled) { p.visits++; if (orders) p.spend += orderCalc(t, r, links)?.total || 0; }
+      const made = String(r.created_at || '').slice(0, 10), on = df ? String(r[df.id] || '').slice(0, 10) : '';
+      const seen = on && on <= d0 ? (on > made ? on : made) : made;
+      if (seen > p.last) p.last = seen;
+      if (on && on > d0 && !cancelled && (!p.next || on < p.next)) p.next = on;
+      if (String(r.created_at) >= p.added) { p.added = String(r.created_at); p.name = nameOf(t, r); p.phone = r[pf.id]; }
+      people.set(k, p);
+    }
+  }
+  const all = [...people.values()];
+  const back = all.filter((p) => p.visits > 1).length, spend = all.reduce((a, p) => a + p.spend, 0);
+  c.innerHTML = '';
+  c.append(el('<div class="head"><h1>Customers <span class="count">' + all.length + '</span></h1><p class="sub">Everyone who has ordered or booked, by their phone number. Only you see this.</p></div>'));
+  c.append(el('<div class="kpis"><div class="kpi"><small>' + icon('users') + 'Customers</small><b>' + all.length + '</b><span>With a phone number</span></div><div class="kpi"><small>' + icon('heart') + 'Came back</small><b>' + back + '</b><span>' + (all.length ? Math.round(back / all.length * 100) : 0) + '% more than once</span></div>'
+    + (spend ? '<div class="kpi"><small>' + icon('tag') + 'Average spend</small><b>' + esc(money(Math.round(spend / Math.max(1, all.filter((p) => p.spend).length) * 100) / 100)) + '</b><span>Per customer who ordered</span></div>' : '') + '</div>'));
+  const bar = el('<div class="toolbar"><div class="search">' + icon('search') + '<input placeholder="Search by name or number"></div></div>'); c.append(bar);
+  const box = el('<div class="card"><div class="tablewrap"></div></div>'); c.append(box);
+  let q = '', sort = {k: 'last', dir: -1};
+  const draw = () => {
+    let list = all.filter((p) => !q || (p.name + ' ' + p.phone).toLowerCase().includes(q) || String(p.phone).replace(/\D/g, '').includes(q.replace(/\D/g, '') || '§'));
+    list.sort((a, b) => { const x = a[sort.k], y = b[sort.k]; return (typeof x === 'number' ? x - y : String(x).localeCompare(String(y))) * sort.dir; });
+    const tb = $('.tablewrap', box);
+    if (!list.length) { tb.innerHTML = '<div class="empty" style="margin:20px;border:0">' + icon('users') + '<div>' + (all.length ? 'Nobody matches.' : 'Nobody yet: customers show here once they order or book.') + '</div></div>'; return; }
+    const th = (k, l, cls = '') => '<th data-k="' + k + '" class="' + cls + (sort.k === k ? ' sorted' : '') + '">' + l + '<i class="sort-ic">' + (sort.k === k ? (sort.dir > 0 ? '▲' : '▼') : '') + '</i></th>';
+    tb.innerHTML = '<table class="data sortable"><thead><tr>' + th('name', 'Name') + th('phone', 'Phone') + th('visits', 'Visits', 'num') + (spend ? th('spend', 'Spend', 'num') : '') + th('last', 'Last seen') + th('next', 'Next booking') + '<th>What</th></tr></thead><tbody></tbody></table>';
+    $$('th[data-k]', tb).forEach((h) => h.onclick = () => { const k = h.dataset.k; sort = {k, dir: sort.k === k ? -sort.dir : (k === 'name' || k === 'phone' ? 1 : -1)}; draw(); });
+    for (const p of list) {
+      const tr = el('<tr><td><div class="cell-main"><div class="avatar" style="--h:' + hue(p.name) + '">' + esc((p.name.trim()[0] || '?').toUpperCase()) + '</div><span>' + esc(p.name) + '</span>' + (p.visits > 2 ? '<span class="tag acc">Regular</span>' : '') + '</div></td><td><a class="tel" href="tel:' + esc(String(p.phone).replace(/\s/g, '')) + '">' + esc(p.phone) + '</a></td><td class="num">' + p.visits + '</td>'
+        + (spend ? '<td class="num">' + (p.spend ? esc(money(Math.round(p.spend * 100) / 100)) : '–') + '</td>' : '') + '<td>' + (p.last ? esc(dayLabel(p.last)) : '–') + '</td><td>' + (p.next ? esc(dayLabel(p.next)) : '<span class="muted">–</span>') + '</td><td>' + [...p.kinds].map((k) => '<span class="tag">' + esc(k) + '</span>').join(' ') + '</td></tr>');
+      $('a.tel', tr).onclick = (e) => e.stopPropagation();
+      tr.onclick = () => person(p);
+      $('tbody', tb).append(tr);
+    }
+  };
+  $('input', bar).oninput = (e) => { q = e.target.value.toLowerCase().trim(); draw(); };
+  draw();
+}
+
+/// One customer: everything they have booked or ordered.
+function person(p) {
+  $$('.drawer,.drawer-bg').forEach((x) => x.remove());
+  const bg = el('<div class="drawer-bg"></div>'), d = el('<div class="drawer"><div class="dh"><div class="dh-t"><small>Customer</small><h3>' + esc(p.name) + '</h3></div><button class="iconbtn">' + icon('x') + '</button></div><div class="db"><div class="rec-contact"><a class="btn" href="tel:' + esc(String(p.phone).replace(/\s/g, '')) + '">' + icon('phone') + ' ' + esc(p.phone) + '</a></div>'
+    + '<dl class="rec-dl"><div><dt>Visits</dt><dd>' + p.visits + '</dd></div>' + (p.spend ? '<div><dt>Spend</dt><dd>' + esc(money(Math.round(p.spend * 100) / 100)) + '</dd></div>' : '') + '<div><dt>Last seen</dt><dd>' + esc(p.last ? dayLabel(p.last) : '–') + '</dd></div><div><dt>Next booking</dt><dd>' + esc(p.next ? dayLabel(p.next) : '–') + '</dd></div></dl><div class="rec-others"><h4>Everything from them</h4></div></div></div>');
+  document.body.append(bg, d);
+  requestAnimationFrame(() => requestAnimationFrame(() => { bg.classList.add('show'); d.classList.add('show'); }));
+  const close = () => { bg.classList.remove('show'); d.classList.remove('show'); setTimeout(() => { bg.remove(); d.remove(); }, 300); };
+  bg.onclick = close; $('.dh .iconbtn', d).onclick = close;
+  for (const o of p.recs.sort((a, b) => String(b.r.created_at).localeCompare(String(a.r.created_at)))) {
+    const osf = statusField(o.t), odf = dateOf(o.t);
+    const n = el('<button class="orow"><div><b>' + esc(singular(o.t.title)) + '</b><small>' + esc(odf && o.r[odf.id] ? dayLabel(o.r[odf.id]) : String(o.r.created_at || '').slice(0, 10)) + '</small></div>' + (osf ? pill(o.r[osf.id]) : '') + '</button>');
+    n.onclick = () => record(o.t, o.r, () => go(VIEW));
+    $('.rec-others', d).append(n);
+  }
 }
 
 /// Add or edit one record in a side panel.
@@ -1111,7 +1889,9 @@ async function website(c) {
   const card = (title) => { const k = el('<div class="card" style="margin-bottom:22px"><div class="card-h"><h3>' + esc(title) + '</h3></div><div class="card-b"><div class="fgrid"></div></div></div>'); c.append(k); return $('.fgrid', k); };
 
   card('Your business').append(txt('name', 'Name'), txt('tagline', 'Tagline', false, 'One short line, e.g. “Wood-fired pizza since 1998”.'), txt('about', 'About you', true, 'A few sentences, shown in the footer.'),
-    txt('currency', 'Currency', false, 'e.g. £, €, $ or AED'), ...(SPEC.tables.some((t) => shapeOf(t)) ? [txt('booking_minutes', 'How long a booking lasts (minutes)', false, 'A table (or stylist, room…) stays booked this long. Default 120.')] : []), txt('footer', 'Footer note', false, 'e.g. “Free parking at the back”'), imgField('logo', 'Logo', 'A PNG with a clear background looks best.'), imgField('hero', 'Cover picture', 'The big photo at the top of your home page.'));
+    txt('currency', 'Currency', false, 'e.g. £, €, $ or AED'),
+    ...(SPEC.tables.some((t) => isOrders(t) && t.fields.some((f) => f.type === 'choice' && f.options.some((o) => /^deliver/i.test(o)))) ? [txt('delivery_fee', 'Delivery fee', false, 'Added to every delivery order, e.g. 2.50. Empty = free delivery.'), txt('min_order', 'Minimum order for delivery', false, 'Delivery orders below this are refused, e.g. 15. Empty = no minimum.')] : []),
+    ...(SPEC.tables.some((t) => shapeOf(t)) ? [txt('booking_minutes', 'How long a booking lasts (minutes)', false, 'A table (or stylist, room…) stays booked this long. Default 120.')] : []), txt('footer', 'Footer note', false, 'e.g. “Free parking at the back”'), imgField('logo', 'Logo', 'A PNG with a clear background looks best.'), imgField('hero', 'Cover picture', 'The big photo at the top of your home page.'));
   card('Contact').append(txt('address', 'Address', true), txt('phone', 'Phone'), txt('email', 'Email'));
 
   const look = el('<div class="card" style="margin-bottom:22px"><div class="card-h"><h3>Style</h3></div><div class="card-b"><div class="styles"></div><div class="colorrow"><label class="lbl" style="margin:0">Main colour</label><input type="color"><button class="btn sm">Use the style’s colour</button><span class="hint" style="margin:0">Buttons, links and highlights.</span></div></div></div>');
@@ -1146,8 +1926,25 @@ async function website(c) {
         const k = el('<div class="blk"><div class="field"><label class="lbl">Text</label><textarea></textarea><div class="hint">Start a line with # for a heading, or - for a list.</div></div></div>');
         $('textarea', k).value = b.text; $('textarea', k).oninput = (x) => e.text = x.target.value;
         box.append(k);
+      } else if (b.type === 'features' || b.type === 'contact') {
+        const k = el('<div class="blk"><div class="fgrid"><div class="field full"><label class="lbl">' + (b.type === 'features' ? 'Heading above the highlights' : 'Heading above your contact details') + '</label><input data-k="title"></div><div class="field full"><label class="lbl">' + (b.type === 'features' ? 'Highlights' : 'A line under it (optional)') + '</label><textarea data-k="text" style="min-height:90px"></textarea><div class="hint">' + (b.type === 'features' ? 'One per line, as “Title: what it means”. Each gets its own card and icon.' : 'Address, phone, email and hours come from Your business and Contact above.') + '</div></div></div></div>');
+        $$('[data-k]', k).forEach((x) => { x.value = b[x.dataset.k] || ''; x.oninput = () => e[x.dataset.k] = x.value; });
+        box.append(k);
+      } else if (b.type === 'gallery') {
+        const k = el('<div class="blk"><div class="field"><label class="lbl">Heading above the photos</label><input></div><label class="lbl">Photos</label><div class="gal-edit"></div>' + (b.table ? '<div class="hint">The photos of your ' + esc((table(b.table)?.title || '').toLowerCase()) + ' show here too.</div>' : '') + '</div>');
+        $('input', k).value = b.title || ''; $('input', k).oninput = (x) => e.title = x.target.value;
+        let imgs = [...(b.images || [])];
+        const gal = $('.gal-edit', k);
+        const drawG = () => {
+          gal.innerHTML = '';
+          imgs.forEach((u, j) => { const it = el('<div class="gal-th"><img src="' + esc(u) + '" alt=""><button type="button" class="iconbtn" title="Remove">' + icon('x') + '</button></div>'); $('button', it).onclick = () => { imgs.splice(j, 1); e.images = [...imgs]; drawG(); }; gal.append(it); });
+          const add = imageInput('', (v) => { if (v) { imgs.push(v); e.images = [...imgs]; drawG(); } }); add.classList.add('gal-add'); gal.append(add);
+        };
+        drawG();
+        box.append(k);
       } else {
-        const k = el('<div class="blk"><div class="field"><label class="lbl">Heading above the ' + (b.type === 'form' ? 'form' : 'list') + ' of ' + esc((table(b.table)?.title || '').toLowerCase()) + '</label><input></div></div>');
+        const what = b.type === 'form' ? 'form' : b.type === 'testimonials' ? 'reviews' : b.layout === 'menu' ? 'menu' : 'list';
+        const k = el('<div class="blk"><div class="field"><label class="lbl">Heading above the ' + what + ' of ' + esc((table(b.table)?.title || '').toLowerCase()) + '</label><input></div></div>');
         $('input', k).value = b.title || ''; $('input', k).oninput = (x) => e.title = x.target.value;
         box.append(k);
       }

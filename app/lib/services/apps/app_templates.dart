@@ -88,7 +88,6 @@ final appTemplates = <AppTemplate>[
         ]),
         {..._list('menu_items', 'Guest favourites', search: false), 'only': 'popular'},
         {'type': 'testimonials', 'table': 'reviews', 'title': 'What our guests say'},
-        _info('opening_hours', 'Visit us'),
         {'type': 'contact', 'title': 'Find us', 'text': 'Two minutes from the harbour car park. Step-free entrance and a heated terrace.'},
       ]},
       {'id': 'menu', 'title': 'Menu', 'blocks': [

@@ -32,6 +32,16 @@ void main() {
     for (final t in appTemplates) {
       ids[t.id] = await apps.createFromTemplate(t, ava: false);
       await apps.start(ids[t.id]!, quiet: true);
+      // The sample closed days (Christmas…) would make these tests depend on the date they run;
+      // closed days have their own tests (app_pro_test.dart).
+      final s = (await apps.app(ids[t.id]!))!.spec;
+      final c = closuresOf(s);
+      if (c != null) {
+        final d = AppData(db, ids[t.id]!, s);
+        for (final r in await d.list(c.id, manager: true)) {
+          await d.delete(c.id, r['id'] as int);
+        }
+      }
     }
   });
   tearDownAll(() => apps.stopAll());

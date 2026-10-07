@@ -214,12 +214,22 @@ void main() {
         final base = await valid(app, t, salt: 7);
         final one = {...base, 'date': date, 'time': '11:00', res: '${resources.first[shape.resources.labelField]}', 'phone': '07700 100001'};
         expect((await tool(app, 'add_$table', one)).error, false);
-        final clash = await tool(app, 'add_$table', {...one, 'name': 'Second Person', 'phone': '07700 100002'});
-        expect(clash.error, true);
-        expect(clash.text, contains('already booked'));
-        // Half an hour later still overlaps (a booking lasts a while).
-        final overlap = await tool(app, 'add_$table', {...one, 'name': 'Third', 'phone': '07700 100003', 'time': '11:15'});
-        expect(overlap.error, true);
+        if (shape.seatsField != null) {
+          // Restaurant tables: on the phone a taken table is swapped for a free one (and the AI is told); the website still refuses.
+          final clash = await tool(app, 'add_$table', {...one, 'name': 'Second Person', 'phone': '07700 100002'});
+          expect(clash.error, false, reason: clash.text);
+          expect(clash.text, contains('was taken'));
+          await tool(app, 'cancel_my_$table', {'phone': '07700 100002'});
+          final web = await req(app, 'POST', '/api/t/$table', body: {...one, 'name': 'Web Person', 'phone': '07700 100004'});
+          expect(web.code, 400);
+        } else {
+          final clash = await tool(app, 'add_$table', {...one, 'name': 'Second Person', 'phone': '07700 100002'});
+          expect(clash.error, true);
+          expect(clash.text, contains('already booked'));
+          // Half an hour later still overlaps (a booking lasts a while).
+          final overlap = await tool(app, 'add_$table', {...one, 'name': 'Third', 'phone': '07700 100003', 'time': '11:15'});
+          expect(overlap.error, true);
+        }
         // No resource chosen: a free one is given, never the taken one.
         final rest = <int>[];
         for (var i = 0; i < resources.length - 1; i++) {
@@ -227,7 +237,7 @@ void main() {
           expect(r.error, false, reason: r.text);
           rest.add(i);
         }
-        final rows = [for (final r in await d.list(table, manager: true)) if (r[shape.dateField.id] == date && r[shape.timeField.id] == '11:00') r[res]];
+        final rows = [for (final r in await d.list(table, manager: true)) if (r[shape.dateField.id] == date && r[shape.timeField.id] == '11:00' && !shape.cancelled(r)) r[res]];
         expect(rows.toSet().length, rows.length, reason: 'nobody shares a $res');
         final full = await tool(app, 'add_$table', {...one, 'name': 'Late', 'phone': '07700 300003'}..remove(res));
         expect(full.error, true);
@@ -283,12 +293,25 @@ void main() {
     }
   });
 
+  test('the day a caller means', () {
+    final wed = DateTime(2026, 10, 7); // a Wednesday
+    expect(spokenDates('a table for two tomorrow at 7', now: wed), {'2026-10-08'});
+    expect(spokenDates('the day after tomorrow please', now: wed), {'2026-10-09'});
+    expect(spokenDates('next Thursday at 10am', now: wed), {'2026-10-08', '2026-10-15'});
+    expect(spokenDates('this Wednesday', now: wed), {'2026-10-07', '2026-10-14'});
+    expect(spokenDates('Saturday, ten past seven', now: wed), {'2026-10-10', '2026-10-17'});
+    expect(spokenDates('not Friday, Saturday', now: wed), <String>{}, reason: 'two days named: leave it to the AI');
+    expect(spokenDates('on the 15th', now: wed), <String>{});
+    expect(spokenDates('yes please', now: wed), <String>{});
+  });
+
   test('items and services are found the way people say them', () {
     final menu = {1: 'Women’s cut & blow-dry', 2: 'Men’s cut', 3: 'Blow-dry', 4: 'Full head colour'};
     expect(bestMatch("women's cut and blow-dry", menu), 1);
     expect(bestMatch('a blow dry', menu), 3);
     expect(bestMatch('colour', menu), 4);
     expect(bestMatch('nails', menu), null);
+    expect(bestMatch('tiramisu', {1: 'Tiramisù', 2: 'Limoncello sorbet'}), 1);
     final shop = {1: 'Free-range eggs (6)', 2: 'Butter croissant', 3: 'Extra-virgin olive oil', 4: 'Sourdough loaf'};
     expect(bestMatch('box of six eggs', shop), 1);
     expect(bestMatch('croissants', shop), 2);

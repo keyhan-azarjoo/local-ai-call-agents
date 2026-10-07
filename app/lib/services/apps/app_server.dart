@@ -501,13 +501,21 @@ class AppServer {
           // Saved already in this call (the caller corrected something, or the AI saved twice): change that one.
           final shape = BookingShape.of(spec, t);
           final prev = await data.recentByPhone(t, '${args[t.fields.where((f) => f.type == 'phone').firstOrNull?.id] ?? ''}',
-              date: shape == null ? null : parseDate('${args[shape.dateField.id] ?? ''}'));
+              date: shape == null ? null : parseDate('${args[shape.dateField.id] ?? ''}'), name: '${args[t.labelField] ?? ''}');
           if (prev != null) {
             await data.change(t.id, prev, args);
             return 'Done. Updated the one saved earlier in this call (not a second one):\n${await data.describe(t.id, [(await data.get(t.id, prev, manager: false))!])}';
           }
         }
-        final id = await data.add(t.id, args, manager: manager, via: 'phone');
+        data.autoSwap = !manager;
+        data.swapped = null;
+        final int id;
+        try {
+          id = await data.add(t.id, args, manager: manager, via: 'phone');
+        } finally {
+          data.autoSwap = false;
+        }
+        if (data.swapped != null) return 'Done (${data.swapped} — tell the caller). Added to ${t.title.toLowerCase()} with id $id:\n${await data.describe(t.id, [(await data.get(t.id, id, manager: manager))!])}';
         return 'Done. Added to ${t.title.toLowerCase()} with id $id:\n${await data.describe(t.id, [(await data.get(t.id, id, manager: manager))!])}';
       case 'set':
         await data.setSingle(t.id, args);

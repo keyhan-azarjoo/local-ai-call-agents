@@ -41,8 +41,14 @@ String _hhmm(int m) => '${(m ~/ 60 % 24).toString().padLeft(2, '0')}:${(m % 60).
 const _numberWords = {'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10', 'twelve': '12', 'dozen': '12', 'half': '6'};
 const _filler = {'the', 'a', 'an', 'of', 'and', 'with', 'for', 'my', 'please', 'some', 'box', 'boxes', 'bottle', 'bottles', 'x', 'pack', 'one', 'order', 'standard', 'normal', 'regular', 'just'};
 
+const _accents = {'à': 'a', 'á': 'a', 'â': 'a', 'ä': 'a', 'ã': 'a', 'å': 'a', 'ç': 'c', 'è': 'e', 'é': 'e', 'ê': 'e', 'ë': 'e', 'ì': 'i', 'í': 'i', 'î': 'i', 'ï': 'i',
+  'ñ': 'n', 'ò': 'o', 'ó': 'o', 'ô': 'o', 'ö': 'o', 'õ': 'o', 'ø': 'o', 'ù': 'u', 'ú': 'u', 'û': 'u', 'ü': 'u', 'ý': 'y', 'ÿ': 'y', 'œ': 'oe', 'æ': 'ae', 'ß': 'ss'};
+
+/// "Tiramisù" → "tiramisu", "Amélie" → "amelie": as it's said, not as it's spelt.
+String plain(String s) => s.toLowerCase().split('').map((c) => _accents[c] ?? c).join();
+
 Set<String> _words(String s) => {
-      for (var w in s.toLowerCase().replaceAll(RegExp(r"[’']"), '').replaceAll('&', ' and ').split(RegExp(r'[^a-z0-9à-ÿ]+')))
+      for (var w in plain(s).replaceAll(RegExp(r"[’']"), '').replaceAll('&', ' and ').split(RegExp(r'[^a-z0-9]+')))
         if (w.isNotEmpty && !_filler.contains(w)) (w = _numberWords[w] ?? w).length > 3 && w.endsWith('s') && !w.endsWith('ss') ? w.substring(0, w.length - 1) : w,
     };
 
@@ -62,6 +68,36 @@ int? bestMatch(String said, Map<int, String> labels) {
   if (scored.isEmpty || scored.first.$2 < 0.5) return null;
   if (scored.length > 1 && (scored.first.$2 - scored[1].$2).abs() < 0.05) return null;
   return scored.first.$1;
+}
+
+/// The days a caller meant in [text] ("tomorrow", "next Thursday", "Saturday"), as YYYY-MM-DD;
+/// several when it's ambiguous ("Wednesday" said on a Wednesday: today or next week). Empty when
+/// nothing (or an exact date, which the AI reads itself) was said, or more than one day was named.
+Set<String> spokenDates(String text, {DateTime? now}) {
+  final s = text.toLowerCase();
+  now ??= DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  String ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  if (RegExp(r'\b\d{1,2}(st|nd|rd|th)\b|\b(january|february|march|april|may|june|july|august|september|october|november|december)\b|\d{4}-\d{2}|\d{1,2}/\d{1,2}').hasMatch(s)) return {};
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  final named = [
+    if (RegExp(r'\b(today|tonight)\b').hasMatch(s)) 'today',
+    if (RegExp(r'day after tomorrow').hasMatch(s)) 'after' else if (RegExp(r'\btomorrow\b').hasMatch(s)) 'tomorrow',
+    for (final d in days)
+      if (RegExp('\\b${d}s?\\b').hasMatch(s)) d,
+  ];
+  if (named.length != 1) return {};
+  final n = named.single;
+  if (n == 'today') return {ymd(today)};
+  if (n == 'tomorrow') return {ymd(today.add(const Duration(days: 1)))};
+  if (n == 'after') return {ymd(today.add(const Duration(days: 2)))};
+  final w = days.indexOf(n) + 1;
+  var d = today;
+  while (d.weekday != w) {
+    d = d.add(const Duration(days: 1));
+  }
+  // "Thursday" / "this Thursday" / "next Thursday": the coming one, or the one after (people differ).
+  return {ymd(d), ymd(d.add(const Duration(days: 7)))};
 }
 
 /// "2026-10-10" → "Saturday 2026-10-10" (small models get weekdays wrong on their own).
@@ -252,6 +288,10 @@ class AppData {
   }
 
   /// A new booking: its table must be free then; with no table chosen, the best free one is given.
+  /// When a taken table was swapped for a free one on the last add (for the AI to tell the caller).
+  String? swapped;
+  bool autoSwap = false;
+
   Future<void> _holdResource(BookingShape b, Map<String, Object?> clean) async {
     final date = clean[b.dateField.id], time = clean[b.timeField.id];
     if (date == null || time == null) return;
@@ -268,6 +308,12 @@ class AppData {
     if (!a.free.any((r) => r['id'] == chosen)) {
       final r = (await list(b.resources.id, manager: true)).where((x) => x['id'] == chosen).firstOrNull;
       final tooSmall = r != null && !a.taken.any((x) => x['id'] == chosen);
+      // Restaurant tables (they have seats): any free one that fits will do — the AI picked it, not the guest.
+      if (b.seatsField != null && a.free.isNotEmpty && autoSwap) {
+        clean[b.resourceField.id] = a.free.first['id'];
+        swapped = '${r?[b.resources.labelField] ?? chosen} was taken, so it is ${a.free.first[b.resources.labelField]} instead';
+        return;
+      }
       throw AppDataError('${b.resources.title.replaceAll(RegExp(r's$'), '')} ${r?[b.resources.labelField] ?? chosen} '
           '${tooSmall ? 'is too small for $guests' : 'is already booked at $time on $date'}. '
           '${a.free.isEmpty ? 'Nothing else is free then.' : 'Free $what then: ${names(a.free)}.'}');
@@ -364,19 +410,22 @@ class AppData {
 
   /// What this phone number saved by phone in the last [minutes] (not cancelled): a second save
   /// in the same call is a correction of the first. For bookings, only one on the same day.
-  Future<int?> recentByPhone(TableSpec t, String phone, {String? date, int minutes = 20}) async {
+  Future<int?> recentByPhone(TableSpec t, String phone, {String? date, String? name, int minutes = 20}) async {
     final phoneF = t.fields.where((f) => f.type == 'phone').firstOrNull;
     String last9(Object? x) {
       final d = '${x ?? ''}'.replaceAll(RegExp(r'\D'), '');
       return d.length < 9 ? d : d.substring(d.length - 9);
     }
-    if (phoneF == null || last9(phone).length < 9) return null;
+    if (phoneF == null || (last9(phone).length < 9 && name == null)) return null;
     final shape = BookingShape.of(spec, t);
     final since = DateTime.now().subtract(Duration(minutes: minutes)).millisecondsSinceEpoch;
     final rows = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND created_at > ?', whereArgs: [appId, t.id, since], orderBy: 'id DESC');
     for (final r in rows) {
       final d = (jsonDecode(r['data'] as String) as Map).cast<String, Object?>();
-      if (d['_via'] != 'phone' || last9(d[phoneF.id]) != last9(phone)) continue;
+      // The same number, or (a caller who gave another number part-way) the same name within a few minutes.
+      final sameName = name != null && name.trim().length > 2 && plain('${d[t.labelField] ?? ''}').trim() == plain(name).trim() &&
+          (r['created_at'] as int) > DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
+      if (d['_via'] != 'phone' || (last9(d[phoneF.id]) != last9(phone) && !sameName)) continue;
       final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
       if (status != null && RegExp(r'cancel', caseSensitive: false).hasMatch('${d[status.id] ?? ''}')) continue;
       if (shape != null && date != null && d[shape.dateField.id] != date) continue;
@@ -513,10 +562,10 @@ class AppData {
     final target = _table(f.link!);
     final rows = await list(target.id, manager: true);
     // By name first ("table 4", "Margherita"), as people and the AI say it; then by id.
-    final name = '${v ?? ''}'.trim().toLowerCase();
+    final name = plain('${v ?? ''}'.trim());
     String label(Map<String, Object?> r) {
       final l = r[target.labelField];
-      return (l is num && l == l.roundToDouble() ? '${l.toInt()}' : '${l ?? ''}').toLowerCase();
+      return plain(l is num && l == l.roundToDouble() ? '${l.toInt()}' : '${l ?? ''}');
     }
 
     final bare = name.replaceFirst(RegExp(r'^(table|no\.?|number|#)\s*'), '');

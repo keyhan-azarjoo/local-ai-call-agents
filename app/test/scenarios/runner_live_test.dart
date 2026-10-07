@@ -342,7 +342,8 @@ class Harness {
         'How you talk: ${c['style_text'] ?? 'Natural and brief.'}\n'
         'Rules: speak like a real phone caller, ONE or TWO short sentences, no lists, no stage directions. Answer the question the assistant just asked. '
         'If asked to confirm details that are right, say yes. If the assistant suggests or reads back a day, time, number of people, item or detail that is NOT in your facts, '
-        'say no and give the right one from your facts — never accept a wrong suggestion. '
+        'say no and give the right one from your facts — never accept a wrong suggestion. A calendar date the assistant adds (like "Saturday 2026-10-10") is fine when the weekday '
+        'matches yours: never argue about date numbers. '
         'If asked something not in your facts (e.g. allergies, special requests, email) say no / not needed. '
         'When your goal is done (they clearly confirmed it) or clearly cannot be done, say a short goodbye and end with [END]. '
         'If the assistant keeps repeating itself or does not help after several tries, say goodbye and [END]. Output only what you say.';
@@ -618,6 +619,16 @@ class Harness {
         ok = wants.every((x) => have.entries.any((h) => h.key.toLowerCase() == x.name.toLowerCase() && (x.qty == null || h.value == x.qty))) && have.length == wants.length;
       } else if (f.type == 'number' || f.type == 'money') {
         ok = got != null && num.tryParse('$got') == num.tryParse('$w');
+      } else if (f.type == 'date' && e.value is Map && (e.value as Map)['weekday'] != null && (e.value as Map)['plus'] == null) {
+        // "Thursday" / "next Thursday": the coming one (today too) or the week after — both are fair.
+        final now = DateTime.now();
+        var d = DateTime(now.year, now.month, now.day);
+        while (d.weekday != ((e.value as Map)['weekday'] as num).toInt()) {
+          d = d.add(const Duration(days: 1));
+        }
+        final ok2 = {ymd(d), ymd(d.add(const Duration(days: 7))), '$w'};
+        ok = ok2.contains('$got'.trim());
+        w = ok2.join(' or ');
       } else if (f.type == 'date' || f.type == 'time' || f.type == 'datetime' || f.type == 'choice' || f.type == 'email') {
         ok = '$got'.trim().toLowerCase() == '$w'.trim().toLowerCase();
       } else {

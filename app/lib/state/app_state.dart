@@ -14,7 +14,7 @@ import '../services/auth.dart';
 import '../services/abilities.dart';
 import '../services/agent_loop.dart';
 import '../services/agent_templates.dart';
-import '../services/apps/app_data.dart' show parseDate, withDay;
+import '../services/apps/app_data.dart' show parseDate, spokenDates, withDay;
 import '../services/apps/apps_manager.dart';
 import '../services/catalog.dart';
 import '../services/tool_results.dart';
@@ -717,6 +717,20 @@ class AppState extends ChangeNotifier {
         // On a call, someone's own bookings are found and cancelled by the number they're calling
         // from, not by the number they say: only they can cancel theirs.
         if (callerNumber != null && RegExp(r'^(find|cancel|change)_my_').hasMatch(b.tool.name)) args = {...args, 'phone': callerNumber};
+        // The day the caller said, not the one a small model worked out: "next Thursday" saved as a Friday.
+        if (callerNumber != null && args['date'] != null && RegExp(r'^(add|check|change_my)_').hasMatch(b.tool.name)) {
+          final given = parseDate('${args['date']}');
+          final said = <String>[]; // what the assistant said since (it may have offered another day, and they agreed)
+          for (final m in messages.reversed.take(8)) {
+            if (m.role == 'assistant') said.add(m.content.toLowerCase());
+            if (m.role != 'user') continue;
+            final meant = spokenDates(m.content.split('\n\n(System note').first);
+            if (meant.isEmpty) continue;
+            final offered = given != null && said.any((t) => t.contains(given) || t.contains(withDay(given).split(' ').first.toLowerCase()));
+            if (!offered && (given == null || !meant.contains(given))) args = {...args, 'date': meant.first};
+            break;
+          }
+        }
         // Checked one day, saving another (small models drift): ask the model to make sure, once.
         if (callerNumber != null && b.tool.name.startsWith('check_')) _lastCheck[callerNumber] = parseDate('${args['date'] ?? ''}') ?? '';
         if (callerNumber != null && b.tool.name.startsWith('add_') && args['date'] != null) {
@@ -1484,7 +1498,7 @@ class AppState extends ChangeNotifier {
   /// The caller asked for a new booking/order in this call (not about an existing one, not cancelling).
   static bool _askedForNew(List<ChatMessage> convo) {
     final asked = [for (final m in convo.reversed.where((m) => m.role == 'user').take(6)) m.content].join(' ');
-    return RegExp(r'\b(book|reserv|table for|order|appointment|i.?d like|can i (get|have))', caseSensitive: false).hasMatch(asked) &&
+    return RegExp(r"\b(book|reserv|table for|order|appointment|i.?d like|i want|i need|i.?m after|looking (for|to)|(can|could) (i|you|we) (get|have|book|do)|sign me up|put me down|get me)", caseSensitive: false).hasMatch(asked) &&
         !RegExp(r'\b(cancel|change|move|reschedul|my (booking|reservation|appointment|table|order|stay))', caseSensitive: false).hasMatch(asked);
   }
 

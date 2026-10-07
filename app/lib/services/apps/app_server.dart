@@ -69,7 +69,7 @@ class AppServer {
   void _failed(String ip) {
     final now = DateTime.now();
     (_fails[ip] ??= []).add(now);
-    (_fails['*'] ??= []).add(now);
+    if (ip != '127.0.0.1' && ip != '::1') (_fails['*'] ??= []).add(now);
   }
 
   bool _lockedOut(String ip) {
@@ -78,7 +78,9 @@ class AppServer {
       l.removeWhere((t) => now.difference(t) > const Duration(hours: 1));
     }
     final mine = (_fails[ip] ?? const []).where((t) => now.difference(t) < const Duration(minutes: 15)).length;
-    return mine >= 5 || (_fails['*']?.length ?? 0) >= 30;
+    // (This computer only counts its own tries: someone else guessing can't lock the owner out here.)
+    final local = ip == '127.0.0.1' || ip == '::1';
+    return mine >= 5 || (!local && (_fails['*']?.length ?? 0) >= 30);
   }
 
   /// Only this computer may use the tools, and only with the key (constant-time compare).

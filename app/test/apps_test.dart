@@ -291,11 +291,11 @@ void main() {
     var r = await s.callTool('add_reservations', {'name': 'Kei Han', 'phone': '07700 900124', 'date': '2026-10-07', 'time': '19:00', 'guests': 2});
     expect(r.isError, isFalse, reason: r.text);
     expect(r.text, contains('Table: 1'));
-    // The same table, overlapping: refused, with what is free.
-    r = await s.callTool('add_reservations', {'name': 'Ann', 'phone': '1', 'date': '2026-10-07', 'time': '20:00', 'guests': 2, 'table': '1'});
-    expect(r.isError, isTrue);
-    expect(r.text, contains('already booked'));
-    expect(r.text, contains('Free tables then: 2'));
+    // The same table, overlapping: on the phone another free table is given (and the AI is told).
+    r = await s.callTool('add_reservations', {'name': 'Ann', 'phone': '07700 100001', 'date': '2026-10-07', 'time': '20:00', 'guests': 2, 'table': '1'});
+    expect(r.isError, isFalse, reason: r.text);
+    expect(r.text, contains('1 was taken, so it is 2 instead'));
+    await s.callTool('cancel_my_reservations', {'phone': '07700 100001'});
     // After the first one ends, it's free again.
     r = await s.callTool('add_reservations', {'name': 'Bo', 'phone': '1', 'date': '2026-10-07', 'time': '21:00', 'guests': 2, 'table': '1'});
     expect(r.isError, isFalse, reason: r.text);
@@ -309,7 +309,7 @@ void main() {
     // The website's day plan: no names for customers, names for the manager.
     final pub = jsonDecode((await http.get(Uri.parse('http://127.0.0.1:${srv.port}/api/_plan/reservations?date=2026-10-07'))).body) as Map;
     expect(pub['open'], '12:00');
-    expect((pub['busy'] as List).length, 2);
+    expect((pub['busy'] as List).length, 3);
     expect((pub['busy'] as List).first.containsKey('who'), isFalse);
     final mgr = jsonDecode((await http.get(Uri.parse('http://127.0.0.1:${srv.port}/api/_plan/reservations?date=2026-10-07'), headers: {'X-Key': '1234'})).body) as Map;
     expect((mgr['busy'] as List).first['who'], 'Kei Han');

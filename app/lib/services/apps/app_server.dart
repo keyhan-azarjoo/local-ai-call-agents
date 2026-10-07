@@ -459,7 +459,7 @@ class AppServer {
     return 'Cancelled. ${await data.describe(t.id, [r])}';
   }
 
-  static final _placeholder = RegExp(r'^(guest|customer|caller|client|unknown|n/?a|none|name|user|walk.?in|anonymous|patient|student|test|tbc|\?+|-+)(\s*\d*)?$', caseSensitive: false);
+  static final _placeholder = RegExp(r'^(guest|customer|caller|client|unknown|n/?a|none|name|user|walk.?in|anonymous|patient|student|test|tbc|son|daughter|child|kid|boy|girl|wife|husband|partner|me|myself|mum|mom|dad|friend|\?+|-+)(\s*\d*)?$', caseSensitive: false);
 
   Future<String> callTool(String name, Map<String, dynamic> args, {required bool manager}) async {
     final tool = mcpTools(manager: manager).where((t) => t.name == name).firstOrNull;

@@ -5,7 +5,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../services/apps/app_templates.dart';
 import '../../state/app_state.dart';
+import '../../state/scenario_runner.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
 
@@ -65,12 +67,26 @@ class _TestRunsSectionState extends State<TestRunsSection> {
 
   @override
   Widget build(BuildContext context) {
+    final st = context.watch<AppState>();
     final start = Panel(
-      child: Row(children: [
-        const Icon(Icons.record_voice_over_outlined),
-        const SizedBox(width: 12),
-        const Expanded(child: Muted('Have a pretend customer phone your assistant: watch the conversation live, then check your app’s website.')),
-        Btn('Run a test call', kind: BtnKind.primary, onPressed: () => showDialog(context: context, barrierDismissible: false, builder: (_) => const TestCallDialog())),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          const Icon(Icons.science_outlined),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Muted(st.scenarioRun != null
+                ? st.scenarioStatus
+                : 'Test your assistant on your own apps: pretend customers phone it, and each booking or order is checked on the app’s website.${st.scenarioStatus.isEmpty ? '' : ' ${st.scenarioStatus}.'}'),
+          ),
+          const SizedBox(width: 8),
+          if (st.scenarioRun != null)
+            Btn('Stop', kind: BtnKind.danger, onPressed: st.stopScenarios)
+          else ...[
+            Btn('Run a test call', onPressed: () => showDialog(context: context, barrierDismissible: false, builder: (_) => const TestCallDialog())),
+            const SizedBox(width: 8),
+            Btn('Run test scenarios', kind: BtnKind.primary, onPressed: () => showDialog(context: context, builder: (_) => const _RunScenariosDialog())),
+          ],
+        ]),
       ]),
     );
     if (runs.isEmpty) {
@@ -530,4 +546,65 @@ class _TestRunBannerState extends State<TestRunBanner> {
       ),
     );
   }
+}
+
+
+/// Which test scenarios to run in your own apps.
+class _RunScenariosDialog extends StatefulWidget {
+  const _RunScenariosDialog();
+  @override
+  State<_RunScenariosDialog> createState() => _RunScenariosDialogState();
+}
+
+class _RunScenariosDialogState extends State<_RunScenariosDialog> {
+  ScenarioPick pick = ScenarioPick.quick;
+  String app = 'barber';
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Run test scenarios'),
+        content: SizedBox(
+          width: 520,
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Muted('Pretend customers phone your assistant. Bookings and orders go into your own apps’ websites (an app it needs and you don’t have yet, '
+                'like the barber shop, is made for you in Build an app). Every call is checked afterwards; you can watch it live here.'),
+            const SizedBox(height: 14),
+            for (final (v, label, note) in [
+              (ScenarioPick.quick, 'Quick check', 'One of each kind of call for every app (about 70 calls, about an hour)'),
+              (ScenarioPick.app, 'One app', 'Every scenario for one business'),
+              (ScenarioPick.journeys, 'Call-backs and teams', 'Book, call back to change, someone else tries to cancel, cancel; switching apps; agent teams; skills (272)'),
+              (ScenarioPick.all, 'Everything', 'All 1,272 scenarios (many hours)'),
+            ])
+              InkWell(
+                onTap: () => setState(() => pick = v),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Icon(pick == v ? Icons.radio_button_checked : Icons.radio_button_unchecked, size: 20, color: pick == v ? context.c.blueInk : context.c.muted),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        Muted(note, size: 12.5),
+                      ]),
+                    ),
+                  ]),
+                ),
+              ),
+            if (pick == ScenarioPick.app)
+              Padding(
+                padding: const EdgeInsets.only(left: 16, top: 4),
+                child: Dropdown<String>(value: app, items: {for (final t in appTemplates) t.id: t.name}, onChanged: (v) => setState(() => app = v)),
+              ),
+          ]),
+        ),
+        actions: [
+          Btn('Cancel', onPressed: () => Navigator.pop(context)),
+          Btn('Start', kind: BtnKind.primary, onPressed: () {
+            final s = context.read<AppState>();
+            Navigator.pop(context);
+            s.runScenarios(pick, app: app).catchError((Object e) => s.toast('$e'));
+          }),
+        ],
+      );
 }

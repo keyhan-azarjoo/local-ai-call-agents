@@ -277,6 +277,36 @@ class AppsManager extends ChangeNotifier {
 
   /// Makes an app from a template, with its example data, and starts it.
   /// [name], [phone] and [address] replace the template's made-up ones.
+  /// Brings an app made from an older version of [t] up to date: tables get the template's new
+  /// fields (e.g. collection or delivery on orders) and its rules; extra fields and all data stay.
+  Future<bool> upgradeFromTemplate(int id, AppTemplate t) async {
+    final a = await app(id);
+    if (a == null) return false;
+    final raw = a.spec.toJson();
+    final tables = [for (final x in (raw['tables'] as List)) (x as Map).cast<String, dynamic>()];
+    var changed = false;
+    for (final tt in (t.spec['tables'] as List).cast<Map>()) {
+      final mine = tables.where((x) => x['id'] == tt['id']).firstOrNull;
+      if (mine == null) continue;
+      final theirs = [for (final f in (tt['fields'] as List)) (f as Map).cast<String, dynamic>()];
+      final kept = [for (final f in (mine['fields'] as List).cast<Map>()) if (!theirs.any((x) => x['id'] == f['id'])) f];
+      final next = [...theirs, ...kept];
+      if (jsonEncode(next) != jsonEncode(mine['fields'])) {
+        // Keep the app's own labels (it may be in another language or reworded).
+        for (final f in next) {
+          final old = (mine['fields'] as List).cast<Map>().where((x) => x['id'] == f['id']).firstOrNull;
+          if (old?['label'] != null) f['label'] = old!['label'];
+        }
+        mine['fields'] = next;
+        changed = true;
+      }
+    }
+    if (!changed) return false;
+    await saveSpec(id, AppSpec.fromJson({...raw, 'tables': tables}));
+    await log('Updated ${a.name} to the latest ${t.name} template (data kept)');
+    return true;
+  }
+
   Future<int> createFromTemplate(AppTemplate t, {bool ava = true, String name = '', String phone = '', String address = ''}) async {
     final pics = <String, String?>{};
     final dir = Directory('${File(db.path).parent.path}/apps/_new_${DateTime.now().microsecondsSinceEpoch}')..createSync(recursive: true);

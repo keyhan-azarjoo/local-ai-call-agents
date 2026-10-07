@@ -264,7 +264,7 @@ PRICES['clinic'] = {'Check-up & clean': '65', 'Teeth whitening': '299', 'White f
 
 def clinic():
     out = []
-    for _ in range(90):
+    for _ in range(100):
         style = pick(STYLE_W); c = person(style)
         dsay, d = day((6, 7)); tsay, t = R.choice([x for x in DAY_TIMES if x[1] < '17:30'])
         tsay_, trt = R.choice(CLINIC_TRT)
@@ -305,7 +305,7 @@ ROOMS = [('Harbour View', 165, 2), ('The Loft', 145, 2), ('Garden Twin', 115, 2)
 
 def hotel():
     out = []
-    for _ in range(90):
+    for _ in range(100):
         style = pick(STYLE_W); c = person(style)
         dsay, d = day(())
         nights = R.choice([1, 2, 2, 3, 4])
@@ -347,7 +347,7 @@ CARS = [('Ford Focus', 'AB12 CDE'), ('VW Golf', 'LK19 XYZ'), ('Toyota Yaris', 'M
 
 def garage():
     out = []
-    for _ in range(80):
+    for _ in range(100):
         style = pick(STYLE_W); c = person(style)
         dsay, d = day((7,))
         car, plate = R.choice(CARS)
@@ -372,7 +372,7 @@ DOW = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sund
 
 def gym():
     out = []
-    for _ in range(80):
+    for _ in range(100):
         style = pick(STYLE_W); c = person(style)
         r = R.random()
         if r < 0.72:
@@ -396,10 +396,11 @@ PRODUCTS = [('Sourdough loaf', 'a sourdough loaf', 4.2), ('Butter croissant', 'c
 
 def shop():
     out = []
-    for _ in range(80):
+    for _ in range(100):
         style = pick(STYLE_W); c = person(style)
         r = R.random()
         if r < 0.7:
+            delivery = r >= 0.38
             picked = R.sample(PRODUCTS, R.choice([1, 2, 3]))
             it = [{'item': p[0], 'qty': R.choice([1, 1, 2, 4])} for p in picked]
             said = ', '.join(f'{i["qty"]} x {p[1]}' for i, p in zip(it, picked))
@@ -407,10 +408,17 @@ def shop():
             tsay, t = R.choice([('5pm', '17:00'), ('10am', '10:00'), ('half past twelve', '12:30'), ('4pm', '16:00')])
             if dsay == 'today' and t < '17:00':
                 dsay, d = 'tomorrow', {'offset': 1}
-            out.append(S.make('shop', 'order_pickup', f'Order {said} to pick up {dsay} at {tsay}.',
-                              [f'Your name: {c["name"]}', f'You want: {said}', f'Pick up: {dsay} at {tsay}', phone_fact(c)],
-                              {'table': 'orders', 'new': 1, 'fields': {'name': c['first'], 'items': it, 'pickup': {**d, 'time': t}, **phone_expect(c)}},
-                              style=style if style != 'corrects_self' else 'step_by_step', caller=c))
+            if delivery:
+                no, st, pc = R.randint(2, 180), R.choice(STREETS), R.choice(POSTCODES)
+                out.append(S.make('shop', 'order_delivery', f'Order {said} to be delivered {dsay} at {tsay} to {no} {st}.',
+                                  [f'Your name: {c["name"]}', f'You want: {said}', 'You want it DELIVERED, not collected', f'Address: {no} {st}', f'Postcode: {pc}', f'Deliver: {dsay} at {tsay}', phone_fact(c)],
+                                  {'table': 'orders', 'new': 1, 'fields': {'name': c['first'], 'items': it, 'type': 'Delivery', 'address': f'{no} {st}', 'postcode': pc, 'pickup': {**d, 'time': t}, **phone_expect(c)}},
+                                  style=style if style != 'corrects_self' else 'step_by_step', caller=c))
+            else:
+                out.append(S.make('shop', 'order_pickup', f'Order {said} to pick up {dsay} at {tsay}.',
+                                  [f'Your name: {c["name"]}', f'You want: {said}', f'You will COLLECT it: {dsay} at {tsay}', phone_fact(c)],
+                                  {'table': 'orders', 'new': 1, 'fields': {'name': c['first'], 'items': it, 'type': 'Collection', 'pickup': {**d, 'time': t}, **phone_expect(c)}},
+                                  style=style if style != 'corrects_self' else 'step_by_step', caller=c))
         elif r < 0.8:
             out.append(S.make('shop', 'out_of_stock', 'Ask to order eco washing-up liquid for pickup tomorrow. If it is out of stock, say never mind, thank them and end the call.',
                               [f'Your name: {c["name"]}', phone_fact(c)], {'new': 0, 'reply_mentions': ['out of stock|not in stock|sold out|don.t have|isn.t in stock|not available|unavailable']}, caller=c))
@@ -427,7 +435,7 @@ COURSES = [('GCSE Maths booster', 'the GCSE maths booster', '180', 'Tuesdays'), 
 
 def tutoring():
     out = []
-    for _ in range(80):
+    for _ in range(100):
         style = pick(STYLE_W); c = person(style)
         co = R.choice(COURSES)
         if R.random() < 0.72:
@@ -450,7 +458,7 @@ EVENTS = [('The Midnight Owls', 'the Midnight Owls gig', '12'), ('Late Jazz Sess
 
 def events():
     out = []
-    for _ in range(80):
+    for _ in range(100):
         style = pick(STYLE_W); c = person(style)
         ev = R.choice(EVENTS)
         if R.random() < 0.72:
@@ -470,7 +478,7 @@ LISTINGS = [('Victorian terrace, Jericho', 'the Victorian terrace in Jericho', '
 
 def realestate():
     out = []
-    for _ in range(80):
+    for _ in range(100):
         style = pick(STYLE_W); c = person(style)
         li = R.choice(LISTINGS)
         dsay, d = day((7,))
@@ -610,16 +618,16 @@ def main():
     out = []
     out += restaurant()
     out += appointments('barber', 110, BARBER_SVC, ['Tony', 'Jay', 'Ali'], 'barber', (7,))
-    out += appointments('salon', 90, SALON_SVC, ['Amélie', 'Marcus', 'Priya'], 'stylist', (7,))
+    out += appointments('salon', 100, SALON_SVC, ['Amélie', 'Marcus', 'Priya'], 'stylist', (7,))
     out += clinic() + hotel() + garage() + gym() + shop() + tutoring() + events() + realestate()
     for i, s in enumerate(out):
         s['n'] = i + 1
-    Path(__file__).with_name('scenarios.json').write_text(json.dumps(out, indent=1, ensure_ascii=False))
+    (Path(__file__).parents[2] / 'assets' / 'scenarios' / 'scenarios.json').write_text(json.dumps(out, indent=1, ensure_ascii=False))
     js = journeys()
     for i, s in enumerate(js):
         s['n'] = 1001 + i
         s['id'] = f'journey-{s["intent"].replace("journey_", "")}-{s["n"]}'
-    Path(__file__).with_name('journeys.json').write_text(json.dumps(js, indent=1, ensure_ascii=False))
+    (Path(__file__).parents[2] / 'assets' / 'scenarios' / 'journeys.json').write_text(json.dumps(js, indent=1, ensure_ascii=False))
     print(len(js), 'journeys,', sum(len(j['steps']) for j in js), 'steps', Counter(j['intent'] for j in js))
     print(len(out), Counter(s['app'] for s in out), Counter(s['intent'] for s in out).most_common(), Counter(s['setup'] for s in out), sep='\n')
 

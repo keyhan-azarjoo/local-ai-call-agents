@@ -75,6 +75,7 @@ flutter:
     - assets/catalog/
     - assets/engine/
     - assets/engine/sipreg/
+    - assets/scenarios/
 
   fonts:
     - family: Plex

@@ -222,24 +222,27 @@ final appTemplates = <AppTemplate>[
     ],
   }),
 
-  AppTemplate('shop', 'Shop · order & collect', 'Product catalogue with photos and stock, orders for pickup.', {
+  AppTemplate('shop', 'Shop · online orders', 'Product catalogue with photos and stock; orders to collect or delivered to your door.', {
     'name': 'Corner Store',
-    'summary': 'Customers browse products and order for pickup.',
+    'summary': 'Customers browse products and order to collect or for delivery.',
     'site': {'style': 'modern', 'tagline': 'Order online, collect in minutes', 'hero': 'unsplash:1542838132-92c53300491e', 'about': 'Your local shop for fresh bread, groceries and everyday essentials.', 'address': '3 Market Square', 'phone': '0117 496 0321', 'currency': '£'},
     'tables': [
       _t('products', 'Products', 'Things for sale', 'see', [
         _f('name', 'Product', 'text', req: true), _f('category', 'Category', 'choice', options: ['Bakery', 'Fresh', 'Pantry', 'Drinks', 'Household']),
         _f('description', 'Description', 'longtext'), _f('price', 'Price', 'money', req: true), _f('photo', 'Photo', 'image'), _f('in_stock', 'In stock', 'yesno'),
       ]),
-      _t('orders', 'Orders', 'Pickup orders', 'add', [
+      _t('orders', 'Orders', 'Orders to collect or deliver', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('items', 'Your basket', 'links', link: 'products', qty: true, req: true),
-        _f('pickup', 'Pickup time', 'datetime', req: true), _f('notes', 'Notes', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Packing', 'Ready', 'Collected', 'Cancelled'], manager: true),
+        _f('type', 'Collect or deliver', 'choice', options: ['Collection', 'Delivery'], req: true),
+        _f('address', 'Delivery address', 'text', req: true, when: {'type': ['Delivery']}), _f('postcode', 'Postcode', 'text', req: true, when: {'type': ['Delivery']}),
+        _f('pickup', 'Collect / deliver at', 'datetime', req: true), _f('notes', 'Notes', 'longtext'),
+        _f('status', 'Status', 'choice', options: ['New', 'Packing', 'Ready', 'Out for delivery', 'Collected', 'Delivered', 'Cancelled'], manager: true),
       ]),
       _hours,
     ],
     'pages': [
-      {'id': 'home', 'title': 'Shop', 'blocks': [_hero('Fresh, local and ready when you are', 'Order online and pick up in minutes.', button: 'Start your order', link: 'order'), _list('products', 'Products'), _info('opening_hours', 'Opening hours')]},
-      {'id': 'order', 'title': 'Order', 'blocks': [_hero('Order for pickup', 'Add products, choose a time, and we’ll have it packed.'), _list('products', 'Products'), _form('orders', 'Your basket', 'Place order', 'Thank you! We’ll text you when your order is ready.')]},
+      {'id': 'home', 'title': 'Shop', 'blocks': [_hero('Fresh, local and ready when you are', 'Order online: collect in minutes or have it delivered.', button: 'Start your order', link: 'order'), _list('products', 'Products'), _info('opening_hours', 'Opening hours')]},
+      {'id': 'order', 'title': 'Order', 'blocks': [_hero('Order online', 'Add products, choose collection or delivery and a time, and we’ll have it packed.'), _list('products', 'Products'), _form('orders', 'Your basket', 'Place order', 'Thank you! We’ll text you when your order is ready.')]},
     ],
   }, {
     'products': [

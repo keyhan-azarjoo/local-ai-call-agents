@@ -334,7 +334,7 @@ void main() {
   });
 
   test('out of stock can\'t be ordered, on the website or by phone', () async {
-    final body = {'name': 'Nina Park', 'phone': '07700 900800', 'items': [{'item': 'Eco washing-up liquid', 'qty': 1}], 'pickup': '${ymd(DateTime.now().add(const Duration(days: 1)))} 10:00'};
+    final body = {'name': 'Nina Park', 'phone': '07700 900800', 'type': 'Collection', 'items': [{'item': 'Eco washing-up liquid', 'qty': 1}], 'pickup': '${ymd(DateTime.now().add(const Duration(days: 1)))} 10:00'};
     final web = await req('shop', 'POST', '/api/t/orders', body: body);
     expect(web.code, 400);
     expect('${(web.body as Map)['error']}', contains('out of stock'));

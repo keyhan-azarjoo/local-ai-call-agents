@@ -179,11 +179,18 @@ class AppData {
     var out = [for (final r in rows) _out(t, r, manager)];
     final q = search?.trim().toLowerCase() ?? '';
     if (q.isNotEmpty) {
-      final words = q.split(RegExp(r'\s+'));
-      out = out.where((r) {
-        final hay = r.values.map((v) => '$v').join(' ').toLowerCase();
-        return words.every(hay.contains);
-      }).toList();
+      // As people say it: "croissants" finds "Butter croissant", "tiramisu" finds "Tiramisù".
+      final words = _words(q);
+      bool has(Map<String, Object?> r) {
+        final hay = _words(r.values.map((v) => '$v').join(' '));
+        return words.every((w) => hay.any((h) => h == w || h.startsWith(w) || w.startsWith(h) && h.length > 3));
+      }
+
+      final all = out.where(has).toList();
+      // Several words and nothing has all of them: the best partial matches.
+      out = all.isNotEmpty || words.length < 2
+          ? all
+          : out.where((r) => _words(r.values.map((v) => '$v').join(' ')).intersection(words).isNotEmpty).toList();
     }
     return out;
   }
@@ -311,7 +318,7 @@ class AppData {
       // Restaurant tables (they have seats): any free one that fits will do — the AI picked it, not the guest.
       if (b.seatsField != null && a.free.isNotEmpty && autoSwap) {
         clean[b.resourceField.id] = a.free.first['id'];
-        swapped = '${r?[b.resources.labelField] ?? chosen} was taken, so it is ${a.free.first[b.resources.labelField]} instead';
+        swapped = '${r?[b.resources.labelField] ?? chosen} ${tooSmall ? 'is too small for $guests' : 'was taken'}, so it is ${a.free.first[b.resources.labelField]} instead';
         return;
       }
       throw AppDataError('${b.resources.title.replaceAll(RegExp(r's$'), '')} ${r?[b.resources.labelField] ?? chosen} '
@@ -425,7 +432,8 @@ class AppData {
       // The same number, or (a caller who gave another number part-way) the same name within a few minutes.
       final sameName = name != null && name.trim().length > 2 && plain('${d[t.labelField] ?? ''}').trim() == plain(name).trim() &&
           (r['created_at'] as int) > DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
-      if (d['_via'] != 'phone' || (last9(d[phoneF.id]) != last9(phone) && !sameName)) continue;
+      final samePhone = last9(phone).length >= 9 && last9(d[phoneF.id]) == last9(phone);
+      if (d['_via'] != 'phone' || (!samePhone && !sameName)) continue;
       final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
       if (status != null && RegExp(r'cancel', caseSensitive: false).hasMatch('${d[status.id] ?? ''}')) continue;
       if (shape != null && date != null && d[shape.dateField.id] != date) continue;

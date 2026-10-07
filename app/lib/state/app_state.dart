@@ -30,6 +30,7 @@ import '../services/speech.dart';
 import '../services/system.dart';
 import '../services/phone.dart';
 import '../services/voice_engine.dart';
+import 'scenario_runner.dart';
 
 enum Gate { loading, setup, signIn, app, companion }
 
@@ -405,10 +406,17 @@ class AppState extends ChangeNotifier {
   }
 
   /// Tools the AI may use. [scopes]: 'me' (owner), 'contacts', 'all' (any caller).
+  /// Calls answered by a given agent (as if on that business's own line): room → agent id.
+  final roomAgent = <String, int>{};
+
+  /// While test scenarios run: the only built app the assistant uses (the one being tested).
+  int? focusApp;
+  bool _outOfFocus(McpServer srv) => focusApp != null && srv.secret['app'] != null && srv.secret['app'] != focusApp;
+
   Future<List<ToolBinding>> toolsFor(Set<String> scopes, {AgentAccess? access}) async {
     final out = <ToolBinding>[];
     for (final srv in await mcp.servers()) {
-      if (!srv.enabled || !scopes.contains(srv.scope)) continue;
+      if (!srv.enabled || !scopes.contains(srv.scope) || _outOfFocus(srv)) continue;
       if (access?.tools != null && !access!.tools!.contains(srv.id)) continue;
       for (final t in srv.tools) {
         out.add(ToolBinding(serverId: srv.id, serverName: srv.name, tool: t, fnName: ToolBinding.safeName(srv.name, t.name)));
@@ -420,7 +428,7 @@ class AppState extends ChangeNotifier {
   /// Customers' tools of the apps built in LocalAILine (bookings, orders, menus…).
   Future<List<ToolBinding>> builtAppTools(Set<String> scopes) async => [
         for (final srv in await mcp.servers())
-          if (srv.enabled && srv.secret['app'] != null && srv.secret['role'] == 'customers' && scopes.contains(srv.scope))
+          if (srv.enabled && srv.secret['app'] != null && srv.secret['role'] == 'customers' && scopes.contains(srv.scope) && !_outOfFocus(srv))
             for (final t in srv.tools) ToolBinding(serverId: srv.id, serverName: srv.name, tool: t, fnName: ToolBinding.safeName(srv.name, t.name)),
       ];
 
@@ -450,8 +458,7 @@ class AppState extends ChangeNotifier {
         ? _appToolFor(tools, 'order') ?? _appToolFor(tools, 'booking')
         : _appToolFor(tools, 'booking') ?? _appToolFor(tools, 'order');
     if (tool == null) return null;
-    return commitWith(toolLoop, modelTarget, tool, [...convo, ChatMessage('assistant', reply)], (args) => mcp.call(tool.serverId, tool.tool.name, args),
-        callerNumber: callerNumber);
+    return commitWith(toolLoop, modelTarget, tool, [...convo, ChatMessage('assistant', reply)], _notAgentName(tool), callerNumber: callerNumber);
   }
 
   /// Has the model call [tool] once with what was agreed in [convo].
@@ -924,6 +931,7 @@ class AppState extends ChangeNotifier {
     _onCall.remove(room);
     _lastCheck.remove('${b['number'] ?? ''}');
     _savedOn.remove(room);
+    roomAgent.remove(room);
     final turns = [for (final t in (b['transcript'] as List? ?? []).cast<Map>()) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': '${t['text']}'}];
     final answered = turns.any((t) => t['who'] == 'them');
     final pickedUp = b['answered'] == true;
@@ -1132,6 +1140,12 @@ class AppState extends ChangeNotifier {
       }
     }
     notifyListeners();
+    final autoRun = kDebugMode ? Platform.environment['LOCALAILINE_RUN_SCENARIOS'] : null;
+    if (autoRun != null && !isPhone) {
+      final parts = autoRun.split(':');
+      final pick = ScenarioPick.values.firstWhere((v) => v.name == parts.first, orElse: () => ScenarioPick.quick);
+      Timer(const Duration(seconds: 20), () => runScenarios(pick, app: parts.length > 1 ? parts[1] : null).catchError((Object e) => log('Test scenarios could not start: $e')));
+    }
     Hardware.detect().then((h) {
       hardware = h;
       notifyListeners();
@@ -1313,6 +1327,73 @@ class AppState extends ChangeNotifier {
   final _dayDoubted = <String>{};
 
   /// The agents a call can be passed between: the one answering calls, and those set up for hand-offs.
+  // ---------- test scenarios, run in your own apps ----------
+
+  ScenarioRunner? scenarioRun;
+  String scenarioStatus = '';
+
+  /// Runs test scenarios against your own apps (making any it needs, e.g. the barber shop) and your
+  /// own assistant; each one is checked on that app's website. Results: Calls → Tests.
+  Future<void> runScenarios(ScenarioPick pick, {String? app}) async {
+    if (scenarioRun != null) return;
+    if (!llmReady) throw StateError('Set up the AI first (Settings).');
+    if (host?.running != true) throw StateError('The call service isn\'t running.');
+    final all = [
+      for (final f in ['scenarios.json', 'journeys.json']) ...(jsonDecode(await rootBundle.loadString('assets/scenarios/$f')) as List).cast<Map<String, dynamic>>(),
+    ];
+    final dir = Directory(p.join(p.dirname(db.path), 'test-runs'))..createSync(recursive: true);
+    // Already passed in an earlier run: not again (failed ones run again, e.g. after a fix).
+    final passedBefore = <Object?>{
+      for (final f in dir.listSync().whereType<File>().where((f) => p.basename(f.path).startsWith('app-')))
+        for (final l in f.readAsLinesSync())
+          if (l.contains('"pass":true')) (jsonDecode(l) as Map)['id'],
+    };
+    final list = [for (final sc in pickScenarios(all, pick, app: app)) if (!passedBefore.contains(sc['id'])) sc];
+    final out = File(p.join(dir.path, 'app-${DateTime.now().toIso8601String().substring(0, 19).replaceAll(':', '-')}.jsonl'));
+    final r = scenarioRun = ScenarioRunner(this)..liveFile = File(p.join(dir.path, 'live.json'));
+    await log('Started ${list.length} test scenarios');
+    var passed = 0, n = 0;
+    notifyListeners();
+    try {
+      for (final sc in list) {
+        if (r.stopRequested) break;
+        n++;
+        scenarioStatus = 'Scenario $n of ${list.length}: ${sc['app']} · ${'${sc['intent']}'.replaceAll('_', ' ')}';
+        notifyListeners();
+        r.live.clear();
+        r.showLive({
+          'id': sc['id'], 'app': sc['app'], 'intent': sc['intent'], 'setup': 'your assistant', 'style': sc['style'], 'goal': sc['goal'] ?? '',
+          'done': n - 1, 'total': list.length, 'passed': passed, 'turns': [], 'tools': [],
+        });
+        final t0 = DateTime.now();
+        Map<String, Object?> res;
+        try {
+          res = await r.run(sc);
+        } catch (e) {
+          res = {'pass': false, 'failures': ['could not run: $e']};
+        }
+        res = {'id': sc['id'], 'n': sc['n'], 'app': sc['app'], 'intent': sc['intent'], 'setup': 'your assistant', 'style': sc['style'], ...res, 'seconds': DateTime.now().difference(t0).inSeconds};
+        if (res['pass'] == true) passed++;
+        out.writeAsStringSync('${jsonEncode(res)}\n', mode: FileMode.append, flush: true);
+      }
+    } finally {
+      await r.close();
+      try {
+        File(p.join(dir.path, 'live.json')).deleteSync();
+      } catch (_) {}
+      scenarioRun = null;
+      scenarioStatus = 'Last run: $passed of $n passed';
+      await log('Test scenarios finished: $passed of $n passed');
+      notifyListeners();
+    }
+  }
+
+  void stopScenarios() {
+    scenarioRun?.stopRequested = true;
+    scenarioStatus = 'Stopping after this call…';
+    notifyListeners();
+  }
+
   /// A pretend customer phones in: a local model plays them (with [goal] and the [facts] they
   /// know) and talks to the answering agent through the real call path, so bookings and orders
   /// land in the business's app. Each line is given to [onLine] as it is said; the call is kept
@@ -1334,7 +1415,7 @@ class AppState extends ChangeNotifier {
     final base = 'http://127.0.0.1:${h.port}';
     final started = DateTime.now();
     final logFrom = started.millisecondsSinceEpoch;
-    final cfg = jsonDecode((await http.get(Uri.parse('$base/api/voice-config?room=$room&mode=caller&token=${h.engineKey}'))).body) as Map;
+    final cfg = jsonDecode((await http.get(Uri.parse('$base/api/voice-config?room=${Uri.encodeQueryComponent(room)}&mode=caller&token=${h.engineKey}'))).body) as Map;
     final turns = <Map<String, String>>[{'role': 'assistant', 'content': '${cfg['greeting']}'}];
     times.add({'at': hms(DateTime.now())});
     onLine?.call('ai', '${cfg['greeting']}', times.last);
@@ -1509,8 +1590,19 @@ class AppState extends ChangeNotifier {
       final r = await mcp.call(tool.serverId, tool.tool.name, {'phone': callerNumber});
       return (ok: !r.isError, text: r.text);
     }
-    return commitWith(toolLoop, modelTarget, tool, convo, (args) => mcp.call(tool.serverId, tool.tool.name, args), callerNumber: callerNumber);
+    return commitWith(toolLoop, modelTarget, tool, convo, _notAgentName(tool), callerNumber: callerNumber);
   }
+
+  /// Saves with [tool], but never under an agent's own name (small models put "Ava" in as the customer).
+  Future<({String text, bool isError})> Function(Map<String, dynamic>) _notAgentName(ToolBinding tool) => (args) async {
+        final agents = {for (final a in await db.all('agents')) '${a['name']}'.trim().toLowerCase()};
+        for (final e in args.entries) {
+          if (RegExp(r'name|student|patient').hasMatch(e.key) && agents.contains('${e.value}'.trim().toLowerCase())) {
+            return (text: 'Ask the caller for their name first ("${e.value}" is the assistant\'s name), then save it.', isError: true);
+          }
+        }
+        return mcp.call(tool.serverId, tool.tool.name, args);
+      };
 
   /// "Done. Added to reservations with id 9: id 9 · Name: … · Date: Saturday 2026-10-10 · Time: 19:10 · Guests: 2"
   /// → "That's all done: Saturday 10 October at 7:10 pm, guests 2."
@@ -1636,6 +1728,7 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
     }
     final agent = team.where((a) => a['id'] == now?.agentId).firstOrNull ??
+        team.where((a) => a['id'] == roomAgent[room]).firstOrNull ??
         team.where((a) => a['id'] == lineAgent).firstOrNull ??
         (mode.startsWith('outbound#') ? null : team.firstWhere((a) => a['handles'] == 'incoming', orElse: () => team.first));
     if (agent == null) return null;

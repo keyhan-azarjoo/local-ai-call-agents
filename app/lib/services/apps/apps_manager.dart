@@ -324,31 +324,87 @@ class AppsManager extends ChangeNotifier {
         changed = true;
       }
     }
+    // New tables of the template (e.g. gift vouchers, closed days), with their sample rows.
+    final newRows = <String, List<Map>>{};
+    for (final tt in (t.spec['tables'] as List).cast<Map>()) {
+      if (tables.any((x) => x['id'] == tt['id']) || tables.length >= 12) continue;
+      tables.add(jsonDecode(jsonEncode(tt)) as Map<String, dynamic>);
+      newRows['${tt['id']}'] = [...?t.rows['${tt['id']}']];
+      changed = true;
+    }
+    // New pages, and the template's richer version of pages still as the template made them (a page
+    // the owner changed — other kinds of sections, or more of them — is left alone).
+    final dir = Directory(filesDir(id));
+    final pics = <String, String?>{};
+    final sample = '${t.spec['name']}';
+    final pages = [for (final x in (raw['pages'] as List)) (x as Map).cast<String, dynamic>()];
+    for (final tp in (t.spec['pages'] as List).cast<Map>()) {
+      final i = pages.indexWhere((x) => x['id'] == tp['id']);
+      final theirs = [for (final b in (tp['blocks'] as List? ?? const [])) '${(b as Map)['type']}'];
+      if (i < 0) {
+        if (pages.length >= 10) continue;
+        pages.add(await _page(tp, dir, pics, sample, a.name));
+        changed = true;
+        continue;
+      }
+      final mine = [for (final b in (pages[i]['blocks'] as List? ?? const [])) '${(b as Map)['type']}'];
+      if (mine.length < theirs.length && mine.every(theirs.contains)) {
+        pages[i] = await _page(tp, dir, pics, sample, a.name);
+        changed = true;
+      }
+    }
     if (!changed) return false;
-    await saveSpec(id, AppSpec.fromJson({...raw, 'tables': tables}));
+    await saveSpec(id, AppSpec.fromJson({...raw, 'tables': tables, 'pages': pages}));
+    final data = AppData(db, id, (await app(id))!.spec);
+    for (final e in newRows.entries) {
+      for (final r in e.value) {
+        try {
+          await data.add(e.key, {for (final f in r.entries) '${f.key}': await _photo(dir, pics, f.value)}, manager: true);
+        } catch (_) {} // (a sample row that doesn't fit this app's version: skipped)
+      }
+    }
     await log('Updated ${a.name} to the latest ${t.name} template (data kept)');
     return true;
+  }
+
+  /// A template's sample photo ("unsplash:<id>"), saved into the app's files (null without internet:
+  /// tidy placeholders instead).
+  Future<Object?> _photo(Directory dir, Map<String, String?> pics, Object? v, {bool big = false}) async {
+    if (v is! String || !v.startsWith('unsplash:')) return v;
+    if (pics.containsKey(v)) return pics[v];
+    try {
+      final r = await http
+          .get(Uri.parse('https://images.unsplash.com/photo-${v.substring(9)}?w=${big ? 2000 : 900}&q=78&fm=jpg&fit=crop'))
+          .timeout(const Duration(seconds: 20));
+      if (r.statusCode != 200 || r.bodyBytes.length < 2000) return pics[v] = null;
+      final name = '${v.substring(9).replaceAll(RegExp(r'[^a-z0-9]'), '')}${big ? 'h' : ''}.jpg';
+      dir.createSync(recursive: true);
+      File('${dir.path}/$name').writeAsBytesSync(r.bodyBytes);
+      return pics[v] = '/files/$name';
+    } catch (_) {
+      return pics[v] = null;
+    }
+  }
+
+  /// A template page with its photos saved into the app, and the sample name replaced by the app's.
+  Future<Map<String, Object?>> _page(Map p, Directory dir, Map<String, String?> pics, String sample, String name) async {
+    final blocks = <Object?>[];
+    for (final b in (p['blocks'] is List ? p['blocks'] as List : const [])) {
+      if (b is! Map) continue;
+      final d = Map<String, Object?>.of(b.cast<String, Object?>());
+      if (d['image'] != null) d['image'] = await _photo(dir, pics, d['image'], big: true);
+      if (d['images'] is List) d['images'] = [for (final x in d['images'] as List) ?(await _photo(dir, pics, x))];
+      d.removeWhere((k, v) => v == null);
+      blocks.add(d);
+    }
+    final out = {...p.cast<String, Object?>(), 'blocks': blocks};
+    return name.trim().isEmpty || name == sample ? out : (jsonDecode(jsonEncode(out).replaceAll(sample, name.replaceAll('"', "'"))) as Map).cast<String, Object?>();
   }
 
   Future<int> createFromTemplate(AppTemplate t, {bool ava = true, String name = '', String phone = '', String address = ''}) async {
     final pics = <String, String?>{};
     final dir = Directory('${File(db.path).parent.path}/apps/_new_${DateTime.now().microsecondsSinceEpoch}')..createSync(recursive: true);
-    // Sample photos, saved into the app (skipped without internet: tidy placeholders instead).
-    Future<Object?> photo(Object? v, {bool big = false}) async {
-      if (v is! String || !v.startsWith('unsplash:')) return v;
-      if (pics.containsKey(v)) return pics[v];
-      try {
-        final r = await http
-            .get(Uri.parse('https://images.unsplash.com/photo-${v.substring(9)}?w=${big ? 2000 : 900}&q=78&fm=jpg&fit=crop'))
-            .timeout(const Duration(seconds: 20));
-        if (r.statusCode != 200 || r.bodyBytes.length < 2000) return pics[v] = null;
-        final name = '${v.substring(9).replaceAll(RegExp(r'[^a-z0-9]'), '')}${big ? 'h' : ''}.jpg';
-        await File('${dir.path}/$name').writeAsBytes(r.bodyBytes);
-        return pics[v] = '/files/$name';
-      } catch (_) {
-        return pics[v] = null;
-      }
-    }
+    Future<Object?> photo(Object? v, {bool big = false}) => _photo(dir, pics, v, big: big);
 
     final site = Map<String, Object?>.of((t.spec['site'] as Map?)?.cast<String, Object?>() ?? {});
     site['hero'] = await photo(site['hero'], big: true);
@@ -364,26 +420,7 @@ class AppsManager extends ChangeNotifier {
     if (phone.trim().isNotEmpty) site['phone'] = phone.trim();
     if (address.trim().isNotEmpty) site['address'] = address.trim();
     // Pictures on the pages too (a banner's photo, a gallery's).
-    final pages = <Object?>[];
-    for (final p in (t.spec['pages'] as List? ?? const [])) {
-      final blocks = <Object?>[];
-      if (p is! Map) {
-        pages.add(p);
-        continue;
-      }
-      for (final b in (p['blocks'] is List ? p['blocks'] as List : const [])) {
-        if (b is! Map) {
-          blocks.add(b);
-          continue;
-        }
-        final d = Map<String, Object?>.of(b.cast<String, Object?>());
-        if (d['image'] != null) d['image'] = await photo(d['image'], big: true);
-        if (d['images'] is List) d['images'] = [for (final x in d['images'] as List) ?(await photo(x))];
-        d.removeWhere((k, v) => v == null);
-        blocks.add(d);
-      }
-      pages.add({...p.cast<String, Object?>(), 'blocks': blocks});
-    }
+    final pages = [for (final p in (t.spec['pages'] as List? ?? const [])) if (p is Map) await _page(p, dir, pics, '', '')];
     var raw = <String, dynamic>{...t.spec, 'site': site, 'pages': pages, 'features': {'website': true, 'ava': ava}};
     // Their own name everywhere the sample name was (title, texts, footer).
     final sample = t.spec['name'] as String;

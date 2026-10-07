@@ -13,6 +13,8 @@ import 'package:localailine/services/apps/app_data.dart';
 import 'package:localailine/services/apps/app_server.dart';
 import 'package:localailine/services/apps/app_spec.dart';
 import 'package:localailine/services/apps/app_templates.dart';
+import 'package:localailine/services/apps/apps_manager.dart';
+import 'package:localailine/services/mcp/mcp_manager.dart';
 import 'package:localailine/services/mcp/mcp_client.dart';
 
 const key = 'pro-test-tool-key-0123456789abcdefghij';
@@ -365,5 +367,38 @@ void main() {
       expect(data.spec.page('private_dining')!.blocks[gi].data['images'], ['/files/abc123.jpg', 'https://example.com/a.jpg']);
       expect((await http.put(Uri.parse('$base/api/_site'), headers: {'X-Key': ''}, body: '{}')).statusCode, 403);
     });
+  });
+
+  test('an app made from an older template gets the new tables, rows and pages, and keeps its data', () async {
+    final tmp = Directory.systemTemp.createTempSync('upgrade');
+    final db = await Db.open(path: '${tmp.path}/t.db');
+    final apps = AppsManager(db, McpManager(db, openBrowser: (_) async {}), ask: (m, {json = false, model}) async => '{}', visionModel: () async => null, log: (_) async {});
+    final t = appTemplates.firstWhere((t) => t.id == 'restaurant');
+    final id = await apps.createFromTemplate(t, ava: false, name: 'Pasargad');
+    // As it was made before: no vouchers, closed days, reviews or private dining; a plain home page.
+    final a = (await apps.app(id))!;
+    final old = a.spec.toJson();
+    const added = {'closures', 'vouchers', 'private_events', 'reviews'};
+    old['tables'] = [for (final x in old['tables'] as List) if (!added.contains((x as Map)['id'])) x];
+    old['pages'] = [
+      for (final p in old['pages'] as List)
+        if (!{'private', 'vouchers', 'contact', 'menu'}.contains((p as Map)['id'])) p['id'] == 'home' ? {...p, 'blocks': (p['blocks'] as List).take(2).toList()} : p,
+    ];
+    await apps.saveSpec(id, AppSpec.fromJson(old.cast<String, dynamic>()));
+    final data = AppData(db, id, (await apps.app(id))!.spec);
+    final day = DateTime.now().add(const Duration(days: 2)).toIso8601String().substring(0, 10);
+    final mine = await data.add('reservations', {'name': 'Kept Booking', 'phone': '07700 900321', 'date': day, 'time': '19:00', 'guests': 2});
+
+    expect(await apps.upgradeFromTemplate(id, t), isTrue);
+    final spec = (await apps.app(id))!.spec;
+    expect(spec.tables.map((t) => t.id), containsAll(added));
+    expect(spec.pages.length, (t.spec['pages'] as List).length);
+    expect(spec.pages.firstWhere((p) => p.id == 'home').blocks.length, ((t.spec['pages'] as List).first['blocks'] as List).length);
+    final fresh = AppData(db, id, spec);
+    expect(await fresh.list('reviews', manager: true), isNotEmpty, reason: 'sample reviews added');
+    expect((await fresh.get('reservations', mine, manager: true))!['name'], 'Kept Booking');
+    expect(spec.name, 'Pasargad');
+    // Nothing more to do the second time.
+    expect(await apps.upgradeFromTemplate(id, t), isFalse);
   });
 }

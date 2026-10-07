@@ -29,7 +29,7 @@ void main() {
     final turns = await s.testCall(
       goal: 'Book a table for 2 tomorrow at 7pm.',
       facts: ['Your name: Alex Morgan', 'Day: tomorrow', 'Time: 7pm', 'People: 2'],
-      onLine: (who, text) => print('$who: $text'),
+      onLine: (who, text, time) => print('$who [${time['at'] ?? ''}${time['ms'] == null ? '' : ' · ${time['ms']} ms, first words ${time['first_ms']} ms'}]: $text'),
     );
     expect(turns.length, greaterThan(2));
     final calls = await s.db.all('calls', where: "direction = 'test'");

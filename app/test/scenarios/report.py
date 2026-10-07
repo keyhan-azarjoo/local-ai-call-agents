@@ -40,6 +40,24 @@ calls = sum(len([c for c in r.get('calls', []) if 'turns' in c]) for r in rows)
 secs = sum(r.get('seconds', 0) for r in rows)
 print(f'# Phone-call scenario results\n\n**{passed} of {len(rows)} scenarios passed ({100 * passed / len(rows):.0f}%)** — {calls} phone calls, '
       f'{secs / 3600:.1f} hours of calls.\n')
+# How fast the AI answered (each AI reply: first words, and the whole answer).
+first, total = [], []
+for r in rows:
+    for c in r.get('calls', []):
+        for t in c.get('times', []) or []:
+            if t.get('ms') is not None:
+                total.append(t['ms'])
+                first.append(t.get('first_ms', t['ms']))
+if total:
+    def pct(xs, p):
+        xs = sorted(xs)
+        return xs[min(len(xs) - 1, int(len(xs) * p))] / 1000
+    slow = sum(1 for r in rows if any('SLOW' in f for f in r.get('failures', [])))
+    print('### How fast the AI answers\n\n| | median | 90% under | slowest |\n|---|---:|---:|---:|')
+    print(f'| first words heard | {pct(first, .5):.1f} s | {pct(first, .9):.1f} s | {max(first) / 1000:.1f} s |')
+    print(f'| whole answer | {pct(total, .5):.1f} s | {pct(total, .9):.1f} s | {max(total) / 1000:.1f} s |')
+    print(f'\n{len(total)} AI replies timed; {slow} scenarios had a reply slower than 5 s to first words or 25 s in all.\n')
+
 table('app', 'app')
 table('intent', 'intent')
 table('agent set-up', 'setup')

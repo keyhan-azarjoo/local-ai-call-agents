@@ -1295,9 +1295,11 @@ class AppState extends ChangeNotifier {
     required List<String> facts,
     String number = '+447700900999',
     int maxTurns = 10,
-    void Function(String who, String text)? onLine,
+    void Function(String who, String text, Map<String, Object?> time)? onLine,
     bool Function()? stop,
   }) async {
+    String hms(DateTime t) => t.toIso8601String().substring(11, 19);
+    final times = <Map<String, Object?>>[];
     final h = host;
     if (h == null || !h.running) throw StateError('The app\'s call service isn\'t running.');
     if (!llmReady) throw StateError('Set up the AI first (Settings).');
@@ -1307,7 +1309,8 @@ class AppState extends ChangeNotifier {
     final logFrom = started.millisecondsSinceEpoch;
     final cfg = jsonDecode((await http.get(Uri.parse('$base/api/voice-config?room=$room&mode=caller&token=${h.engineKey}'))).body) as Map;
     final turns = <Map<String, String>>[{'role': 'assistant', 'content': '${cfg['greeting']}'}];
-    onLine?.call('ai', '${cfg['greeting']}');
+    times.add({'at': hms(DateTime.now())});
+    onLine?.call('ai', '${cfg['greeting']}', times.last);
     final farewell = RegExp(r'\b(bye|goodbye|take care|have a (great|good|nice|lovely)|see you|thanks for calling)\b', caseSensitive: false);
     for (var i = 0; i < maxTurns && !(stop?.call() ?? false); i++) {
       // The customer's next line.
@@ -1323,20 +1326,30 @@ class AppState extends ChangeNotifier {
       final line = said.replaceAll('[END]', '').trim();
       if (line.isEmpty) break;
       turns.add({'role': 'user', 'content': line});
-      onLine?.call('them', line);
+      times.add({'at': hms(DateTime.now())});
+      onLine?.call('them', line, times.last);
       // The assistant's answer, exactly as on a phone call.
       final rq = http.Request('POST', Uri.parse('$base/v1/chat/completions?token=${h.engineKey}'))
         ..headers['content-type'] = 'application/json'
         ..body = jsonEncode({'model': 'caller:en:$room', 'stream': true, 'messages': turns});
+      final asked = DateTime.now();
       final rs = await http.Client().send(rq);
-      final body = await rs.stream.bytesToString();
+      final buf = StringBuffer();
+      int? firstMs;
+      await for (final chunk in rs.stream.transform(utf8.decoder)) {
+        buf.write(chunk);
+        if (firstMs == null && RegExp(r'"content":"[^"\\\s]').hasMatch(chunk)) firstMs = DateTime.now().difference(asked).inMilliseconds;
+      }
+      final body = buf.toString();
+      final ms = DateTime.now().difference(asked).inMilliseconds;
       var text = body.split('\n').where((l) => l.startsWith('data: {')).map((l) => '${(jsonDecode(l.substring(6)) as Map)['choices'][0]['delta']['content'] ?? ''}').join();
       final passed = RegExp(r'\[(voice|connect):([^\]]*)\]').firstMatch(text);
       final hangup = text.contains('[hangup]') && farewell.hasMatch(text);
       text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
       turns.add({'role': 'assistant', 'content': text});
-      if (passed != null) onLine?.call('note', passed.group(1) == 'connect' ? 'Passing the call to a person' : 'Passed to another agent');
-      onLine?.call('ai', text);
+      if (passed != null) onLine?.call('note', passed.group(1) == 'connect' ? 'Passing the call to a person' : 'Passed to another agent', const {});
+      times.add({'at': hms(asked), 'ms': ms, 'first_ms': firstMs ?? ms});
+      onLine?.call('ai', text, times.last);
       if (hangup || passed?.group(1) == 'connect' || (ended && !text.trim().endsWith('?'))) break;
     }
     // What the AI did meanwhile (bookings, orders, checks), from the activity log.
@@ -1350,7 +1363,7 @@ class AppState extends ChangeNotifier {
       'duration_s': DateTime.now().difference(started).inSeconds,
       'outcome': 'Test',
       'summary': did.isEmpty ? 'Nothing was saved.' : did.join(' · '),
-      'transcript': jsonEncode([for (final t in turns) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': t['content']}]),
+      'transcript': jsonEncode([for (final (i, t) in turns.indexed) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': t['content'], ...?(i < times.length ? times[i] : null)}]),
     });
     await http.post(Uri.parse('$base/api/call-ended?token=${h.engineKey}'), body: jsonEncode({'room': room, 'transcript': [], 'answered': true, 'number': number}));
     await log('Ran a test call: $goal');

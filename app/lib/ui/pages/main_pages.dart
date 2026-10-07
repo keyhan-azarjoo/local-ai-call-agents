@@ -172,7 +172,14 @@ void showCall(BuildContext context, Map<String, Object?> c) {
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      SizedBox(width: 60, child: Eyebrow(t['who'] == 'ai' ? 'AI' : 'Caller')),
+                      SizedBox(
+                        width: 76,
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Eyebrow(t['who'] == 'ai' ? 'AI' : 'Caller'),
+                          if (t['at'] != null) Muted('${t['at']}', mono: true, size: 10.5),
+                          if (t['ms'] != null) Muted('${((t['ms'] as num) / 1000).toStringAsFixed(1)} s', mono: true, size: 10.5),
+                        ]),
+                      ),
                       Expanded(
                         child: Container(
                           padding: const EdgeInsets.all(10),

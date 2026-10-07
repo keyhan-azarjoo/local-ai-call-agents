@@ -251,7 +251,12 @@ class Harness {
 
   // ---------------- one call ----------------
 
-  Future<({List<Map<String, String>> turns, List<String> passedTo, bool hungUp})> call(
+  static String hms(DateTime t) => t.toIso8601String().substring(11, 19);
+
+  /// Slow answers fail the check: callers hang up on silence. Milliseconds.
+  static final slowFirst = int.tryParse(env['SCEN_SLOW_FIRST_MS'] ?? '') ?? 5000, slowTotal = int.tryParse(env['SCEN_SLOW_TOTAL_MS'] ?? '') ?? 25000;
+
+  Future<({List<Map<String, String>> turns, List<Map<String, Object?>> times, List<String> passedTo, bool hungUp})> call(
       Map<String, dynamic> c, String number, String roomTag, Map<String, dynamic> sc) async {
     final room = 'pstn-in-0-_${number}_$roomTag';
     final port = s.host!.port, key = s.host!.engineKey;
@@ -259,7 +264,10 @@ class Harness {
     final cfg = jsonDecode(await _get('http://127.0.0.1:$port/api/voice-config?room=$room&mode=caller&token=$key')) as Map;
     final greeting = '${cfg['greeting']}';
     final turns = <Map<String, String>>[{'role': 'assistant', 'content': greeting}];
-    showLive({'turns': ['AI: $greeting']});
+    // When each line was said, and for the AI how long it took: first words and the whole answer.
+    final times = <Map<String, Object?>>[{'at': hms(DateTime.now())}];
+    void live() => showLive({'turns': [for (final t in turns) '${t['role'] == 'user' ? 'CALLER' : 'AI'}: ${t['content']}'], 'times': times});
+    live();
     final passedTo = <String>[];
     var hungUp = false, ended = false, extra = 0;
     final maxTurns = (c['max_turns'] as num?)?.toInt() ?? 10;
@@ -272,12 +280,23 @@ class Harness {
       if (said.isEmpty && extra > 0) said = 'Yes, please.';
       if (said.isEmpty) break;
       turns.add({'role': 'user', 'content': said});
-      showLive({'turns': [for (final t in turns) '${t['role'] == 'user' ? 'CALLER' : 'AI'}: ${t['content']}']});
+      times.add({'at': hms(DateTime.now())});
+      live();
       if (env['SCEN_DEBUG'] != null) print('  CALLER: $said');
       final rq = await http.postUrl(Uri.parse('http://127.0.0.1:$port/v1/chat/completions?token=$key'));
       rq.headers.contentType = ContentType.json;
       rq.write(jsonEncode({'model': 'caller:en:$room', 'stream': true, 'messages': turns}));
-      final body = await utf8.decodeStream(await rq.close());
+      final asked = DateTime.now();
+      final rs = await rq.close();
+      final buf = StringBuffer();
+      int? firstMs;
+      await for (final chunk in rs.transform(utf8.decoder)) {
+        buf.write(chunk);
+        // The first words the caller hears (a "one moment" counts: it breaks the silence).
+        if (firstMs == null && RegExp(r'"content":"[^"\\\s]').hasMatch(chunk)) firstMs = DateTime.now().difference(asked).inMilliseconds;
+      }
+      final body = buf.toString();
+      final ms = DateTime.now().difference(asked).inMilliseconds;
       var text = body
           .split('\n')
           .where((l) => l.startsWith('data: {'))
@@ -290,7 +309,8 @@ class Harness {
       if (text.contains('[hangup]') && _farewell.hasMatch(text)) hungUp = true;
       text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
       turns.add({'role': 'assistant', 'content': text});
-      showLive({'turns': [for (final t in turns) '${t['role'] == 'user' ? 'CALLER' : 'AI'}: ${t['content']}']});
+      times.add({'at': hms(asked), 'ms': ms, 'first_ms': firstMs ?? ms});
+      live();
       if (env['SCEN_DEBUG'] != null) print('  AI: $text');
       if (hungUp || passedTo.any((p) => p.startsWith('person#'))) break;
       // The caller said goodbye, but the assistant just asked something: they'd answer it.
@@ -301,7 +321,7 @@ class Harness {
     end.headers.contentType = ContentType.json;
     end.write(jsonEncode({'room': room, 'transcript': [], 'answered': true, 'number': number}));
     await (await end.close()).drain<void>();
-    return (turns: turns, passedTo: passedTo, hungUp: hungUp);
+    return (turns: turns, times: times, passedTo: passedTo, hungUp: hungUp);
   }
 
   Future<String> _get(String url) async {
@@ -424,11 +444,26 @@ class Harness {
       final audit = [for (final a in await s.db.raw.query('audit', where: 'at >= ?', whereArgs: [auditFrom])) '${a['what']}'];
       final saidDigits = _digits(r.turns.where((t) => t['role'] == 'user').map((t) => t['content']).join(' '));
       final f = await check(curApp, ex, r.turns, before, seeded, seedTable, {...numbers, 'SAID': saidDigits, 'ID': numbers[who]!}, r.passedTo, audit);
+      // How fast it answered.
+      final ai = [for (final t in r.times) if (t['ms'] != null) t];
+      for (final t in ai) {
+        final first = t['first_ms'] as int, all = t['ms'] as int;
+        if (first > slowFirst || all > slowTotal) {
+          f.add('SLOW: the caller waited ${(first / 1000).toStringAsFixed(1)} s for the first words, ${(all / 1000).toStringAsFixed(1)} s for the whole answer (at ${t['at']})');
+          break;
+        }
+      }
       failures.addAll(f.map((x) => steps.length > 1 ? 'call ${si + 1}: $x' : x));
       calls.add({
         'from': who,
         'seconds': DateTime.now().difference(t0).inSeconds,
         'turns': [for (final t in r.turns) '${t['role'] == 'user' ? 'CALLER' : 'AI'}: ${t['content']}'],
+        'times': r.times,
+        'ai_ms': () {
+          final ms = [for (final t in r.times) if (t['ms'] != null) t['ms'] as int]..sort();
+          final first = [for (final t in r.times) if (t['first_ms'] != null) t['first_ms'] as int]..sort();
+          return ms.isEmpty ? null : {'avg': ms.reduce((a, b) => a + b) ~/ ms.length, 'max': ms.last, 'first_avg': first.reduce((a, b) => a + b) ~/ first.length, 'first_max': first.last};
+        }(),
         'passed_to': r.passedTo,
         'tools': used,
         'hung_up': r.hungUp,

@@ -194,8 +194,15 @@ void showTestRun(BuildContext context, Map<String, dynamic> r) {
                           ? 'Call ${i + 1} · from caller ${c['from'] ?? 'A'} · ${c['seconds'] ?? 0}s'
                           : 'Step ${i + 1} · website form "${c['web']}" → ${c['code']}'),
                     ),
-                  for (final t in (c['turns'] as List? ?? []))
-                    if ('$t'.trim() != 'AI:') _bubble(ctx, '$t'),
+                  if (c['ai_ms'] is Map)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Muted(
+                          'AI answers: ${_s((c['ai_ms'] as Map)['avg'])} on average, slowest ${_s((c['ai_ms'] as Map)['max'])} · first words after ${_s((c['ai_ms'] as Map)['first_avg'])} on average, at worst ${_s((c['ai_ms'] as Map)['first_max'])}',
+                          size: 12.5),
+                    ),
+                  for (final (j, t) in (c['turns'] as List? ?? []).indexed)
+                    if ('$t'.trim() != 'AI:') _bubble(ctx, '$t', time: j < ((c['times'] as List?)?.length ?? 0) ? ((c['times'] as List)[j] as Map) : null),
                   if ((c['passed_to'] as List? ?? []).isNotEmpty) Muted('Passed the call to: ${(c['passed_to'] as List).join(', ')}', size: 12.5),
                   if ((c['tools'] as List? ?? []).isNotEmpty) ...[
                     const SizedBox(height: 6),
@@ -231,9 +238,19 @@ void showTestRun(BuildContext context, Map<String, dynamic> r) {
   );
 }
 
-Widget _bubble(BuildContext ctx, String line) {
+/// Milliseconds as "3.2 s".
+String _s(Object? ms) => ms is num ? '${(ms / 1000).toStringAsFixed(1)} s' : '–';
+
+/// Slow enough that a caller notices (the test run's limits: 5 s to first words, 25 s in all).
+bool _slow(Map? t) => t != null && (((t['first_ms'] as num?) ?? 0) > 5000 || ((t['ms'] as num?) ?? 0) > 25000);
+
+Widget _bubble(BuildContext ctx, String line, {Map? time}) {
   final ai = line.startsWith('AI:');
   final text = line.substring(line.indexOf(':') + 1).trim();
+  final when = [
+    if (time?['at'] != null) '${time!['at']}',
+    if (time?['ms'] != null) 'answered in ${_s(time!['ms'])} · first words after ${_s(time['first_ms'])}',
+  ].join(' · ');
   return Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Row(mainAxisAlignment: ai ? MainAxisAlignment.start : MainAxisAlignment.end, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -243,7 +260,16 @@ Widget _bubble(BuildContext ctx, String line) {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
           decoration: BoxDecoration(color: ai ? ctx.c.amberSoft : ctx.c.blueSoft, borderRadius: BorderRadius.circular(LL.r)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(ai ? 'AI' : 'Caller', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: ai ? ctx.c.amberInk : ctx.c.blueInk)),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text(ai ? 'AI' : 'Caller', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: ai ? ctx.c.amberInk : ctx.c.blueInk)),
+              if (when.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(when,
+                      style: TextStyle(fontFamily: LL.mono, fontSize: 10.5, color: _slow(time) ? ctx.c.redInk : ctx.c.muted, fontWeight: _slow(time) ? FontWeight.w700 : FontWeight.w400)),
+                ),
+              ],
+            ]),
             const SizedBox(height: 2),
             SelectableText(text),
           ]),
@@ -278,7 +304,7 @@ class _TestCallDialogState extends State<TestCallDialog> {
   final facts = TextEditingController(text: _presets.first.$3.join('\n'));
   final name = TextEditingController(text: 'Alex Morgan');
   final number = TextEditingController(text: '+447700900999');
-  final lines = <(String, String)>[];
+  final lines = <(String, String, Map<String, Object?>)>[];
   final scroll = ScrollController();
   bool running = false, stopped = false, done = false;
   String? error;
@@ -296,9 +322,9 @@ class _TestCallDialogState extends State<TestCallDialog> {
         facts: ['Your name: ${name.text.trim()}', ...facts.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty)],
         number: number.text.trim(),
         stop: () => stopped,
-        onLine: (who, text) {
+        onLine: (who, text, time) {
           if (!mounted) return;
-          setState(() => lines.add((who, text)));
+          setState(() => lines.add((who, text, time)));
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent, duration: const Duration(milliseconds: 200), curve: Curves.easeOut);
           });
@@ -349,8 +375,8 @@ class _TestCallDialogState extends State<TestCallDialog> {
               ] else
                 Expanded(
                   child: ListView(controller: scroll, children: [
-                    for (final (who, text) in lines)
-                      if (who == 'note') Padding(padding: const EdgeInsets.only(bottom: 8), child: Center(child: Pill(text, tone: Tone.blue))) else _bubble(context, '${who == 'ai' ? 'AI' : 'CALLER'}: $text'),
+                    for (final (who, text, time) in lines)
+                      if (who == 'note') Padding(padding: const EdgeInsets.only(bottom: 8), child: Center(child: Pill(text, tone: Tone.blue))) else _bubble(context, '${who == 'ai' ? 'AI' : 'CALLER'}: $text', time: time),
                     if (running) const Padding(padding: EdgeInsets.all(12), child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)))),
                     if (done) Padding(padding: const EdgeInsets.all(8), child: Muted(error ?? 'Call finished — it is saved in Calls → Tests. Open your app’s manager page to see what was booked or ordered.')),
                   ]),
@@ -435,7 +461,8 @@ class _LiveTestPanelState extends State<LiveTestPanel> {
           Muted('${l['id']} · agents: ${l['setup']} · caller: ${'${l['style'] ?? ''}'.replaceAll('_', ' ')}${(l['calls'] as num? ?? 1) > 1 ? ' · call ${l['call']} of ${l['calls']}' : ''}', mono: true, size: 12),
           if ('${l['goal'] ?? ''}'.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 6), child: Muted('The caller wants to: ${l['goal']}', size: 13)),
           const SizedBox(height: 12),
-          for (final t in turns) if ('$t'.trim() != 'AI:') _bubble(context, '$t'),
+          for (final (j, t) in turns.indexed)
+            if ('$t'.trim() != 'AI:') _bubble(context, '$t', time: j < ((l['times'] as List?)?.length ?? 0) ? ((l['times'] as List)[j] as Map) : null),
           if (tools.isNotEmpty) ...[
             const SizedBox(height: 4),
             Eyebrow('What the AI did in the app'),

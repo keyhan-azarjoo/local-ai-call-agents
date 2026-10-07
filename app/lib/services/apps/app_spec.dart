@@ -149,6 +149,13 @@ TableSpec? closuresOf(AppSpec spec) => spec.tables
     .where((t) => !t.single && RegExp(r'closure|holiday|closed', caseSensitive: false).hasMatch('${t.id} ${t.purpose}') && t.fields.any((f) => f.type == 'date'))
     .firstOrNull;
 
+/// A list of stays (a room from one date to another, no times): two dates and the room it links to.
+bool isStayTable(TableSpec t) =>
+    !t.single && t.fields.where((f) => f.type == 'date').length >= 2 && t.fields.any((f) => f.type == 'link') && !t.fields.any((f) => f.type == 'time');
+
+/// A list with a day of the week (classes, opening times): Monday, Tuesday… as a choice.
+FieldSpec? weekdayOf(TableSpec t) => t.fields.where((f) => f.type == 'choice' && f.options.where((o) => RegExp(r'^(mon|tue|wed|thu|fri|sat|sun)', caseSensitive: false).hasMatch(o)).length >= 5).firstOrNull;
+
 class Access {
   const Access({this.see = false, this.add = false});
   final bool see, add;
@@ -238,6 +245,8 @@ class Block {
         'gallery' => 'photo gallery${table == null ? '' : ' of ${spec.table(table!)?.title.toLowerCase() ?? table}'}',
         'testimonials' => 'reviews from ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
         'list' when data['layout'] == 'menu' => 'menu of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
+        'list' when data['layout'] == 'timetable' => 'weekly timetable of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
+        'stay' => 'free rooms for chosen dates, for ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
         'availability' => 'free times of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
         _ => '${type == 'info' ? 'details' : type} of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
       };
@@ -253,6 +262,7 @@ class Block {
       'form' || 'create' || 'add' || 'booking' || 'order' || 'input' => 'form',
       'info' || 'details' || 'single' || 'record' || 'hours' => 'info',
       'availability' || 'free' || 'slots' || 'calendar' || 'schedule' || 'timetable' => 'availability',
+      'stay' || 'stays' || 'room_finder' || 'free_rooms' || 'rooms_free' || 'room_availability' || 'dates' => 'stay',
       'gallery' || 'photos' || 'images' || 'pictures' || 'carousel' => 'gallery',
       'testimonials' || 'testimonial' || 'reviews' || 'quotes' => 'testimonials',
       'contact' || 'map' || 'location' || 'find_us' || 'contact_us' => 'contact',
@@ -313,6 +323,8 @@ class Block {
       if (type == 'list') out['search'] = j['search'] == null ? true : _bool(j['search']);
       // A printed-menu look (sections, dotted lines to the price) instead of cards.
       if (type == 'list' && slug(j['layout'] ?? j['style'], fallback: '') == 'menu') out['layout'] = 'menu';
+      // Classes by day of the week, in time order (a gym's timetable).
+      if (type == 'list' && const {'timetable', 'schedule', 'week', 'weekly'}.contains(slug(j['layout'] ?? j['style'], fallback: ''))) out['layout'] = 'timetable';
       // Only the records ticked yes in this field (e.g. popular dishes).
       if (type == 'list' && _str(j['only']).isNotEmpty) out['only'] = slug(j['only']);
       if (type == 'form') {
@@ -539,6 +551,12 @@ class AppSpec {
           continue;
         }
         if (b.type == 'list' && d['only'] != null && t.field('${d['only']}')?.type != 'yesno') d.remove('only');
+        // Free rooms for a stay (check-in to check-out): only for a stay table customers can book.
+        if (b.type == 'stay' || (b.type == 'availability' && isStayTable(t))) {
+          if (isStayTable(t) && (p.manager || t.access.add)) blocks.add(Block({...b.data, 'type': 'stay', 'table': t.id}));
+          continue;
+        }
+        if (b.type == 'list' && d['layout'] == 'timetable' && weekdayOf(t) == null) d.remove('layout');
         if (b.type == 'availability') {
           final link = t.fields.where((f) => f.type == 'link').firstOrNull;
           final ok = link != null && t.fields.any((f) => f.type == 'date') && t.fields.any((f) => f.type == 'time') && (p.manager || t.access.add);

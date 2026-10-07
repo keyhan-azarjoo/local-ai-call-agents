@@ -348,7 +348,8 @@ class AppsManager extends ChangeNotifier {
         continue;
       }
       final mine = [for (final b in (pages[i]['blocks'] as List? ?? const [])) '${(b as Map)['type']}'];
-      if (mine.length < theirs.length && mine.every(theirs.contains)) {
+      // (Opening hours on their own are now part of the contact section.)
+      if (mine.length < theirs.length && mine.every((b) => theirs.contains(b) || (b == 'info' && theirs.contains('contact')))) {
         pages[i] = await _page(tp, dir, pics, sample, a.name);
         changed = true;
       }

@@ -29,6 +29,37 @@ Map<String, Object?> _features(String title, List<String> lines) => {'type': 'fe
 
 final _hours = _t('opening_hours', 'Opening hours', 'When you are open', 'see', [_f('opens', 'Opens', 'time'), _f('closes', 'Closes', 'time'), _f('days', 'Days', 'text')], single: true);
 
+/// Days the business is closed (holidays): customers can't book them.
+Map<String, Object?> _closures([String title = 'Closed days', String purpose = 'Days we are closed (holidays): no bookings then']) => _t('closures', title, purpose, 'see', [
+      _f('reason', 'Closed for', 'text', req: true), _f('date', 'Date', 'date', req: true), _f('until', 'Until (for several days)', 'date'),
+    ]);
+
+/// Reviews the manager picks to show on the website.
+Map<String, Object?> _reviews(String who) => _t('reviews', 'Reviews', 'What $who say (you choose which to show)', 'see', [
+      _f('name', 'Name', 'text', req: true), _f('rating', 'Stars', 'number'), _f('quote', 'Review', 'longtext', req: true), _f('source', 'Where', 'text'),
+    ]);
+
+/// Gift vouchers people buy for someone (the code and status are the manager's).
+Map<String, Object?> _vouchers(String purpose) => _t('vouchers', 'Gift vouchers', purpose, 'add', [
+      _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('amount', 'Amount', 'money', req: true),
+      _f('recipient', 'Who it’s for', 'text'), _f('message', 'Message for them', 'longtext'),
+      _f('code', 'Voucher code', 'text', manager: true), _f('status', 'Status', 'choice', options: ['Requested', 'Paid', 'Sent', 'Redeemed', 'Cancelled'], manager: true),
+    ]);
+
+const List<Map<String, Object?>> _holidays = [
+  {'reason': 'Christmas', 'date': '2026-12-25', 'until': '2026-12-26'},
+  {'reason': 'New Year’s Day', 'date': '2027-01-01'},
+];
+
+/// Contact & directions, opening hours and the days you are closed.
+Map<String, Object?> _contactPage(String text, {String hero = 'Come and see us', bool hours = true, bool closed = true, List<Map<String, Object?>> more = const []}) => {'id': 'contact', 'title': 'Contact', 'blocks': [
+      _hero(hero, text),
+      {'type': 'contact', 'title': 'Contact & directions'},
+      if (hours) _info('opening_hours', 'Opening hours'),
+      if (closed) _list('closures', 'Days we are closed', search: false),
+      ...more,
+    ]};
+
 final appTemplates = <AppTemplate>[
   AppTemplate('restaurant', 'Restaurant', 'Menu with photos, orders for collection, delivery or to your table, reservations and opening hours.', {
     'name': 'Trattoria Bella',
@@ -162,144 +193,266 @@ final appTemplates = <AppTemplate>[
     ],
   }),
 
-  AppTemplate('salon', 'Hair & beauty salon', 'Services and prices, your team, and online appointment requests.', {
+  AppTemplate('salon', 'Hair & beauty salon', 'Services and prices, your team, packages, gift vouchers and booking a stylist at a time that’s free.', {
     'name': 'Studio Lumière',
     'summary': 'Clients see services and stylists and book an appointment.',
-    'site': {'style': 'elegant', 'tagline': 'Hair, colour & care', 'hero': 'unsplash:1560066984-138dadb4c035', 'about': 'A calm, light-filled studio where every appointment starts with a proper consultation.', 'address': '48 King’s Road', 'phone': '020 7946 0456', 'currency': '£'},
+    'site': {'style': 'elegant', 'tagline': 'Hair, colour & care', 'hero': 'unsplash:1560066984-138dadb4c035', 'about': 'A calm, light-filled studio where every appointment starts with a proper consultation.', 'address': '48 King’s Road', 'phone': '020 7946 0456', 'email': 'hello@studiolumiere.example', 'currency': '£', 'footer': 'Organic colour · Step-free entrance · Free Wi-Fi'},
     'tables': [
       _t('services', 'Services', 'Treatments and prices', 'see', [
         _f('name', 'Service', 'text', req: true), _f('category', 'Category', 'choice', options: ['Cut & style', 'Colour', 'Treatments', 'Nails']),
         _f('description', 'Description', 'longtext'), _f('duration', 'Minutes', 'number'), _f('price', 'Price', 'money'), _f('photo', 'Photo', 'image'),
+        _f('popular', 'Popular', 'yesno'),
       ]),
-      _t('stylists', 'Our team', 'Stylists and specialists', 'see', [_f('name', 'Name', 'text', req: true), _f('role', 'Speciality', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image')]),
+      _t('stylists', 'Our team', 'Stylists and specialists', 'see', [_f('name', 'Name', 'text', req: true), _f('role', 'Speciality', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image'), _f('instagram', 'Instagram', 'text')]),
       _t('appointments', 'Appointments', 'Appointment requests', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('service', 'Service', 'link', link: 'services', req: true),
         _f('stylist', 'Stylist', 'link', link: 'stylists'), _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true), _f('notes', 'Anything we should know?', 'longtext'),
         _f('status', 'Status', 'choice', options: ['Confirmed', 'Done', 'Cancelled', 'No-show'], manager: true),
+        _f('first_visit', 'First visit to us', 'yesno'),
       ]),
       _hours,
+      _t('packages', 'Packages & courses', 'Bundles of treatments and courses, with prices', 'see', [
+        _f('name', 'Package', 'text', req: true), _f('description', 'What’s included', 'longtext'), _f('sessions', 'Sessions', 'number'), _f('price', 'Price', 'money'), _f('photo', 'Photo', 'image'),
+      ]),
+      _vouchers('Gift vouchers people buy for someone'),
+      _reviews('clients'),
+      _closures(),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Home', 'blocks': [_hero('Look and feel your best', 'Expert cuts, beautiful colour and treatments that leave your hair healthier.', button: 'Book now', link: 'book'), _list('services', 'Services & prices'), _info('opening_hours', 'Opening hours')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Look and feel your best', 'Expert cuts, beautiful colour and treatments that leave your hair healthier.', button: 'Book now', link: 'book'),
+        _features('Why clients love us', [
+          'Consultation first: Every appointment starts with a proper chat about what you want.',
+          'Kind to your hair: Organic colour and bond-building care as standard.',
+          'Book in seconds: See who’s free and pick a time online, day or night.',
+          'Every texture welcome: Straight, wavy, curly or coily — we know it.',
+        ]),
+        {..._list('services', 'Client favourites', search: false), 'only': 'popular'},
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What our clients say'},
+        {'type': 'contact', 'title': 'Find the studio', 'text': 'Five minutes from Sloane Square. Tea, coffee and a quiet chair are always waiting.'},
+      ]},
+      {'id': 'services', 'title': 'Prices', 'blocks': [
+        _hero('Services & prices', 'Every price includes a consultation. Not sure what you need? Book a free chat with any stylist.'),
+        {..._list('services', 'Price list'), 'layout': 'menu'},
+      ]},
       {'id': 'team', 'title': 'Our team', 'blocks': [_hero('Meet the team', 'Experienced, friendly and always learning.'), _list('stylists', 'Stylists', search: false)]},
       {'id': 'book', 'title': 'Book', 'blocks': [
         _hero('Book an appointment', 'See who’s free, pick a time, and you’re booked.'),
         {'type': 'availability', 'table': 'appointments', 'title': 'Find a free stylist'},
         _form('appointments', 'Your appointment', 'Book appointment', 'You’re booked! We’ll text you a reminder the day before.'),
       ]},
+      {'id': 'packages', 'title': 'Packages & gifts', 'blocks': [
+        _hero('Packages, courses & gift vouchers', 'Save on the treatments you love, or give someone an afternoon of pampering.'),
+        _list('packages', 'Packages & courses', search: false),
+        _form('vouchers', 'Buy a gift voucher', 'Request voucher', 'Thank you! We’ll call to take payment and then text you the voucher code.'),
+      ]},
+      _contactPage('Open six days a week. Call us, drop in, or book online any time.'),
     ],
   }, {
     'services': [
-      {'photo': 'unsplash:1522337360788-8b13dee7a37e', 'name': 'Women’s cut & blow-dry', 'category': 'Cut & style', 'description': 'Consultation, wash, precision cut and finish.', 'duration': 60, 'price': 58},
-      {'name': 'Men’s cut', 'category': 'Cut & style', 'description': 'Wash, cut and style.', 'duration': 30, 'price': 32},
-      {'photo': 'unsplash:1562322140-8baeececf3df', 'name': 'Blow-dry', 'category': 'Cut & style', 'description': 'Smooth, bouncy or beach waves.', 'duration': 45, 'price': 35},
+      {'photo': 'unsplash:1522337360788-8b13dee7a37e', 'name': 'Women’s cut & blow-dry', 'category': 'Cut & style', 'description': 'Consultation, wash, precision cut and finish.', 'duration': 60, 'price': 58, 'popular': true},
+      {'photo': 'unsplash:1622286342621-4bd786c2447c', 'name': 'Men’s cut', 'category': 'Cut & style', 'description': 'Wash, cut and style.', 'duration': 30, 'price': 32},
+      {'photo': 'unsplash:1562322140-8baeececf3df', 'name': 'Blow-dry', 'category': 'Cut & style', 'description': 'Smooth, bouncy or beach waves.', 'duration': 45, 'price': 35, 'popular': true},
       {'name': 'Full head colour', 'category': 'Colour', 'description': 'Rich, even colour from root to tip.', 'duration': 120, 'price': 95},
-      {'name': 'Balayage', 'category': 'Colour', 'description': 'Hand-painted, sun-kissed lightness.', 'duration': 180, 'price': 160},
-      {'name': 'Olaplex treatment', 'category': 'Treatments', 'description': 'Repairs and strengthens damaged hair.', 'duration': 30, 'price': 30},
-      {'name': 'Gel manicure', 'category': 'Nails', 'description': 'Long-lasting colour with a glossy finish.', 'duration': 45, 'price': 28},
+      {'name': 'Balayage', 'category': 'Colour', 'description': 'Hand-painted, sun-kissed lightness.', 'duration': 180, 'price': 160, 'popular': true},
+      {'photo': 'unsplash:1595476108010-b4d1f102b1b1', 'name': 'Olaplex treatment', 'category': 'Treatments', 'description': 'Repairs and strengthens damaged hair.', 'duration': 30, 'price': 30},
+      {'photo': 'unsplash:1604654894610-df63bc536371', 'name': 'Gel manicure', 'category': 'Nails', 'description': 'Long-lasting colour with a glossy finish.', 'duration': 45, 'price': 28},
     ],
     'stylists': [
-      {'name': 'Amélie', 'role': 'Creative director · colour', 'bio': 'Fifteen years of colour work in Paris and London.'},
-      {'name': 'Marcus', 'role': 'Senior stylist · cuts', 'bio': 'Precision cutting and men’s grooming.'},
-      {'name': 'Priya', 'role': 'Stylist · curly hair', 'bio': 'Curl specialist; every texture welcome.'},
+      {'photo': 'unsplash:1494790108377-be9c29b29330', 'name': 'Amélie', 'role': 'Creative director · colour', 'bio': 'Fifteen years of colour work in Paris and London.', 'instagram': '@amelie.colour'},
+      {'photo': 'unsplash:1507003211169-0a1dd7228f2d', 'name': 'Marcus', 'role': 'Senior stylist · cuts', 'bio': 'Precision cutting and men’s grooming.', 'instagram': '@marcus.cuts'},
+      {'photo': 'unsplash:1580489944761-15a19d654956', 'name': 'Priya', 'role': 'Stylist · curly hair', 'bio': 'Curl specialist; every texture welcome.', 'instagram': '@priya.curls'},
     ],
     'opening_hours': [{'opens': '09:00', 'closes': '19:00', 'days': 'Monday – Saturday'}],
+    'packages': [
+      {'name': 'Bridal hair', 'description': 'A trial run, then styling on the morning of the wedding — at the studio or where you are getting ready.', 'sessions': 2, 'price': 220},
+      {'name': 'Blow-dry club', 'description': 'Five blow-drys to use within two months. Perfect for busy weeks and nights out.', 'sessions': 5, 'price': 150},
+      {'name': 'Colour refresh course', 'description': 'Three gloss toners six weeks apart to keep colour bright between full appointments.', 'sessions': 3, 'price': 120},
+      {'name': 'Curl confidence class', 'description': 'A cut with Priya and a one-to-one lesson in washing, styling and products for your curls.', 'sessions': 1, 'price': 85},
+    ],
+    'reviews': [
+      {'name': 'Hannah W.', 'rating': 5, 'quote': 'Amélie listened properly and my balayage is exactly what I hoped for. The calmest salon in London.', 'source': 'Google'},
+      {'name': 'Tom R.', 'rating': 5, 'quote': 'Booked online at midnight, in and out in half an hour with the best cut I’ve had in years.', 'source': 'Google'},
+      {'name': 'Ife A.', 'rating': 5, 'quote': 'Finally a stylist who understands curls. Priya is a genius.', 'source': 'Instagram'},
+    ],
+    'closures': _holidays,
   }),
 
-  AppTemplate('barber', 'Barber shop', 'Cuts and prices, your barbers, and booking a chair at a time that’s free.', {
+  AppTemplate('barber', 'Barber shop', 'Cuts and prices, your barbers, memberships and gift vouchers, and booking a chair at a time that’s free.', {
     'name': 'Kings Cut Barbers',
     'summary': 'Clients see cuts and prices, pick a barber and book a free time.',
-    'site': {'style': 'bold', 'tagline': 'Sharp fades, classic cuts, hot towel shaves', 'hero': 'unsplash:1503951914875-452162b0f3f1', 'about': 'A proper neighbourhood barber: walk-ins welcome, bookings guaranteed, and the kettle is always on.', 'address': '7 Market Lane', 'phone': '020 7946 0789', 'currency': '£', 'booking_minutes': '30'},
+    'site': {'style': 'bold', 'tagline': 'Sharp fades, classic cuts, hot towel shaves', 'hero': 'unsplash:1503951914875-452162b0f3f1', 'about': 'A proper neighbourhood barber: walk-ins welcome, bookings guaranteed, and the kettle is always on.', 'address': '7 Market Lane', 'phone': '020 7946 0789', 'currency': '£', 'booking_minutes': '30', 'footer': 'Walk-ins welcome · Card or cash'},
     'tables': [
       _t('services', 'Cuts & prices', 'Haircuts, beard work and prices', 'see', [
         _f('name', 'Service', 'text', req: true), _f('category', 'Category', 'choice', options: ['Haircuts', 'Beard', 'Shaves', 'Kids']),
         _f('description', 'Description', 'longtext'), _f('duration', 'Minutes', 'number'), _f('price', 'Price', 'money'),
+        _f('photo', 'Photo', 'image'), _f('popular', 'Popular', 'yesno'),
       ]),
-      _t('barbers', 'Our barbers', 'The barbers', 'see', [_f('name', 'Name', 'text', req: true), _f('speciality', 'Speciality', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image')]),
+      _t('barbers', 'Our barbers', 'The barbers', 'see', [_f('name', 'Name', 'text', req: true), _f('speciality', 'Speciality', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image'), _f('instagram', 'Instagram', 'text')]),
       _t('appointments', 'Appointments', 'Booked chairs', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('service', 'Service', 'link', link: 'services', req: true),
         _f('barber', 'Barber', 'link', link: 'barbers'), _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true), _f('notes', 'Anything we should know?', 'longtext'),
         _f('status', 'Status', 'choice', options: ['Booked', 'Done', 'Cancelled', 'No-show'], manager: true),
       ]),
       _hours,
+      _t('packages', 'Memberships & bundles', 'Monthly memberships and bundles, with prices', 'see', [
+        _f('name', 'Plan', 'text', req: true), _f('description', 'What you get', 'longtext'), _f('visits', 'Visits', 'number'), _f('price', 'Price', 'money'),
+      ]),
+      _vouchers('Gift vouchers people buy for someone'),
+      _reviews('clients'),
+      _closures(),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Home', 'blocks': [_hero('Look sharp', 'Fades, scissor cuts, beard trims and hot towel shaves by barbers who care.', button: 'Book a chair', link: 'book'), _list('services', 'Cuts & prices'), _info('opening_hours', 'Opening hours')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Look sharp', 'Fades, scissor cuts, beard trims and hot towel shaves by barbers who care.', button: 'Book a chair', link: 'book'),
+        _features('Why the street comes here', [
+          'Booked means booked: Your chair is ready at your time — no waiting around.',
+          'Twenty years of fades: Skin fades, tapers and textured crops done properly.',
+          'Hot towels, straight razors: A traditional shave the way it should be.',
+          'Kids welcome: Patient barbers and a lollipop for the brave.',
+        ]),
+        {..._list('services', 'Most booked', search: false), 'only': 'popular'},
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What clients say'},
+        {'type': 'contact', 'title': 'Find the shop', 'text': 'On the corner of Market Lane, opposite the bakery. Street parking after 6pm.'},
+      ]},
+      {'id': 'prices', 'title': 'Prices', 'blocks': [
+        _hero('Cuts & prices', 'Straightforward prices. Every cut finished with a hot towel and a proper style.'),
+        {..._list('services', 'Price list'), 'layout': 'menu'},
+      ]},
       {'id': 'team', 'title': 'Barbers', 'blocks': [_hero('Meet the barbers', 'Pick your favourite or take whoever is free.'), _list('barbers', 'Barbers', search: false)]},
       {'id': 'book', 'title': 'Book', 'blocks': [
         _hero('Book a chair', 'See which barber is free, pick a time, and you’re in.'),
         {'type': 'availability', 'table': 'appointments', 'title': 'Find a free barber'},
         _form('appointments', 'Your appointment', 'Book my chair', 'You’re booked! See you soon.'),
       ]},
+      {'id': 'club', 'title': 'Club & gifts', 'blocks': [
+        _hero('The Kings Cut club', 'Stay sharp all month for less, or treat someone to a cut and a hot towel shave.'),
+        _list('packages', 'Memberships & bundles', search: false),
+        _form('vouchers', 'Buy a gift voucher', 'Request voucher', 'Cheers! We’ll call to take payment and text you the voucher code.'),
+      ]},
+      _contactPage('Walk in any time we’re open, or book a chair online so you never wait.'),
     ],
   }, {
     'services': [
-      {'name': 'Skin fade', 'category': 'Haircuts', 'description': 'Clean skin fade blended into any length on top.', 'duration': 30, 'price': 22},
-      {'name': 'Classic cut', 'category': 'Haircuts', 'description': 'Scissor or clipper cut, wash and style.', 'duration': 30, 'price': 18},
+      {'photo': 'unsplash:1599351431202-1e0f0137899a', 'name': 'Skin fade', 'category': 'Haircuts', 'description': 'Clean skin fade blended into any length on top.', 'duration': 30, 'price': 22, 'popular': true},
+      {'photo': 'unsplash:1622286342621-4bd786c2447c', 'name': 'Classic cut', 'category': 'Haircuts', 'description': 'Scissor or clipper cut, wash and style.', 'duration': 30, 'price': 18},
       {'name': 'Buzz cut', 'category': 'Haircuts', 'description': 'One length all over.', 'duration': 15, 'price': 12},
       {'name': 'Beard trim', 'category': 'Beard', 'description': 'Shape-up with clippers, razor line and beard oil.', 'duration': 15, 'price': 10},
-      {'name': 'Cut & beard', 'category': 'Beard', 'description': 'Any haircut plus a full beard trim.', 'duration': 45, 'price': 28},
-      {'name': 'Hot towel shave', 'category': 'Shaves', 'description': 'Traditional straight-razor shave with hot towels.', 'duration': 30, 'price': 20},
+      {'name': 'Cut & beard', 'category': 'Beard', 'description': 'Any haircut plus a full beard trim.', 'duration': 45, 'price': 28, 'popular': true},
+      {'photo': 'unsplash:1621605815971-fbc98d665033', 'name': 'Hot towel shave', 'category': 'Shaves', 'description': 'Traditional straight-razor shave with hot towels.', 'duration': 30, 'price': 20, 'popular': true},
       {'name': 'Kids cut', 'category': 'Kids', 'description': 'Under 12s.', 'duration': 20, 'price': 12},
     ],
     'barbers': [
-      {'name': 'Tony', 'speciality': 'Fades & skin fades', 'bio': 'Twenty years behind the chair.'},
-      {'name': 'Jay', 'speciality': 'Beards & hot towel shaves', 'bio': 'Razor work and beard sculpting.'},
-      {'name': 'Ali', 'speciality': 'Classic scissor cuts', 'bio': 'Old-school cuts, done properly.'},
+      {'photo': 'unsplash:1506794778202-cad84cf45f1d', 'name': 'Tony', 'speciality': 'Fades & skin fades', 'bio': 'Twenty years behind the chair.', 'instagram': '@tony.fades'},
+      {'photo': 'unsplash:1500648767791-00dcc994a43e', 'name': 'Jay', 'speciality': 'Beards & hot towel shaves', 'bio': 'Razor work and beard sculpting.', 'instagram': '@jay.razor'},
+      {'photo': 'unsplash:1595152772835-219674b2a8a6', 'name': 'Ali', 'speciality': 'Classic scissor cuts', 'bio': 'Old-school cuts, done properly.', 'instagram': '@ali.scissors'},
     ],
     'opening_hours': [{'opens': '09:00', 'closes': '19:00', 'days': 'Monday – Saturday'}],
+    'packages': [
+      {'name': 'Fade club', 'description': 'Two skin fades every month with your favourite barber, booked when it suits you.', 'visits': 2, 'price': 38},
+      {'name': 'Cut & beard monthly', 'description': 'A cut & beard every month, plus 10% off products.', 'visits': 1, 'price': 25},
+      {'name': 'Dad & lad', 'description': 'An adult cut and a kids cut, side by side.', 'visits': 1, 'price': 27},
+      {'name': 'Groom’s morning', 'description': 'Hot towel shaves and cuts for the groom and up to four friends, with the shop to yourselves.', 'visits': 1, 'price': 150},
+    ],
+    'reviews': [
+      {'name': 'Dev P.', 'rating': 5, 'quote': 'Tony’s skin fades are the cleanest in town. Booked online, sat down on time, out looking sharp.', 'source': 'Google'},
+      {'name': 'Mark L.', 'rating': 5, 'quote': 'Jay’s hot towel shave is an experience — best twenty quid I spend all month.', 'source': 'Google'},
+      {'name': 'Sam O.', 'rating': 4, 'quote': 'Great with my son, who hates haircuts. He actually asked to come back.', 'source': 'Facebook'},
+    ],
+    'closures': _holidays,
   }),
 
-  AppTemplate('gym', 'Gym & fitness classes', 'Class timetable, trainers, memberships and class sign-ups.', {
+  AppTemplate('gym', 'Gym & fitness classes', 'Weekly class timetable with places left, trainers, memberships, join enquiries and class sign-ups.', {
     'name': 'Forge Fitness',
     'summary': 'Members see classes and sign up; the manager runs the timetable.',
-    'site': {'style': 'bold', 'tagline': 'Stronger every week', 'hero': 'unsplash:1534438327276-14e5300c3a48', 'about': 'Strength, conditioning and community. Coached classes for every level, seven days a week.', 'address': 'Unit 4, Canal Works', 'phone': '0161 496 0789', 'currency': '£'},
+    'site': {'style': 'bold', 'tagline': 'Stronger every week', 'hero': 'unsplash:1534438327276-14e5300c3a48', 'about': 'Strength, conditioning and community. Coached classes for every level, seven days a week.', 'address': 'Unit 4, Canal Works', 'phone': '0161 496 0789', 'email': 'team@forgefitness.example', 'currency': '£', 'footer': 'Free parking · Showers & lockers · First class free'},
     'tables': [
       _t('classes', 'Classes', 'Weekly class timetable', 'see', [
         _f('name', 'Class', 'text', req: true), _f('day', 'Day', 'choice', options: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']),
         _f('time', 'Time', 'time'), _f('level', 'Level', 'choice', options: ['All levels', 'Beginner', 'Advanced']), _f('trainer', 'Trainer', 'link', link: 'trainers'),
         _f('description', 'About', 'longtext'), _f('spots', 'Spots', 'number'), _f('photo', 'Photo', 'image'),
+        _f('duration', 'Minutes', 'number'),
       ]),
-      _t('trainers', 'Trainers', 'Coaches', 'see', [_f('name', 'Name', 'text', req: true), _f('speciality', 'Speciality', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image')]),
-      _t('memberships', 'Memberships', 'Plans and prices', 'see', [_f('name', 'Plan', 'text', req: true), _f('description', 'What you get', 'longtext'), _f('price', 'Price per month', 'money')]),
+      _t('trainers', 'Trainers', 'Coaches', 'see', [_f('name', 'Name', 'text', req: true), _f('speciality', 'Speciality', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image'), _f('instagram', 'Instagram', 'text')]),
+      _t('memberships', 'Memberships', 'Plans and prices', 'see', [_f('name', 'Plan', 'text', req: true), _f('description', 'What you get', 'longtext'), _f('price', 'Price per month', 'money'), _f('popular', 'Most popular', 'yesno')]),
       _t('signups', 'Sign-ups', 'Class bookings', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('class', 'Class', 'link', link: 'classes', req: true), _f('date', 'Date', 'date', req: true),
         _f('status', 'Status', 'choice', options: ['Booked', 'Attended', 'No-show', 'Cancelled'], manager: true),
       ]),
+      _t('joins', 'Membership enquiries', 'People who want to join', 'add', [
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'),
+        _f('membership', 'Membership', 'link', link: 'memberships'), _f('start', 'When would you like to start?', 'date'), _f('notes', 'Your goals or questions', 'longtext'),
+        _f('status', 'Status', 'choice', options: ['New', 'Contacted', 'Joined', 'Cancelled'], manager: true),
+      ]),
+      _hours,
+      _reviews('members'),
+      _closures(),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Home', 'blocks': [_hero('Train hard. Feel unstoppable.', 'Coached classes for every level, in a gym that feels like a team.', button: 'Book a class', link: 'classes'), _list('memberships', 'Memberships', search: false)]},
-      {'id': 'classes', 'title': 'Classes', 'blocks': [_hero('This week’s classes', 'Find your class and save your spot.'), _list('classes', 'Timetable'), _form('signups', 'Save my spot', 'Book my place', 'You’re in! See you in class.')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Train hard. Feel unstoppable.', 'Coached classes for every level, in a gym that feels like a team.', button: 'Book a class', link: 'classes'),
+        _features('Why members stay', [
+          'Coached, every class: Qualified coaches who know your name and your lifts.',
+          'Every level welcome: Scaled workouts, from first session to competition.',
+          'Small classes: Places are limited, so you are never just a face in the crowd.',
+          'Open early till late: Train before work, at lunch or after the school run.',
+        ]),
+        _list('memberships', 'Memberships', search: false),
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What members say'},
+        {'type': 'contact', 'title': 'Find the gym', 'text': 'Free parking in the Canal Works yard. Showers, lockers and towels on site.'},
+      ]},
+      {'id': 'classes', 'title': 'Classes', 'blocks': [
+        _hero('This week’s classes', 'Find your class and save your spot. Places are limited, so book ahead.'),
+        {..._list('classes', 'Timetable'), 'layout': 'timetable'},
+        _form('signups', 'Save my spot', 'Book my place', 'You’re in! See you in class.'),
+      ]},
       {'id': 'trainers', 'title': 'Trainers', 'blocks': [_hero('Your coaches', 'Qualified, motivating and here for you.'), _list('trainers', 'Trainers', search: false)]},
+      {'id': 'join', 'title': 'Join', 'blocks': [
+        _hero('Join Forge', 'Pick a plan, tell us your goals, and a coach will call to book your free first session.'),
+        _list('memberships', 'Memberships', search: false),
+        _form('joins', 'I’d like to join', 'Send', 'Welcome aboard! A coach will call you within a day to book your first session.'),
+      ]},
+      _contactPage('Open every day. Drop in for a look around, or book your first class online.', hero: 'Come and train with us'),
     ],
   }, {
     'trainers': [
-      {'name': 'Jade', 'speciality': 'Strength & Olympic lifting', 'bio': 'Former GB weightlifter. Loves a heavy deadlift.'},
-      {'name': 'Tom', 'speciality': 'HIIT & conditioning', 'bio': 'Makes 45 minutes feel like 20.'},
-      {'name': 'Sofia', 'speciality': 'Yoga & mobility', 'bio': 'Helps lifters move better and recover faster.'},
+      {'photo': 'unsplash:1544005313-94ddf0286df2', 'name': 'Jade', 'speciality': 'Strength & Olympic lifting', 'bio': 'Former GB weightlifter. Loves a heavy deadlift.', 'instagram': '@jade.lifts'},
+      {'photo': 'unsplash:1539571696357-5a69c17a67c6', 'name': 'Tom', 'speciality': 'HIIT & conditioning', 'bio': 'Makes 45 minutes feel like 20.', 'instagram': '@tom.conditioning'},
+      {'photo': 'unsplash:1534528741775-53994a69daeb', 'name': 'Sofia', 'speciality': 'Yoga & mobility', 'bio': 'Helps lifters move better and recover faster.', 'instagram': '@sofia.moves'},
     ],
     'classes': [
-      {'name': 'Barbell strength', 'day': 'Monday', 'time': '18:30', 'level': 'All levels', 'trainer': 'Jade', 'description': 'Squat, press and pull with expert coaching.', 'spots': 14},
-      {'photo': 'unsplash:1518611012118-696072aa579a', 'name': 'HIIT blast', 'day': 'Tuesday', 'time': '07:00', 'level': 'All levels', 'trainer': 'Tom', 'description': 'Intervals that build fitness fast.', 'spots': 20},
-      {'photo': 'unsplash:1571019613454-1cb2f99b2d8b', 'name': 'Mobility flow', 'day': 'Wednesday', 'time': '19:00', 'level': 'Beginner', 'trainer': 'Sofia', 'description': 'Stretch, breathe and move freely.', 'spots': 16},
-      {'name': 'Olympic lifting', 'day': 'Thursday', 'time': '18:30', 'level': 'Advanced', 'trainer': 'Jade', 'description': 'Snatch and clean & jerk technique.', 'spots': 10},
-      {'name': 'Saturday sweat', 'day': 'Saturday', 'time': '09:00', 'level': 'All levels', 'trainer': 'Tom', 'description': 'Team workout to start the weekend.', 'spots': 24},
+      {'photo': 'unsplash:1517836357463-d25dfeac3438', 'name': 'Barbell strength', 'day': 'Monday', 'time': '18:30', 'level': 'All levels', 'trainer': 'Jade', 'description': 'Squat, press and pull with expert coaching.', 'spots': 14, 'duration': 60},
+      {'photo': 'unsplash:1518611012118-696072aa579a', 'name': 'HIIT blast', 'day': 'Tuesday', 'time': '07:00', 'level': 'All levels', 'trainer': 'Tom', 'description': 'Intervals that build fitness fast.', 'spots': 20, 'duration': 45},
+      {'photo': 'unsplash:1571019613454-1cb2f99b2d8b', 'name': 'Mobility flow', 'day': 'Wednesday', 'time': '19:00', 'level': 'Beginner', 'trainer': 'Sofia', 'description': 'Stretch, breathe and move freely.', 'spots': 16, 'duration': 45},
+      {'photo': 'unsplash:1541534741688-6078c6bfb5c5', 'name': 'Olympic lifting', 'day': 'Thursday', 'time': '18:30', 'level': 'Advanced', 'trainer': 'Jade', 'description': 'Snatch and clean & jerk technique.', 'spots': 10, 'duration': 75},
+      {'photo': 'unsplash:1574680096145-d05b474e2155', 'name': 'Saturday sweat', 'day': 'Saturday', 'time': '09:00', 'level': 'All levels', 'trainer': 'Tom', 'description': 'Team workout to start the weekend.', 'spots': 24, 'duration': 50},
+      {'name': 'Kettlebell circuit', 'day': 'Wednesday', 'time': '06:30', 'level': 'All levels', 'trainer': 'Jade', 'description': 'Swings, carries and presses against the clock.', 'spots': 12, 'duration': 45},
+      {'name': 'Spin & core', 'day': 'Friday', 'time': '07:00', 'level': 'All levels', 'trainer': 'Tom', 'description': 'Thirty minutes on the bike, fifteen on the mat.', 'spots': 16, 'duration': 45},
+      {'name': 'Sunday stretch', 'day': 'Sunday', 'time': '10:00', 'level': 'Beginner', 'trainer': 'Sofia', 'description': 'Slow, deep stretching to reset for the week.', 'spots': 18, 'duration': 60},
     ],
     'memberships': [
       {'name': 'Off-peak', 'description': 'Gym access 10:00–16:00 and weekends.', 'price': 25},
-      {'name': 'Unlimited', 'description': 'Gym any time plus every class.', 'price': 45},
+      {'name': 'Unlimited', 'description': 'Gym any time plus every class.', 'price': 45, 'popular': true},
       {'name': 'Class pass', 'description': '10 classes to use within three months.', 'price': 80},
     ],
+    'opening_hours': [{'opens': '06:00', 'closes': '22:00', 'days': 'Every day (weekends 08:00 – 18:00)'}],
+    'reviews': [
+      {'name': 'Leah M.', 'rating': 5, 'quote': 'I was terrified of barbells. Six months with Jade and I deadlift my body weight.', 'source': 'Google'},
+      {'name': 'Chris D.', 'rating': 5, 'quote': 'HIIT blast at 7am is the best start to the day. Small classes, proper coaching.', 'source': 'Google'},
+      {'name': 'Nadia K.', 'rating': 5, 'quote': 'Sofia’s mobility flow fixed my back. Friendly, clean and never too busy.', 'source': 'Facebook'},
+    ],
+    'closures': _holidays,
   }),
 
-  AppTemplate('shop', 'Shop · online orders', 'Product catalogue with photos and stock; orders to collect or delivered to your door.', {
+  AppTemplate('shop', 'Shop · online orders', 'Product catalogue with photos, offers and stock that counts down; orders to collect or delivered to your door.', {
     'name': 'Corner Store',
     'summary': 'Customers browse products and order to collect or for delivery.',
-    'site': {'style': 'modern', 'tagline': 'Order online, collect in minutes', 'hero': 'unsplash:1542838132-92c53300491e', 'about': 'Your local shop for fresh bread, groceries and everyday essentials.', 'address': '3 Market Square', 'phone': '0117 496 0321', 'currency': '£'},
+    'site': {'style': 'modern', 'tagline': 'Order online, collect in minutes', 'hero': 'unsplash:1542838132-92c53300491e', 'about': 'Your local shop for fresh bread, groceries and everyday essentials.', 'address': '3 Market Square', 'phone': '0117 496 0321', 'email': 'hello@cornerstore.example', 'currency': '£', 'footer': 'Local suppliers · Refill station · Same-day delivery'},
     'tables': [
       _t('products', 'Products', 'Things for sale', 'see', [
         _f('name', 'Product', 'text', req: true), _f('category', 'Category', 'choice', options: ['Bakery', 'Fresh', 'Pantry', 'Drinks', 'Household']),
         _f('description', 'Description', 'longtext'), _f('price', 'Price', 'money', req: true), _f('photo', 'Photo', 'image'), _f('in_stock', 'In stock', 'yesno'),
+        _f('sale_price', 'Sale price', 'money'), _f('featured', 'Featured', 'yesno'), _f('sku', 'Product code (SKU)', 'text', manager: true), _f('stock_qty', 'Number in stock', 'number', manager: true),
       ]),
       _t('orders', 'Orders', 'Orders to collect or deliver', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('items', 'Your basket', 'links', link: 'products', qty: true, req: true),
@@ -307,203 +460,479 @@ final appTemplates = <AppTemplate>[
         _f('address', 'Delivery address', 'text', req: true, when: {'type': ['Delivery']}), _f('postcode', 'Postcode', 'text', req: true, when: {'type': ['Delivery']}),
         _f('pickup', 'Collect / deliver at', 'datetime', req: true), _f('notes', 'Notes', 'longtext'),
         _f('status', 'Status', 'choice', options: ['New', 'Packing', 'Ready', 'Out for delivery', 'Collected', 'Delivered', 'Cancelled'], manager: true),
+        _f('payment', 'Payment', 'choice', options: ['Unpaid', 'Paid card', 'Paid cash'], manager: true), _f('total', 'Total', 'money', manager: true),
       ]),
       _hours,
+      _reviews('customers'),
+      _closures(),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Shop', 'blocks': [_hero('Fresh, local and ready when you are', 'Order online: collect in minutes or have it delivered.', button: 'Start your order', link: 'order'), _list('products', 'Products'), _info('opening_hours', 'Opening hours')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Fresh, local and ready when you are', 'Order online: collect in minutes or have it delivered.', button: 'Start your order', link: 'order'),
+        _features('Why shop with us', [
+          'Baked this morning: Bread and pastries from the bakery round the corner.',
+          'Local suppliers: Eggs, veg and honey from farms within twenty miles.',
+          'Ready in minutes: Order online and collect it packed at the counter.',
+          'Delivered to your door: Same-day delivery across town.',
+        ]),
+        {..._list('products', 'This week’s favourites', search: false), 'only': 'featured'},
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What neighbours say'},
+        {'type': 'contact', 'title': 'Find the shop', 'text': 'On the market square, next to the post box. Bikes welcome at the rack outside.'},
+      ]},
+      {'id': 'products', 'title': 'Shop', 'blocks': [_hero('Everything in store', 'Browse by aisle, see what’s on offer, and add it to your order.'), _list('products', 'Products')]},
       {'id': 'order', 'title': 'Order', 'blocks': [_hero('Order online', 'Add products, choose collection or delivery and a time, and we’ll have it packed.'), _list('products', 'Products'), _form('orders', 'Your basket', 'Place order', 'Thank you! We’ll text you when your order is ready.')]},
+      _contactPage('Open every day from early till late. Pop in, call us, or order online.'),
     ],
   }, {
     'products': [
-      {'photo': 'unsplash:1509440159596-0249088772ff', 'name': 'Sourdough loaf', 'category': 'Bakery', 'description': 'Baked this morning, 800 g.', 'price': 4.2, 'in_stock': true},
-      {'photo': 'unsplash:1555507036-ab1f4038808a', 'name': 'Butter croissant', 'category': 'Bakery', 'description': 'Flaky, all-butter.', 'price': 1.8, 'in_stock': true},
-      {'name': 'Free-range eggs (6)', 'category': 'Fresh', 'description': 'From a farm ten miles away.', 'price': 2.6, 'in_stock': true},
-      {'photo': 'unsplash:1542838132-92c53300491e', 'name': 'Seasonal veg box', 'category': 'Fresh', 'description': 'A week of local vegetables.', 'price': 14, 'in_stock': true},
-      {'name': 'Extra-virgin olive oil', 'category': 'Pantry', 'description': 'Cold-pressed, 500 ml.', 'price': 8.5, 'in_stock': true},
-      {'photo': 'unsplash:1495474472287-4d71bcdd2085', 'name': 'Ground coffee', 'category': 'Pantry', 'description': 'Medium roast, 250 g.', 'price': 6.4, 'in_stock': true},
-      {'name': 'Sparkling lemonade', 'category': 'Drinks', 'description': 'Cloudy and real, 750 ml.', 'price': 2.9, 'in_stock': true},
-      {'name': 'Eco washing-up liquid', 'category': 'Household', 'description': 'Refillable bottle.', 'price': 3.2, 'in_stock': false},
+      {'photo': 'unsplash:1509440159596-0249088772ff', 'name': 'Sourdough loaf', 'category': 'Bakery', 'description': 'Baked this morning, 800 g.', 'price': 4.2, 'in_stock': true, 'featured': true, 'sku': 'BAK-001', 'stock_qty': 24},
+      {'photo': 'unsplash:1555507036-ab1f4038808a', 'name': 'Butter croissant', 'category': 'Bakery', 'description': 'Flaky, all-butter.', 'price': 1.8, 'in_stock': true, 'featured': true, 'sku': 'BAK-002', 'stock_qty': 40},
+      {'name': 'Free-range eggs (6)', 'category': 'Fresh', 'description': 'From a farm ten miles away.', 'price': 2.6, 'in_stock': true, 'sku': 'FRE-001', 'stock_qty': 30},
+      {'photo': 'unsplash:1542838132-92c53300491e', 'name': 'Seasonal veg box', 'category': 'Fresh', 'description': 'A week of local vegetables.', 'price': 14, 'in_stock': true, 'featured': true, 'sku': 'FRE-002', 'stock_qty': 12},
+      {'name': 'Extra-virgin olive oil', 'category': 'Pantry', 'description': 'Cold-pressed, 500 ml.', 'price': 8.5, 'in_stock': true, 'sku': 'PAN-001', 'stock_qty': 18},
+      {'photo': 'unsplash:1495474472287-4d71bcdd2085', 'name': 'Ground coffee', 'category': 'Pantry', 'description': 'Medium roast, 250 g.', 'price': 6.4, 'in_stock': true, 'featured': true, 'sku': 'PAN-002', 'stock_qty': 20},
+      {'name': 'Sparkling lemonade', 'category': 'Drinks', 'description': 'Cloudy and real, 750 ml.', 'price': 2.9, 'in_stock': true, 'sku': 'DRI-001', 'stock_qty': 36},
+      {'name': 'Eco washing-up liquid', 'category': 'Household', 'description': 'Refillable bottle.', 'price': 3.2, 'in_stock': false, 'sku': 'HOU-001', 'stock_qty': 0},
+      {'name': 'Wildflower honey', 'category': 'Pantry', 'description': 'Raw honey from hives on the edge of town, 340 g.', 'price': 7.5, 'sale_price': 5.99, 'in_stock': true, 'featured': true, 'sku': 'PAN-003', 'stock_qty': 15},
+      {'name': 'Dark chocolate (70%)', 'category': 'Pantry', 'description': 'Single-origin, 100 g bar.', 'price': 3.2, 'sale_price': 2.5, 'in_stock': true, 'sku': 'PAN-004', 'stock_qty': 28},
     ],
     'opening_hours': [{'opens': '07:00', 'closes': '21:00', 'days': 'Every day'}],
+    'reviews': [
+      {'name': 'Grace T.', 'rating': 5, 'quote': 'Order on the way home, collect five minutes later. The sourdough sells out, so I always pre-order now.', 'source': 'Google'},
+      {'name': 'Owen B.', 'rating': 5, 'quote': 'The veg box is brilliant value and delivery is always on time.', 'source': 'Nextdoor'},
+      {'name': 'Asha P.', 'rating': 4, 'quote': 'Friendly, local and they actually have what you need. Love the honey.', 'source': 'Google'},
+    ],
+    'closures': _holidays,
   }),
 
-  AppTemplate('clinic', 'Clinic · appointments', 'Treatments, doctors and appointment requests from patients.', {
+  AppTemplate('clinic', 'Clinic · appointments', 'Treatments by category, dentists, membership plans, FAQs and appointments at a time that’s free.', {
     'name': 'Riverside Dental',
     'summary': 'Patients see treatments and doctors and request an appointment.',
-    'site': {'style': 'fresh', 'tagline': 'Gentle, modern dental care', 'hero': 'unsplash:1629909613654-28e377c37b09', 'about': 'Family dentistry with the latest technology and a calm, unhurried approach.', 'address': '27 River Lane', 'phone': '0131 496 0654', 'email': 'hello@riverside.example', 'currency': '£'},
+    'site': {'style': 'fresh', 'tagline': 'Gentle, modern dental care', 'hero': 'unsplash:1629909613654-28e377c37b09', 'about': 'Family dentistry with the latest technology and a calm, unhurried approach.', 'address': '27 River Lane', 'phone': '0131 496 0654', 'email': 'hello@riverside.example', 'currency': '£', 'footer': 'NHS & private patients · Step-free access · Nervous patients welcome'},
     'tables': [
-      _t('treatments', 'Treatments', 'What you offer', 'see', [_f('name', 'Treatment', 'text', req: true), _f('description', 'Description', 'longtext'), _f('duration', 'Minutes', 'number'), _f('price', 'From', 'money')]),
-      _t('doctors', 'Our dentists', 'Doctors and hygienists', 'see', [_f('name', 'Name', 'text', req: true), _f('role', 'Role', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image')]),
+      _t('treatments', 'Treatments', 'What you offer', 'see', [
+        _f('name', 'Treatment', 'text', req: true), _f('description', 'Description', 'longtext'), _f('duration', 'Minutes', 'number'), _f('price', 'From', 'money'),
+        _f('category', 'Category', 'choice', options: ['Check-ups & hygiene', 'Cosmetic', 'Fillings & repairs', 'Orthodontics', 'Emergency']), _f('photo', 'Photo', 'image'), _f('popular', 'Popular', 'yesno'),
+      ]),
+      _t('doctors', 'Our dentists', 'Doctors and hygienists', 'see', [_f('name', 'Name', 'text', req: true), _f('role', 'Role', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image'), _f('qualifications', 'Qualifications', 'text')]),
       _t('appointments', 'Appointments', 'Appointment requests', 'add', [
         _f('name', 'Patient name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'),
         _f('treatment', 'Treatment', 'link', link: 'treatments', req: true), _f('doctor', 'Preferred dentist', 'link', link: 'doctors'),
         _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true), _f('reason', 'Reason for visit', 'longtext'),
         _f('status', 'Status', 'choice', options: ['Confirmed', 'Completed', 'Cancelled', 'No-show'], manager: true),
+        _f('new_patient', 'New patient', 'yesno'), _f('nhs_private', 'NHS or private', 'choice', options: ['NHS', 'Private']),
+        _f('medical_notes', 'Medical notes', 'longtext', manager: true),
       ]),
       _hours,
+      _t('plans', 'Membership plans', 'Monthly plans for regular care', 'see', [_f('name', 'Plan', 'text', req: true), _f('description', 'What’s included', 'longtext'), _f('price', 'Per month', 'money'), _f('popular', 'Most popular', 'yesno')]),
+      _vouchers('Gift vouchers for whitening and hygiene visits'),
+      _reviews('patients'),
+      _closures(),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Home', 'blocks': [_hero('Healthy smiles, without the worry', 'Friendly dentists, clear prices and appointments that suit you.', button: 'Request an appointment', link: 'book'), _list('treatments', 'Treatments'), _info('opening_hours', 'Opening hours')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Healthy smiles, without the worry', 'Friendly dentists, clear prices and appointments that suit you.', button: 'Request an appointment', link: 'book'),
+        _features('Care that puts you at ease', [
+          'Nervous patients welcome: Gentle, unhurried appointments — we explain everything first.',
+          'Clear prices: Every treatment priced up front, with NHS and private options.',
+          'Same-day emergencies: In pain? Call before 10am and we’ll see you today.',
+          'Family friendly: Children seen free with a parent on a membership plan.',
+        ]),
+        {..._list('treatments', 'Popular treatments', search: false), 'only': 'popular'},
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What our patients say'},
+        {'type': 'contact', 'title': 'Find the practice', 'text': 'Ground-floor practice with step-free access. Free parking for patients behind the building.'},
+      ]},
+      {'id': 'treatments', 'title': 'Treatments', 'blocks': [_hero('Treatments & prices', 'From check-ups to clear aligners. Prices are a guide: your dentist confirms yours at your visit.'), _list('treatments', 'Treatments')]},
       {'id': 'team', 'title': 'Our dentists', 'blocks': [_hero('Meet our team', 'Experienced, gentle and here to help.'), _list('doctors', 'Dentists', search: false)]},
       {'id': 'book', 'title': 'Appointments', 'blocks': [
         _hero('Book an appointment', 'Choose a day and see when our dentists are free.'),
         {'type': 'availability', 'table': 'appointments', 'title': 'Find a free appointment'},
         _form('appointments', 'Your appointment', 'Book appointment', 'You’re booked! We’ll send a reminder the day before.'),
       ]},
+      {'id': 'plans', 'title': 'Plans & gifts', 'blocks': [
+        _hero('Membership plans', 'Spread the cost of regular check-ups and hygiene visits, with savings on treatment.'),
+        _list('plans', 'Plans', search: false),
+        _form('vouchers', 'Give a brighter smile', 'Request voucher', 'Thank you! We’ll call to take payment and then send the voucher code.'),
+      ]},
+      {'id': 'faq', 'title': 'FAQ', 'blocks': [
+        _hero('Questions patients ask', 'If yours isn’t here, call us — a real person answers.'),
+        _text('## Appointments\n### How do I register as a new patient?\nBook any appointment online and tick “New patient”. Arrive ten minutes early to fill in your medical history.\n### What if I need to cancel?\nPlease give us 24 hours’ notice, by phone or with the link in your reminder, so someone else can have the time.\n### Do you see emergencies?\nYes. Call before 10am and we keep same-day slots for pain, swelling and broken teeth.'),
+        _text('## Costs\n### Do you take NHS patients?\nYes, for check-ups and treatment that is clinically needed. Cosmetic treatments such as whitening are private.\n### Can I spread the cost?\nOur membership plans cover check-ups and hygiene visits for a monthly fee, and larger treatments can be paid in instalments.'),
+        _text('## Your visit\n### I’m nervous about the dentist. Can you help?\nMany of our patients are. Tell us when you book: we take it slowly, explain each step and you can stop at any time.\n### Is there parking?\nFree patient parking behind the practice, and the number 23 bus stops outside.'),
+      ]},
+      _contactPage('Monday to Friday. Call us, drop in, or book online any time.'),
     ],
   }, {
     'treatments': [
-      {'name': 'Check-up & clean', 'description': 'Full examination, scale and polish.', 'duration': 40, 'price': 65},
-      {'name': 'Teeth whitening', 'description': 'Professional at-home whitening kit with custom trays.', 'duration': 30, 'price': 299},
-      {'name': 'White filling', 'description': 'Natural-looking, tooth-coloured fillings.', 'duration': 45, 'price': 120},
-      {'name': 'Invisalign consultation', 'description': 'Scan, plan and price for clear aligners.', 'duration': 30, 'price': 0},
-      {'name': 'Emergency appointment', 'description': 'Same-day help for pain or damage.', 'duration': 30, 'price': 85},
+      {'photo': 'unsplash:1606811971618-4486d14f3f99', 'name': 'Check-up & clean', 'description': 'Full examination, scale and polish.', 'duration': 40, 'price': 65, 'category': 'Check-ups & hygiene', 'popular': true},
+      {'name': 'Teeth whitening', 'description': 'Professional at-home whitening kit with custom trays.', 'duration': 30, 'price': 299, 'category': 'Cosmetic', 'popular': true},
+      {'name': 'White filling', 'description': 'Natural-looking, tooth-coloured fillings.', 'duration': 45, 'price': 120, 'category': 'Fillings & repairs'},
+      {'photo': 'unsplash:1609840114035-3c981b782dfe', 'name': 'Invisalign consultation', 'description': 'Scan, plan and price for clear aligners.', 'duration': 30, 'price': 0, 'category': 'Orthodontics', 'popular': true},
+      {'photo': 'unsplash:1598256989800-fe5f95da9787', 'name': 'Emergency appointment', 'description': 'Same-day help for pain or damage.', 'duration': 30, 'price': 85, 'category': 'Emergency'},
+      {'name': 'Hygienist visit', 'description': 'A deep clean and advice to keep gums healthy.', 'duration': 30, 'price': 55, 'category': 'Check-ups & hygiene'},
+      {'name': 'Composite bonding', 'description': 'Reshape chipped or uneven teeth in a single visit.', 'duration': 60, 'price': 250, 'category': 'Cosmetic'},
     ],
     'doctors': [
-      {'name': 'Dr Hannah Reid', 'role': 'Principal dentist', 'bio': 'Special interest in nervous patients and cosmetic dentistry.'},
-      {'photo': 'unsplash:1588776814546-1ffcf47267a5', 'name': 'Dr Omar Khalil', 'role': 'Dentist · implants', 'bio': 'Implant and restorative work with a gentle touch.'},
-      {'name': 'Leah Grant', 'role': 'Hygienist', 'bio': 'Helps you keep your gums healthy for life.'},
+      {'photo': 'unsplash:1559839734-2b71ea197ec2', 'name': 'Dr Hannah Reid', 'role': 'Principal dentist', 'bio': 'Special interest in nervous patients and cosmetic dentistry.', 'qualifications': 'BDS (Edinburgh), PG Cert Conscious Sedation'},
+      {'photo': 'unsplash:1588776814546-1ffcf47267a5', 'name': 'Dr Omar Khalil', 'role': 'Dentist · implants', 'bio': 'Implant and restorative work with a gentle touch.', 'qualifications': 'BDS, MSc Implant Dentistry'},
+      {'photo': 'unsplash:1438761681033-6461ffad8d80', 'name': 'Leah Grant', 'role': 'Hygienist', 'bio': 'Helps you keep your gums healthy for life.', 'qualifications': 'Dip Dental Hygiene & Therapy'},
     ],
     'opening_hours': [{'opens': '08:30', 'closes': '18:00', 'days': 'Monday – Friday'}],
+    'plans': [
+      {'name': 'Essential care', 'description': 'Two check-ups and two hygienist visits a year, plus 10% off treatment.', 'price': 14.5},
+      {'name': 'Complete care', 'description': 'Everything in Essential, plus emergency cover and 20% off treatment.', 'price': 22, 'popular': true},
+      {'name': 'Family plan', 'description': 'Complete care for two adults; children seen free.', 'price': 42},
+    ],
+    'reviews': [
+      {'name': 'Joanna F.', 'rating': 5, 'quote': 'I hadn’t been to a dentist in ten years. Dr Reid was so patient — I actually look forward to check-ups now.', 'source': 'Google'},
+      {'name': 'Ravi S.', 'rating': 5, 'quote': 'Booked an emergency slot online at 8am and was out of pain by lunchtime.', 'source': 'Google'},
+      {'name': 'Claire M.', 'rating': 5, 'quote': 'Leah is the gentlest hygienist I’ve ever had. Clear prices, no upselling.', 'source': 'NHS website'},
+    ],
+    'closures': _holidays,
   }),
 
-  AppTemplate('hotel', 'Hotel · guesthouse', 'Rooms with photos and prices, and booking requests.', {
+  AppTemplate('hotel', 'Hotel · guesthouse', 'Rooms with photos and prices, free rooms for any dates, rooms by night for the manager, amenities and booking requests.', {
     'name': 'The Harbour House',
     'summary': 'Guests see rooms and request a stay.',
-    'site': {'style': 'minimal', 'tagline': 'Eight rooms by the sea', 'hero': 'unsplash:1566073771259-6a8506099945', 'about': 'A small boutique guesthouse with sea views, local breakfasts and the beach two minutes away.', 'address': '1 Quay Road, St Ives', 'phone': '01736 496 0987', 'email': 'stay@harbourhouse.example', 'currency': '£'},
+    'site': {'style': 'minimal', 'tagline': 'Eight rooms by the sea', 'hero': 'unsplash:1566073771259-6a8506099945', 'about': 'A small boutique guesthouse with sea views, local breakfasts and the beach two minutes away.', 'address': '1 Quay Road, St Ives', 'phone': '01736 496 0987', 'email': 'stay@harbourhouse.example', 'currency': '£', 'footer': 'Dogs welcome · Free parking permits · Check-in from 3pm'},
     'tables': [
       _t('rooms', 'Rooms', 'Rooms and nightly prices', 'see', [
         _f('name', 'Room', 'text', req: true), _f('description', 'Description', 'longtext'), _f('guests', 'Sleeps up to', 'number'), _f('bed', 'Bed', 'choice', options: ['Double', 'King', 'Twin', 'Family']),
         _f('price', 'Per night', 'money'), _f('sea_view', 'Sea view', 'yesno'), _f('photo', 'Photo', 'image'),
+        _f('size_sqm', 'Size (m²)', 'number'), _f('breakfast', 'Breakfast included', 'yesno'), _f('min_nights', 'Minimum nights', 'number'),
       ]),
       _t('bookings', 'Bookings', 'Booking requests', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('room', 'Room', 'link', link: 'rooms', req: true),
         _f('check_in', 'Check-in', 'date', req: true), _f('check_out', 'Check-out', 'date', req: true), _f('guests', 'Guests', 'number', req: true), _f('requests', 'Requests', 'longtext'),
         _f('status', 'Status', 'choice', options: ['Requested', 'Confirmed', 'Checked in', 'Cancelled'], manager: true),
+        _f('arrival', 'Arriving around', 'choice', options: ['Before 3pm', '3pm – 6pm', '6pm – 9pm', 'After 9pm']),
+        _f('deposit', 'Deposit', 'money', manager: true), _f('total', 'Total', 'money', manager: true),
       ]),
+      _t('opening_hours', 'Reception & check-in', 'When reception is open, and check-in and check-out times', 'see', [
+        _f('opens', 'Reception opens', 'time'), _f('closes', 'Reception closes', 'time'), _f('days', 'Days', 'text'),
+        _f('checkin_from', 'Check-in from', 'time'), _f('checkout_by', 'Check-out by', 'time'),
+      ], single: true),
+      _t('amenities', 'Amenities', 'What guests can enjoy', 'see', [_f('name', 'Amenity', 'text', req: true), _f('description', 'Description', 'longtext'), _f('photo', 'Photo', 'image')]),
+      _reviews('guests'),
+      _closures('Closed dates', 'Dates we are closed (holidays, winter break): no stays then'),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Home', 'blocks': [_hero('Wake up to the sea', 'Eight calm, light rooms a short walk from the beach.', button: 'Check availability', link: 'book'), _text('## A small hotel with a big welcome\nLocal breakfasts, sea air and quiet nights. Everything you need, nothing you don’t.'), _list('rooms', 'Rooms', search: false)]},
-      {'id': 'book', 'title': 'Book', 'blocks': [_hero('Book your stay', 'Choose a room and your dates; we’ll confirm by email.'), _form('bookings', 'Your stay', 'Request booking', 'Thank you! We’ll email you to confirm your stay.')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Wake up to the sea', 'Eight calm, light rooms a short walk from the beach.', button: 'Check availability', link: 'book'),
+        _text('## A small hotel with a big welcome\nLocal breakfasts, sea air and quiet nights. Everything you need, nothing you don’t.'),
+        _features('Why guests return', [
+          'Sea views: Most rooms look straight over the harbour and lighthouse.',
+          'Cornish breakfast: Local eggs, smoked fish and bread from the bakery next door.',
+          'Two minutes to the beach: Towels, buckets and spades waiting by the door.',
+          'Dogs welcome: Beds, bowls and treats for four-legged guests.',
+        ]),
+        _list('rooms', 'Rooms', search: false),
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What guests say'},
+        {'type': 'contact', 'title': 'Find us', 'text': 'On the harbour front. Parking permits for the Island car park are free for guests.'},
+      ]},
+      {'id': 'rooms', 'title': 'Rooms', 'blocks': [
+        _hero('Our rooms', 'Every room has a king-size or twin beds, a rain shower, fast Wi-Fi and Cornish toiletries.'),
+        _list('rooms', 'Rooms', search: false),
+        {'type': 'gallery', 'table': 'rooms', 'title': 'A look inside'},
+      ]},
+      {'id': 'book', 'title': 'Book', 'blocks': [
+        _hero('Book your stay', 'Choose your dates, see which rooms are free and what the stay costs; we’ll confirm by email.'),
+        {'type': 'stay', 'table': 'bookings', 'title': 'Find a free room'},
+        _form('bookings', 'Your stay', 'Request booking', 'Thank you! We’ll email you to confirm your stay.'),
+      ]},
+      {'id': 'stay', 'title': 'Your stay', 'blocks': [
+        _hero('Your stay with us', 'Breakfast, beach kit, parking and a few things that make a weekend by the sea easy.'),
+        _list('amenities', 'Amenities', search: false),
+        _info('opening_hours', 'Reception & check-in'),
+      ]},
+      _contactPage('Reception is open every day. Call, email or drop by — we love to help plan your stay.', hero: 'Get in touch'),
     ],
   }, {
     'rooms': [
-      {'photo': 'unsplash:1590490360182-c33d57733427', 'name': 'Harbour View', 'description': 'Our favourite: a king bed facing the boats and lighthouse.', 'guests': 2, 'bed': 'King', 'price': 165, 'sea_view': true},
-      {'photo': 'unsplash:1611892440504-42a792e24d32', 'name': 'The Loft', 'description': 'Top-floor room with sloping ceilings and a roll-top bath.', 'guests': 2, 'bed': 'Double', 'price': 145, 'sea_view': true},
-      {'name': 'Garden Twin', 'description': 'Quiet twin room opening onto the garden.', 'guests': 2, 'bed': 'Twin', 'price': 115},
-      {'name': 'Family Suite', 'description': 'Two connecting rooms for up to four.', 'guests': 4, 'bed': 'Family', 'price': 210, 'sea_view': true},
+      {'photo': 'unsplash:1590490360182-c33d57733427', 'name': 'Harbour View', 'description': 'Our favourite: a king bed facing the boats and lighthouse.', 'guests': 2, 'bed': 'King', 'price': 165, 'sea_view': true, 'size_sqm': 24, 'breakfast': true, 'min_nights': 1},
+      {'photo': 'unsplash:1611892440504-42a792e24d32', 'name': 'The Loft', 'description': 'Top-floor room with sloping ceilings and a roll-top bath.', 'guests': 2, 'bed': 'Double', 'price': 145, 'sea_view': true, 'size_sqm': 22, 'breakfast': true, 'min_nights': 1},
+      {'photo': 'unsplash:1559599238-308793637427', 'name': 'Garden Twin', 'description': 'Quiet twin room opening onto the garden.', 'guests': 2, 'bed': 'Twin', 'price': 115, 'size_sqm': 18, 'breakfast': true, 'min_nights': 1},
+      {'photo': 'unsplash:1631049307264-da0ec9d70304', 'name': 'Family Suite', 'description': 'Two connecting rooms for up to four.', 'guests': 4, 'bed': 'Family', 'price': 210, 'sea_view': true, 'size_sqm': 38, 'breakfast': true, 'min_nights': 1},
+    ],
+    'opening_hours': [{'opens': '08:00', 'closes': '22:00', 'days': 'Every day', 'checkin_from': '15:00', 'checkout_by': '11:00'}],
+    'amenities': [
+      {'photo': 'unsplash:1533777857889-4be7c70b33f7', 'name': 'Cornish breakfast', 'description': 'Served 8 – 10am: local eggs, smoked fish, fresh bread and good coffee.'},
+      {'photo': 'unsplash:1507525428034-b723cf961d3e', 'name': 'Beach two minutes away', 'description': 'Porthminster beach is down the steps. Towels, windbreaks and buckets to borrow.'},
+      {'name': 'Free parking permits', 'description': 'A free permit for the Island car park for every night of your stay.'},
+      {'name': 'Dogs welcome', 'description': 'Two dog-friendly rooms with beds, bowls and treats.'},
+      {'name': 'Fast Wi-Fi', 'description': 'Fibre broadband in every room and the lounge.'},
+      {'name': 'Late check-out', 'description': 'Stay until 1pm when the room is free — just ask at breakfast.'},
+    ],
+    'reviews': [
+      {'name': 'Emma & Joe', 'rating': 5, 'quote': 'Woke up to the boats in the harbour every morning. The breakfast alone is worth the trip.', 'source': 'Tripadvisor'},
+      {'name': 'Raj P.', 'rating': 5, 'quote': 'Spotless, quiet and so close to the beach. They even had a bed ready for our dog.', 'source': 'Booking.com'},
+      {'name': 'Helen G.', 'rating': 4, 'quote': 'The Loft is gorgeous — that bath! Booking online was simple and the price was clear.', 'source': 'Google'},
+    ],
+    'closures': [
+      {'reason': 'Winter break', 'date': '2027-01-11', 'until': '2027-01-14'},
     ],
   }),
 
-  AppTemplate('garage', 'Car repair garage', 'Services with prices and service bookings with car details.', {
+  AppTemplate('garage', 'Car repair garage', 'Services with prices, bookings with car details and a workshop board, quotes and courtesy cars.', {
     'name': 'Precision Motors',
     'summary': 'Drivers see services and book their car in.',
-    'site': {'style': 'modern', 'tagline': 'Honest servicing & repairs', 'hero': 'unsplash:1486262715619-67b85e0b08d3', 'about': 'Independent garage with main-dealer skills and fair, fixed prices.', 'address': 'Unit 9, Riverside Industrial Estate', 'phone': '0113 496 0246', 'currency': '£'},
+    'site': {'style': 'modern', 'tagline': 'Honest servicing & repairs', 'hero': 'unsplash:1486262715619-67b85e0b08d3', 'about': 'Independent garage with main-dealer skills and fair, fixed prices.', 'address': 'Unit 9, Riverside Industrial Estate', 'phone': '0113 496 0246', 'email': 'workshop@precisionmotors.example', 'currency': '£', 'footer': 'Courtesy cars · Free local collection · 12-month parts warranty'},
     'tables': [
-      _t('services', 'Services', 'Work and prices', 'see', [_f('name', 'Service', 'text', req: true), _f('description', 'What’s included', 'longtext'), _f('price', 'From', 'money'), _f('time', 'Takes', 'text')]),
+      _t('services', 'Services', 'Work and prices', 'see', [
+        _f('name', 'Service', 'text', req: true), _f('description', 'What’s included', 'longtext'), _f('price', 'From', 'money'), _f('time', 'Takes', 'text'),
+        _f('category', 'Category', 'choice', options: ['MOT', 'Servicing', 'Brakes & tyres', 'Repairs', 'Diagnostics']), _f('photo', 'Photo', 'image'), _f('popular', 'Popular', 'yesno'),
+      ]),
       _t('bookings', 'Bookings', 'Cars booked in', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('car', 'Car (make & model)', 'text', req: true), _f('plate', 'Registration', 'text', req: true),
         _f('services', 'Services', 'links', link: 'services', req: true), _f('date', 'Drop-off date', 'date', req: true), _f('notes', 'Describe the problem', 'longtext'),
         _f('status', 'Status', 'choice', options: ['Booked', 'In the workshop', 'Ready', 'Collected', 'Cancelled'], manager: true),
+        _f('mileage', 'Mileage', 'number'), _f('courtesy_car', 'I need a courtesy car', 'yesno'),
+        _f('quote', 'Quote', 'money', manager: true), _f('job_notes', 'Workshop notes', 'longtext', manager: true),
       ]),
       _hours,
+      _reviews('drivers'),
+      _closures(),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Home', 'blocks': [_hero('Expert car care at fair prices', 'Servicing, MOT and repairs for every make — with no surprises on the bill.', button: 'Book your car in', link: 'book'), _list('services', 'Services & prices'), _info('opening_hours', 'Opening hours')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Expert car care at fair prices', 'Servicing, MOT and repairs for every make — with no surprises on the bill.', button: 'Book your car in', link: 'book'),
+        _features('Why drivers trust us', [
+          'No surprises: We call with a quote before any extra work, every time.',
+          'Main-dealer skills: Trained technicians and the latest diagnostic kit.',
+          'Courtesy cars: Keep moving while we look after yours.',
+          '12-month warranty: On every part we fit and every job we do.',
+        ]),
+        {..._list('services', 'Most booked', search: false), 'only': 'popular'},
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What drivers say'},
+        {'type': 'contact', 'title': 'Find the workshop', 'text': 'Unit 9 on the Riverside estate, signposted from the A65. Free collection within five miles.'},
+      ]},
+      {'id': 'services', 'title': 'Services', 'blocks': [_hero('Services & prices', 'Fixed prices for the jobs we do most. Anything else, we quote first.'), _list('services', 'Services & prices')]},
       {'id': 'book', 'title': 'Book', 'blocks': [_hero('Book your car in', 'Tell us about your car and pick a day. We’ll call with a quote before any extra work.'), _form('bookings', 'Booking', 'Book in', 'Thank you! We’ll call to confirm your booking.')]},
+      _contactPage('Monday to Friday and Saturday mornings. Call the workshop or book online.'),
     ],
   }, {
     'services': [
-      {'name': 'MOT test', 'description': 'Full MOT with free retest within 10 days.', 'price': 54.85, 'time': '1 hour'},
-      {'name': 'Interim service', 'description': 'Oil and filter, 30-point check.', 'price': 129, 'time': '1.5 hours'},
-      {'name': 'Full service', 'description': 'All filters, plugs, fluids and 60-point check.', 'price': 229, 'time': '3 hours'},
-      {'name': 'Brake pads (front)', 'description': 'Quality pads fitted and tested.', 'price': 140, 'time': '1.5 hours'},
-      {'name': 'Air-con re-gas', 'description': 'Leak test and re-gas.', 'price': 69, 'time': '45 minutes'},
-      {'name': 'Diagnostics', 'description': 'Find that warning light’s cause.', 'price': 45, 'time': '30 minutes'},
+      {'photo': 'unsplash:1625047509168-a7026f36de04', 'name': 'MOT test', 'description': 'Full MOT with free retest within 10 days.', 'price': 54.85, 'time': '1 hour', 'category': 'MOT', 'popular': true},
+      {'photo': 'unsplash:1487754180451-c456f719a1fc', 'name': 'Interim service', 'description': 'Oil and filter, 30-point check.', 'price': 129, 'time': '1.5 hours', 'category': 'Servicing'},
+      {'name': 'Full service', 'description': 'All filters, plugs, fluids and 60-point check.', 'price': 229, 'time': '3 hours', 'category': 'Servicing', 'popular': true},
+      {'name': 'Brake pads (front)', 'description': 'Quality pads fitted and tested.', 'price': 140, 'time': '1.5 hours', 'category': 'Brakes & tyres'},
+      {'name': 'Air-con re-gas', 'description': 'Leak test and re-gas.', 'price': 69, 'time': '45 minutes', 'category': 'Repairs'},
+      {'photo': 'unsplash:1530046339160-ce3e530c7d2f', 'name': 'Diagnostics', 'description': 'Find that warning light’s cause.', 'price': 45, 'time': '30 minutes', 'category': 'Diagnostics', 'popular': true},
+      {'name': 'Tyre fitting', 'description': 'Supply and fit, with balancing and valve.', 'price': 65, 'time': '30 minutes', 'category': 'Brakes & tyres'},
+      {'name': 'Clutch replacement', 'description': 'New clutch kit fitted, road tested.', 'price': 495, 'time': '1 day', 'category': 'Repairs'},
     ],
     'opening_hours': [{'opens': '08:00', 'closes': '17:30', 'days': 'Monday – Friday, Saturday mornings'}],
+    'reviews': [
+      {'name': 'Gareth H.', 'rating': 5, 'quote': 'Quoted £229 for the service, paid £229. They rang before replacing anything else. Rare and refreshing.', 'source': 'Google'},
+      {'name': 'Mina A.', 'rating': 5, 'quote': 'Warning light sorted in an hour, and a courtesy car so I could get to work.', 'source': 'Google'},
+      {'name': 'Pete W.', 'rating': 4, 'quote': 'Honest advice on my old Golf — told me what could wait. Will be back for the MOT.', 'source': 'Facebook'},
+    ],
+    'closures': _holidays,
   }),
 
-  AppTemplate('tutoring', 'Tutoring & courses', 'Courses with level and schedule, and student enrolments.', {
+  AppTemplate('tutoring', 'Tutoring & courses', 'Courses with start dates and places left, tutors, and student enrolments.', {
     'name': 'Bright Minds Tutoring',
     'summary': 'Parents and students see courses and enrol.',
-    'site': {'style': 'fresh', 'tagline': 'Confidence in every subject', 'hero': 'unsplash:1503676260728-1c00da094a0b', 'about': 'Small-group and one-to-one tutoring from qualified teachers.', 'email': 'hello@brightminds.example', 'phone': '020 7946 0777', 'currency': '£'},
+    'site': {'style': 'fresh', 'tagline': 'Confidence in every subject', 'hero': 'unsplash:1503676260728-1c00da094a0b', 'about': 'Small-group and one-to-one tutoring from qualified teachers.', 'address': '14 Library Walk', 'email': 'hello@brightminds.example', 'phone': '020 7946 0777', 'currency': '£', 'footer': 'Qualified teachers · DBS checked · Groups of 10 or fewer'},
     'tables': [
       _t('courses', 'Courses', 'Courses on offer', 'see', [
         _f('name', 'Course', 'text', req: true), _f('subject', 'Subject', 'choice', options: ['Maths', 'English', 'Science', 'Languages', 'Coding']),
         _f('level', 'Level', 'choice', options: ['Primary', 'GCSE', 'A-level', 'Adults']), _f('schedule', 'When', 'text'), _f('description', 'About', 'longtext'), _f('price', 'Per term', 'money'), _f('photo', 'Photo', 'image'),
+        _f('start_date', 'Starts', 'date'), _f('seats', 'Places', 'number'), _f('tutor', 'Tutor', 'link', link: 'tutors'),
       ]),
       _t('enrolments', 'Enrolments', 'Students who signed up', 'add', [
         _f('student', 'Student name', 'text', req: true), _f('parent', 'Parent / guardian', 'text'), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'),
         _f('course', 'Course', 'link', link: 'courses', req: true), _f('notes', 'Anything we should know?', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Confirmed', 'Waiting list', 'Cancelled'], manager: true),
+        _f('year_group', 'School year', 'text'), _f('payment', 'Payment', 'choice', options: ['Unpaid', 'Part paid', 'Paid'], manager: true),
       ]),
+      _t('tutors', 'Tutors', 'Our teachers', 'see', [_f('name', 'Name', 'text', req: true), _f('subjects', 'Teaches', 'text'), _f('bio', 'About', 'longtext'), _f('photo', 'Photo', 'image'), _f('qualifications', 'Qualifications', 'text')]),
+      _reviews('parents and students'),
+      _closures('Term breaks', 'Holidays and term breaks, when there are no lessons'),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Home', 'blocks': [_hero('Learning that clicks', 'Patient, qualified tutors who build real understanding and confidence.', button: 'Enrol now', link: 'enrol'), _list('courses', 'Courses')]},
-      {'id': 'enrol', 'title': 'Enrol', 'blocks': [_hero('Enrol a student', 'Choose a course and we’ll be in touch with everything you need.'), _form('enrolments', 'Enrolment', 'Enrol', 'Thank you! We’ll email you the details within a day.')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Learning that clicks', 'Patient, qualified tutors who build real understanding and confidence.', button: 'Enrol now', link: 'enrol'),
+        _features('Why families choose us', [
+          'Qualified teachers: Every tutor is a qualified, DBS-checked teacher.',
+          'Small groups: Ten students or fewer, so nobody gets left behind.',
+          'Progress you can see: A short report to parents every half term.',
+          'Exam ready: Past papers, mock exams and technique that wins marks.',
+        ]),
+        _list('courses', 'Courses starting soon', search: false),
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What families say'},
+        {'type': 'contact', 'title': 'Find us', 'text': 'Upstairs at 14 Library Walk, next to the central library. Parents are welcome to wait in our café corner.'},
+      ]},
+      {'id': 'tutors', 'title': 'Tutors', 'blocks': [_hero('Meet the tutors', 'Experienced classroom teachers who love their subjects.'), _list('tutors', 'Tutors', search: false)]},
+      {'id': 'enrol', 'title': 'Enrol', 'blocks': [
+        _hero('Enrol a student', 'Choose a course and we’ll be in touch with everything you need.'),
+        _list('courses', 'Choose a course'),
+        _form('enrolments', 'Enrolment', 'Enrol', 'Thank you! We’ll email you the details within a day.'),
+      ]},
+      _contactPage('Questions about a course or which level is right? Call or email and a tutor will help.', hero: 'Talk to us', hours: false),
     ],
   }, {
+    'tutors': [
+      {'photo': 'unsplash:1580489944761-15a19d654956', 'name': 'Ms Adebayo', 'subjects': 'Maths', 'bio': 'Head of maths for eight years; makes algebra make sense.', 'qualifications': 'BSc Mathematics, PGCE'},
+      {'photo': 'unsplash:1472099645785-5658abf4ff4e', 'name': 'Dr Patel', 'subjects': 'Chemistry & biology', 'bio': 'Former research chemist and A-level examiner.', 'qualifications': 'PhD Chemistry, QTS'},
+      {'photo': 'unsplash:1517841905240-472988babdf9', 'name': 'Miss Carter', 'subjects': 'English & reading', 'bio': 'Primary specialist who turns reluctant readers into bookworms.', 'qualifications': 'BA English, PGCE Primary'},
+      {'name': 'Mr García', 'subjects': 'Spanish & Python', 'bio': 'Bilingual teacher and part-time software developer.', 'qualifications': 'BA Modern Languages, MSc Computing'},
+    ],
     'courses': [
-      {'name': 'GCSE Maths booster', 'subject': 'Maths', 'level': 'GCSE', 'schedule': 'Tuesdays 17:00', 'description': 'Exam technique and the topics that matter most.', 'price': 180},
-      {'name': 'A-level Chemistry', 'subject': 'Science', 'level': 'A-level', 'schedule': 'Thursdays 18:00', 'description': 'Organic, physical and inorganic made clear.', 'price': 220},
-      {'name': 'Reading confidence', 'subject': 'English', 'level': 'Primary', 'schedule': 'Saturdays 10:00', 'description': 'Phonics and fun with books for ages 6–9.', 'price': 150},
-      {'name': 'Python for beginners', 'subject': 'Coding', 'level': 'Adults', 'schedule': 'Wednesdays 19:00', 'description': 'From zero to your first useful programs.', 'price': 200},
-      {'name': 'Conversational Spanish', 'subject': 'Languages', 'level': 'Adults', 'schedule': 'Mondays 19:00', 'description': 'Speak from week one in a relaxed group.', 'price': 160},
+      {'photo': 'unsplash:1434030216411-0b793f4b4173', 'name': 'GCSE Maths booster', 'subject': 'Maths', 'level': 'GCSE', 'schedule': 'Tuesdays 17:00', 'description': 'Exam technique and the topics that matter most.', 'price': 180, 'start_date': '2027-01-12', 'seats': 10, 'tutor': 'Ms Adebayo'},
+      {'name': 'A-level Chemistry', 'subject': 'Science', 'level': 'A-level', 'schedule': 'Thursdays 18:00', 'description': 'Organic, physical and inorganic made clear.', 'price': 220, 'start_date': '2027-01-14', 'seats': 8, 'tutor': 'Dr Patel'},
+      {'photo': 'unsplash:1509062522246-3755977927d7', 'name': 'Reading confidence', 'subject': 'English', 'level': 'Primary', 'schedule': 'Saturdays 10:00', 'description': 'Phonics and fun with books for ages 6–9.', 'price': 150, 'start_date': '2027-01-16', 'seats': 8, 'tutor': 'Miss Carter'},
+      {'photo': 'unsplash:1522202176988-66273c2fd55f', 'name': 'Python for beginners', 'subject': 'Coding', 'level': 'Adults', 'schedule': 'Wednesdays 19:00', 'description': 'From zero to your first useful programs.', 'price': 200, 'start_date': '2027-01-13', 'seats': 12, 'tutor': 'Mr García'},
+      {'name': 'Conversational Spanish', 'subject': 'Languages', 'level': 'Adults', 'schedule': 'Mondays 19:00', 'description': 'Speak from week one in a relaxed group.', 'price': 160, 'start_date': '2027-01-11', 'seats': 10, 'tutor': 'Mr García'},
+    ],
+    'reviews': [
+      {'name': 'Parent of Year 11 student', 'rating': 5, 'quote': 'From a 4 to a 7 in GCSE maths in two terms. Ms Adebayo gave him his confidence back.', 'source': 'Google'},
+      {'name': 'Lucy H.', 'rating': 5, 'quote': 'My daughter now reads at bedtime without being asked. Miss Carter is magic.', 'source': 'Facebook'},
+      {'name': 'Ben T.', 'rating': 5, 'quote': 'The Python course got me my first automation working at work within a month.', 'source': 'Google'},
+    ],
+    'closures': [
+      {'reason': 'Christmas holidays', 'date': '2026-12-19', 'until': '2027-01-04'},
+      {'reason': 'February half term', 'date': '2027-02-13', 'until': '2027-02-21'},
     ],
   }),
 
-  AppTemplate('events', 'Events & tickets', 'Upcoming events with dates and prices, and ticket requests.', {
+  AppTemplate('events', 'Events & tickets', 'Upcoming events with tickets left and sold-out shows, ticket requests and private hire.', {
     'name': 'Basement Live',
     'summary': 'Fans see upcoming shows and request tickets.',
-    'site': {'style': 'bold', 'tagline': 'Live music, every week', 'hero': 'unsplash:1501281668745-f7f57925c3b4', 'about': 'An intimate 200-capacity venue for new bands, jazz nights and DJs.', 'address': '88 Camden Road', 'email': 'tickets@basement.example', 'currency': '£'},
+    'site': {'style': 'bold', 'tagline': 'Live music, every week', 'hero': 'unsplash:1501281668745-f7f57925c3b4', 'about': 'An intimate 200-capacity venue for new bands, jazz nights and DJs.', 'address': '88 Camden Road', 'phone': '020 7946 0999', 'email': 'tickets@basement.example', 'currency': '£', 'footer': 'Doors open 30 minutes before the show · Step-free access · Bar till late'},
     'tables': [
       _t('events', 'Events', 'Upcoming shows', 'see', [
         _f('name', 'Event', 'text', req: true), _f('date', 'Date', 'date', req: true), _f('time', 'Doors', 'time'), _f('genre', 'Genre', 'choice', options: ['Rock', 'Jazz', 'Electronic', 'Comedy', 'Folk']),
         _f('description', 'About', 'longtext'), _f('price', 'Ticket', 'money'), _f('photo', 'Poster', 'image'), _f('sold_out', 'Sold out', 'yesno'),
+        _f('featured', 'Featured', 'yesno'), _f('age', 'Ages', 'choice', options: ['All ages', '14+', '18+']), _f('capacity', 'Tickets available', 'number', manager: true),
       ]),
       _t('tickets', 'Ticket requests', 'Ticket orders', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('event', 'Event', 'link', link: 'events', req: true), _f('quantity', 'Tickets', 'number', req: true),
         _f('status', 'Status', 'choice', options: ['Requested', 'Paid', 'Sent', 'Cancelled'], manager: true),
+        _f('total', 'Total', 'money', manager: true),
       ]),
+      _t('hire', 'Private hire', 'Parties, launches and private hire enquiries', 'add', [
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('date', 'Date', 'date', req: true), _f('guests', 'Guests', 'number', req: true),
+        _f('event_type', 'What’s the occasion?', 'choice', options: ['Birthday', 'Launch', 'Wedding party', 'Corporate', 'Other'], req: true), _f('notes', 'Tell us more', 'longtext'),
+        _f('status', 'Status', 'choice', options: ['Enquiry', 'Confirmed', 'Deposit paid', 'Cancelled'], manager: true),
+      ]),
+      _reviews('fans'),
     ],
     'pages': [
-      {'id': 'home', 'title': 'What’s on', 'blocks': [_hero('Live music, up close', 'New bands, late-night jazz and the best DJs — every week.', button: 'Get tickets', link: 'tickets'), _list('events', 'Coming up')]},
-      {'id': 'tickets', 'title': 'Tickets', 'blocks': [_hero('Get tickets', 'Choose a show and how many tickets; we’ll email you a payment link.'), _form('tickets', 'Ticket request', 'Request tickets', 'Thank you! Check your email for your payment link.')]},
+      {'id': 'home', 'title': 'What’s on', 'blocks': [
+        _hero('Live music, up close', 'New bands, late-night jazz and the best DJs — every week.', button: 'Get tickets', link: 'tickets'),
+        _list('events', 'Coming up'),
+        _features('Why Basement Live', [
+          'Up close: 200 people, no barriers — you’re never far from the stage.',
+          'New music first: The bands everyone talks about next year play here this year.',
+          'Fair prices: No booking fees, ever.',
+          'Bar till late: Local beers, proper cocktails and a kitchen till midnight.',
+        ]),
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What fans say'},
+        {'type': 'contact', 'title': 'Find the venue', 'text': 'Down the stairs at 88 Camden Road, two minutes from Camden Town station. Step-free entrance on Pratt Street.'},
+      ]},
+      {'id': 'tickets', 'title': 'Tickets', 'blocks': [
+        _hero('Get tickets', 'Choose a show and how many tickets; we’ll email you a payment link. No booking fees.'),
+        _list('events', 'Choose a show', search: false),
+        _form('tickets', 'Ticket request', 'Request tickets', 'Thank you! Check your email for your payment link.'),
+      ]},
+      {'id': 'hire', 'title': 'Private hire', 'blocks': [
+        {..._hero('Hire the Basement', 'Birthdays, launches, wedding parties and company nights for up to 200, with our sound system and bar.'), 'image': 'unsplash:1514525253161-7a46d19cd819'},
+        _features('What’s included', [
+          'Full sound and lights: With a technician for the night.',
+          'Your own bar: Tabs, drinks packages or a cash bar — your choice.',
+          'Food till late: Street-food sharing boards from our kitchen.',
+        ]),
+        {'type': 'gallery', 'table': 'events', 'title': 'Nights at the Basement'},
+        _form('hire', 'Tell us about your event', 'Send enquiry', 'Thank you! We’ll call within a day to talk it through.'),
+      ]},
+      _contactPage('Box office questions, access needs or press: get in touch.', hero: 'Get in touch', hours: false, closed: false, more: [
+        _text('## Good to know\n### Is there an age limit?\nMost gigs are 14+ (under-16s with an adult); club nights are 18+. Each event shows its ages.\n### Can I get a refund?\nTickets are refundable up to 48 hours before the show, or if we have to cancel.\n### Is the venue accessible?\nYes: step-free entrance on Pratt Street, an accessible toilet and a viewing platform. Tell us when you book and we’ll save you a space.'),
+      ]),
     ],
   }, {
     'events': [
-      {'photo': 'unsplash:1492144534655-ae79c964c9d7', 'name': 'The Midnight Owls', 'date': '2026-10-17', 'time': '19:30', 'genre': 'Rock', 'description': 'Loud, sweaty, joyful garage rock.', 'price': 12},
-      {'name': 'Late Jazz Session', 'date': '2026-10-22', 'time': '21:00', 'genre': 'Jazz', 'description': 'House trio plus surprise guests.', 'price': 8},
-      {'photo': 'unsplash:1501386761578-eac5c94b800a', 'name': 'Deep House Friday', 'date': '2026-10-24', 'time': '22:00', 'genre': 'Electronic', 'description': 'Four DJs, all night long.', 'price': 15},
-      {'name': 'Stand-up Showcase', 'date': '2026-10-29', 'time': '20:00', 'genre': 'Comedy', 'description': 'Five rising comics, one great night.', 'price': 10},
+      {'photo': 'unsplash:1492144534655-ae79c964c9d7', 'name': 'The Midnight Owls', 'date': '2026-10-17', 'time': '19:30', 'genre': 'Rock', 'description': 'Loud, sweaty, joyful garage rock.', 'price': 12, 'featured': true, 'age': '14+', 'capacity': 200},
+      {'photo': 'unsplash:1415201364774-f6f0bb35f28f', 'name': 'Late Jazz Session', 'date': '2026-10-22', 'time': '21:00', 'genre': 'Jazz', 'description': 'House trio plus surprise guests.', 'price': 8, 'age': '18+', 'capacity': 120},
+      {'photo': 'unsplash:1501386761578-eac5c94b800a', 'name': 'Deep House Friday', 'date': '2026-10-24', 'time': '22:00', 'genre': 'Electronic', 'description': 'Four DJs, all night long.', 'price': 15, 'featured': true, 'age': '18+', 'capacity': 200},
+      {'name': 'Stand-up Showcase', 'date': '2026-10-29', 'time': '20:00', 'genre': 'Comedy', 'description': 'Five rising comics, one great night.', 'price': 10, 'age': '18+', 'capacity': 150},
+      {'name': 'Folk in the Round', 'date': '2026-11-05', 'time': '19:30', 'genre': 'Folk', 'description': 'Four songwriters, one stage, stories between the songs.', 'price': 10, 'age': 'All ages', 'capacity': 120},
+      {'photo': 'unsplash:1470225620780-dba8ba36b745', 'name': 'Neon Nights: 80s Disco', 'date': '2026-11-14', 'time': '21:00', 'genre': 'Electronic', 'description': 'Synths, glitter and every 80s floor-filler you love.', 'price': 14, 'featured': true, 'age': '18+', 'capacity': 200},
+      {'photo': 'unsplash:1516450360452-9312f5e86fc7', 'name': 'Big Band Christmas Special', 'date': '2026-12-18', 'time': '19:00', 'genre': 'Jazz', 'description': 'A sixteen-piece swing band and Christmas classics.', 'price': 18, 'age': 'All ages', 'capacity': 180},
+    ],
+    'reviews': [
+      {'name': 'Jess K.', 'rating': 5, 'quote': 'Best small venue in London. Saw the Midnight Owls from three feet away and the sound was perfect.', 'source': 'Google'},
+      {'name': 'Marco D.', 'rating': 5, 'quote': 'The late jazz sessions are a secret worth keeping. Great cocktails too.', 'source': 'Time Out'},
+      {'name': 'Aisha N.', 'rating': 4, 'quote': 'Held my 30th here — the team sorted everything, from the playlist to the cake.', 'source': 'Google'},
     ],
   }),
 
-  AppTemplate('realestate', 'Real estate listings', 'Property listings with photos, and viewing requests.', {
+  AppTemplate('realestate', 'Real estate listings', 'Property listings with photos, status and energy ratings; viewing and valuation requests.', {
     'name': 'Oak & Stone Estates',
     'summary': 'Buyers and renters browse homes and book viewings.',
-    'site': {'style': 'minimal', 'tagline': 'Homes worth coming home to', 'hero': 'unsplash:1600596542815-ffad4c1539a9', 'about': 'Independent estate agents who know every street in town.', 'address': '5 High Street', 'phone': '01865 496 0135', 'email': 'homes@oakstone.example', 'currency': '£'},
+    'site': {'style': 'minimal', 'tagline': 'Homes worth coming home to', 'hero': 'unsplash:1600596542815-ffad4c1539a9', 'about': 'Independent estate agents who know every street in town.', 'address': '5 High Street', 'phone': '01865 496 0135', 'email': 'homes@oakstone.example', 'currency': '£', 'footer': 'Sales · Lettings · Free valuations · Member of The Property Ombudsman'},
     'tables': [
       _t('listings', 'Properties', 'Homes for sale and to rent', 'see', [
         _f('title', 'Property', 'text', req: true), _f('type', 'For', 'choice', options: ['Sale', 'Rent']), _f('price', 'Price', 'money'), _f('bedrooms', 'Bedrooms', 'number'),
         _f('area', 'Area', 'text'), _f('description', 'Description', 'longtext'), _f('photo', 'Photo', 'image'), _f('available', 'Available', 'yesno'),
+        _f('bathrooms', 'Bathrooms', 'number'), _f('size_sqft', 'Size (sq ft)', 'number'), _f('epc', 'EPC rating', 'choice', options: ['A', 'B', 'C', 'D', 'E', 'F', 'G']),
+        _f('status', 'Status', 'choice', options: ['For sale', 'To let', 'Under offer', 'Sold', 'Let']), _f('featured', 'Featured', 'yesno'),
       ]),
       _t('viewings', 'Viewing requests', 'People who want to see a home', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('property', 'Property', 'link', link: 'listings', req: true),
         _f('date', 'Preferred date', 'date'), _f('message', 'Message', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Booked', 'Viewed', 'Offer made', 'Closed'], manager: true),
+        _f('position', 'Your position', 'choice', options: ['First-time buyer', 'Nothing to sell', 'Need to sell first', 'Looking to rent']),
       ]),
+      _t('valuations', 'Valuation requests', 'Owners who want their home valued', 'add', [
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'),
+        _f('address', 'Property address', 'text', req: true), _f('postcode', 'Postcode', 'text'), _f('property_type', 'Type of home', 'choice', options: ['House', 'Flat', 'Bungalow', 'Cottage', 'Other']),
+        _f('bedrooms', 'Bedrooms', 'number'), _f('purpose', 'Thinking of', 'choice', options: ['Selling', 'Letting']), _f('date', 'Preferred date', 'date'), _f('notes', 'Anything we should know?', 'longtext'),
+        _f('status', 'Status', 'choice', options: ['New', 'Booked', 'Valued', 'Instructed', 'Cancelled'], manager: true),
+      ]),
+      _hours,
+      _reviews('clients'),
+      _closures(),
     ],
     'pages': [
-      {'id': 'home', 'title': 'Properties', 'blocks': [_hero('Find the place you’ll love', 'Hand-picked homes to buy and rent, and agents who answer the phone.', button: 'Book a viewing', link: 'viewing'), _list('listings', 'Available now')]},
+      {'id': 'home', 'title': 'Home', 'blocks': [
+        _hero('Find the place you’ll love', 'Hand-picked homes to buy and rent, and agents who answer the phone.', button: 'Book a viewing', link: 'viewing'),
+        _features('Why move with Oak & Stone', [
+          'Local experts: Born and raised here — we know every street and school.',
+          'Free valuations: An honest price in 48 hours, with no obligation.',
+          'Viewings that suit you: Evenings and Saturdays, at your pace.',
+          'With you to the keys: One agent from first viewing to completion.',
+        ]),
+        {..._list('listings', 'Featured homes', search: false), 'only': 'featured'},
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What clients say'},
+        {'type': 'contact', 'title': 'Visit the office', 'text': 'On the High Street opposite the town hall. Pop in for a coffee and a chat about moving.'},
+      ]},
+      {'id': 'properties', 'title': 'Properties', 'blocks': [_hero('Homes to buy and rent', 'Search by area, price or bedrooms. New homes are added every week.'), _list('listings', 'Available now')]},
       {'id': 'viewing', 'title': 'Book a viewing', 'blocks': [_hero('Book a viewing', 'Choose a property and a day; we’ll confirm a time.'), _form('viewings', 'Viewing request', 'Request viewing', 'Thank you! An agent will call you today.')]},
+      {'id': 'valuation', 'title': 'Free valuation', 'blocks': [
+        _hero('What’s your home worth?', 'Book a free, no-obligation valuation with an agent who sells homes on your street.'),
+        _features('How it works', [
+          'Tell us about it: A few details about your home and when suits you.',
+          'We visit: Thirty minutes to look round and talk through your plans.',
+          'An honest price: A written valuation within 48 hours, with our evidence.',
+        ]),
+        _form('valuations', 'Request a valuation', 'Book my valuation', 'Thank you! An agent will call within a day to arrange a time.'),
+      ]},
+      _contactPage('Open six days a week. Call, email or drop in — we’re always happy to talk about moving.', hero: 'Talk to us'),
     ],
   }, {
     'listings': [
-      {'photo': 'unsplash:1570129477492-45c003edd2be', 'title': 'Victorian terrace, Jericho', 'type': 'Sale', 'price': 685000, 'bedrooms': 3, 'area': 'Jericho', 'description': 'Light-filled family home with a walled garden, five minutes from the canal.', 'available': true},
-      {'photo': 'unsplash:1497366216548-37526070297c', 'title': 'Modern flat with balcony', 'type': 'Rent', 'price': 1650, 'bedrooms': 2, 'area': 'City centre', 'description': 'Per month. Open-plan living, lift, secure parking.', 'available': true},
-      {'title': 'Cottage with orchard', 'type': 'Sale', 'price': 520000, 'bedrooms': 2, 'area': 'Headington', 'description': 'Stone cottage, wood burner, apple trees and a studio.', 'available': true},
-      {'title': 'Studio near the station', 'type': 'Rent', 'price': 975, 'bedrooms': 1, 'area': 'Botley', 'description': 'Per month. Bright, newly decorated, bills included.', 'available': true},
+      {'photo': 'unsplash:1570129477492-45c003edd2be', 'title': 'Victorian terrace, Jericho', 'type': 'Sale', 'price': 685000, 'bedrooms': 3, 'area': 'Jericho', 'description': 'Light-filled family home with a walled garden, five minutes from the canal.', 'available': true, 'bathrooms': 2, 'size_sqft': 1350, 'epc': 'D', 'status': 'For sale', 'featured': true},
+      {'photo': 'unsplash:1497366216548-37526070297c', 'title': 'Modern flat with balcony', 'type': 'Rent', 'price': 1650, 'bedrooms': 2, 'area': 'City centre', 'description': 'Per month. Open-plan living, lift, secure parking.', 'available': true, 'bathrooms': 1, 'size_sqft': 780, 'epc': 'B', 'status': 'To let', 'featured': true},
+      {'photo': 'unsplash:1564013799919-ab600027ffc6', 'title': 'Cottage with orchard', 'type': 'Sale', 'price': 520000, 'bedrooms': 2, 'area': 'Headington', 'description': 'Stone cottage, wood burner, apple trees and a studio.', 'available': true, 'bathrooms': 1, 'size_sqft': 950, 'epc': 'E', 'status': 'Under offer'},
+      {'photo': 'unsplash:1502672260266-1c1ef2d93688', 'title': 'Studio near the station', 'type': 'Rent', 'price': 975, 'bedrooms': 1, 'area': 'Botley', 'description': 'Per month. Bright, newly decorated, bills included.', 'available': true, 'bathrooms': 1, 'size_sqft': 420, 'epc': 'C', 'status': 'To let'},
+      {'photo': 'unsplash:1600585154340-be6161a56a0c', 'title': 'Family home with garden, Summertown', 'type': 'Sale', 'price': 895000, 'bedrooms': 4, 'area': 'Summertown', 'description': 'Detached, extended and ready to move into, with a south-facing garden.', 'available': true, 'bathrooms': 3, 'size_sqft': 2100, 'epc': 'C', 'status': 'For sale', 'featured': true},
+      {'photo': 'unsplash:1600607687939-ce8a6c25118c', 'title': 'Riverside apartment', 'type': 'Rent', 'price': 2100, 'bedrooms': 2, 'area': 'Osney', 'description': 'Per month. Furnished, river views, concierge and gym.', 'available': true, 'bathrooms': 2, 'size_sqft': 910, 'epc': 'B', 'status': 'To let'},
     ],
+    'opening_hours': [{'opens': '09:00', 'closes': '17:30', 'days': 'Monday – Saturday'}],
+    'reviews': [
+      {'name': 'The Morgans', 'rating': 5, 'quote': 'Sold in nine days for over the asking price. Sarah kept us updated every step of the way.', 'source': 'Google'},
+      {'name': 'Kit L.', 'rating': 5, 'quote': 'Found our flat on a Saturday, moved in two weeks later. Honest, quick and kind.', 'source': 'Rightmove'},
+      {'name': 'Daniel R.', 'rating': 4, 'quote': 'Their valuation was spot on and they never pushed. Would use again.', 'source': 'Google'},
+    ],
+    'closures': _holidays,
   }),
 ];

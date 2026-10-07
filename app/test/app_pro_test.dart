@@ -67,8 +67,9 @@ void main() {
           expect(t.fields.length, lessThanOrEqualTo(20), reason: t.id);
           final st = statusOf(t);
           if (t.fields.any((f) => f.id == 'status')) expect(st?.id, 'status', reason: '${tpl.id}.${t.id}');
-          // The first manager-only choice is the status (old code and tests rely on it).
-          if (st != null) expect(t.fields.where((f) => f.type == 'choice' && f.managerOnly).first.id, st.id);
+          // The first manager-only choice is the status (old code and tests rely on it). (A home's
+          // status — for sale, sold, let — is public: there is no manager-only choice before it.)
+          if (st != null && (st.managerOnly || t.access.add)) expect(t.fields.where((f) => f.type == 'choice' && f.managerOnly).first.id, st.id);
         }
         // Every block of the template survives the repair (none points at something missing).
         for (final p in s.pages) {

@@ -150,6 +150,8 @@ class AppServer {
     return {
       ...j,
       'manager': manager,
+      // Lists whose cards show "3 places left" / "Full" (classes, courses, events).
+      'places': [for (final t in spec.tables) if (spec.tables.any((b) => b.access.add && data.placeLinks(b).any((f) => f.link == t.id))) t.id],
       'tables': [
         for (final t in spec.tables)
           if (manager || t.access.see || t.access.add)
@@ -195,6 +197,42 @@ class AppServer {
       // Takings and how busy it is: the manager's dashboard only.
       if (!manager) return _json(req, 403, {'error': 'Only the manager can do that.'});
       return _json(req, 200, await data.stats());
+    }
+    if (rest.startsWith('_places/')) {
+      // Places left on each class, course or event: counts only, never who booked.
+      final t = spec.table(rest.substring(8));
+      if (t == null || (!manager && !t.access.see)) return _json(req, 404, {'error': 'Not found'});
+      return _json(req, 200, await data.placesLeft(t));
+    }
+    if (rest.startsWith('_stay/')) {
+      // Which rooms are free for every night of a stay. Customers see rooms, never who is staying.
+      final t = spec.table(rest.substring(6));
+      final s = t == null ? null : AppData.stayOf(t);
+      if (s == null || (!manager && !t!.access.add)) return _json(req, 404, {'error': 'Not found'});
+      final q = req.uri.queryParameters;
+      final from = parseDate(q['from'] ?? ''), to = parseDate(q['to'] ?? '');
+      if (from == null || to == null || to.compareTo(from) <= 0) return _json(req, 400, {'error': 'Choose a check-out day after the check-in day.'});
+      for (var d = DateTime.parse(from); d.isBefore(DateTime.parse(to)); d = DateTime(d.year, d.month, d.day + 1)) {
+        final day = d.toIso8601String().substring(0, 10);
+        final why = await data.closedOn(day);
+        if (why != null) return _json(req, 200, {'nights': AppData.nights(from, to), 'free': const [], 'closed': why, 'closed_on': day});
+      }
+      final a = await data.freeStay(t!, from, to, guests: int.tryParse(q['guests'] ?? '') ?? 0);
+      final rooms = spec.table(s.room.link!)!, minF = AppData.minNightsOf(rooms), n = AppData.nights(from, to);
+      int min(Map<String, Object?> r) => minF == null ? 1 : ((r[minF.id] as num?)?.toInt() ?? 1);
+      return _json(req, 200, {
+        'nights': n,
+        'free': [for (final r in a.free) if (min(r) <= n) r['id']],
+        'too_short': {for (final r in a.free) if (min(r) > n) '${r['id']}': min(r)},
+      });
+    }
+    if (rest.startsWith('_occupancy/')) {
+      // Rooms by night with the guests' names: the manager's only.
+      if (!manager) return _json(req, 403, {'error': 'Only the manager can do that.'});
+      final t = spec.table(rest.substring(11));
+      if (t == null || AppData.stayOf(t) == null) return _json(req, 404, {'error': 'Not found'});
+      final q = req.uri.queryParameters;
+      return _json(req, 200, await data.occupancy(t, parseDate(q['from'] ?? '') ?? DateTime.now().toIso8601String().substring(0, 10), days: int.tryParse(q['days'] ?? '') ?? 14));
     }
     if (rest.startsWith('_plan/')) {
       // Which tables (stylists, rooms…) are booked when on a day. Customers see no names.
@@ -604,10 +642,14 @@ class AppServer {
             final why = await data.closedOn(day);
             if (why != null) return AppData.closedMessage(day, why);
           }
-          final a = await data.freeStay(t, from, to, guests: guests);
-          final label = spec.table(stay.room.link!)!.labelField;
+          final all = await data.freeStay(t, from, to, guests: guests);
+          final rooms = spec.table(stay.room.link!)!, label = rooms.labelField, minF = AppData.minNightsOf(rooms);
           final nights = DateTime.parse('${to}T00:00:00Z').difference(DateTime.parse('${from}T00:00:00Z')).inDays;
-          final booked = a.taken.isEmpty ? '' : 'Booked then: ${a.taken.map((r) => r[label]).join(', ')}. ';
+          // A room let for a minimum number of nights isn't offered for a shorter stay.
+          int min(Map<String, Object?> r) => minF == null ? 1 : ((r[minF.id] as num?)?.toInt() ?? 1);
+          final a = (free: [for (final r in all.free) if (min(r) <= nights) r], taken: all.taken);
+          final short = [for (final r in all.free) if (min(r) > nights) '${r[label]} (at least ${min(r)} nights)'];
+          final booked = (a.taken.isEmpty ? '' : 'Booked then: ${a.taken.map((r) => r[label]).join(', ')}. ') + (short.isEmpty ? '' : 'Only for longer stays: ${short.join(', ')}. ');
           if (a.free.isEmpty) return 'Nothing is free for all $nights nights, ${withDay(from)} to ${withDay(to)}${guests > 0 ? ' for $guests' : ''}. ${booked}Ask whether other dates suit them.';
           return 'Free for all $nights nights, ${withDay(from)} to ${withDay(to)}${guests > 0 ? ' for $guests' : ''}: ${a.free.map((r) => r[label]).join(', ')}. $booked'
               'This only checked — NOTHING IS BOOKED YET. Once you have the caller\'s name and phone and they agree, call add_${t.id} with one of the free ones.';

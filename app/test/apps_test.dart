@@ -290,31 +290,33 @@ void main() {
     await s.initialize();
     expect((await s.listTools()).map((t) => t.name), contains('check_reservations'));
 
+    // (A day still ahead whenever this runs: callers only reach their own upcoming bookings.)
+    final day = DateTime.now().add(const Duration(days: 30)).toIso8601String().substring(0, 10);
     // No table chosen: the smallest free one that fits.
-    var r = await s.callTool('add_reservations', {'name': 'Kei Han', 'phone': '07700 900124', 'date': '2026-10-07', 'time': '19:00', 'guests': 2});
+    var r = await s.callTool('add_reservations', {'name': 'Kei Han', 'phone': '07700 900124', 'date': day, 'time': '19:00', 'guests': 2});
     expect(r.isError, isFalse, reason: r.text);
     expect(r.text, contains('Table: 1'));
     // The same table, overlapping: on the phone another free table is given (and the AI is told).
-    r = await s.callTool('add_reservations', {'name': 'Ann', 'phone': '07700 100001', 'date': '2026-10-07', 'time': '20:00', 'guests': 2, 'table': '1'});
+    r = await s.callTool('add_reservations', {'name': 'Ann', 'phone': '07700 100001', 'date': day, 'time': '20:00', 'guests': 2, 'table': '1'});
     expect(r.isError, isFalse, reason: r.text);
     expect(r.text, contains('1 was taken, so it is 2 instead'));
     await s.callTool('cancel_my_reservations', {'phone': '07700 100001', 'name': 'Ann'});
     // After the first one ends, it's free again.
-    r = await s.callTool('add_reservations', {'name': 'Bo', 'phone': '07700 100011', 'date': '2026-10-07', 'time': '21:00', 'guests': 2, 'table': '1'});
+    r = await s.callTool('add_reservations', {'name': 'Bo', 'phone': '07700 100011', 'date': day, 'time': '21:00', 'guests': 2, 'table': '1'});
     expect(r.isError, isFalse, reason: r.text);
     // Too big for a 2-seater.
-    r = await s.callTool('add_reservations', {'name': 'Cy', 'phone': '07700 100012', 'date': '2026-10-07', 'time': '13:00', 'guests': 6, 'table': '1'});
+    r = await s.callTool('add_reservations', {'name': 'Cy', 'phone': '07700 100012', 'date': day, 'time': '13:00', 'guests': 6, 'table': '1'});
     expect(r.text, contains('too small'));
-    final c = await s.callTool('check_reservations', {'date': '2026-10-07', 'time': '19:30', 'guests': 2});
+    final c = await s.callTool('check_reservations', {'date': day, 'time': '19:30', 'guests': 2});
     expect(c.text, startsWith('Free tables at 19:30'));
     expect(c.text, contains('Booked: 1'));
 
     // The website's day plan: no names for customers, names for the manager.
-    final pub = jsonDecode((await http.get(Uri.parse('http://127.0.0.1:${srv.port}/api/_plan/reservations?date=2026-10-07'))).body) as Map;
+    final pub = jsonDecode((await http.get(Uri.parse('http://127.0.0.1:${srv.port}/api/_plan/reservations?date=$day'))).body) as Map;
     expect(pub['open'], '12:00');
     expect((pub['busy'] as List).length, 3);
     expect((pub['busy'] as List).first.containsKey('who'), isFalse);
-    final mgr = jsonDecode((await http.get(Uri.parse('http://127.0.0.1:${srv.port}/api/_plan/reservations?date=2026-10-07'), headers: {'X-Key': '1234'})).body) as Map;
+    final mgr = jsonDecode((await http.get(Uri.parse('http://127.0.0.1:${srv.port}/api/_plan/reservations?date=$day'), headers: {'X-Key': '1234'})).body) as Map;
     expect((mgr['busy'] as List).first['who'], 'Kei Han');
     await srv.stop();
   });

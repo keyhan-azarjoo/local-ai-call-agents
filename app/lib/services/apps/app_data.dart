@@ -229,30 +229,192 @@ class AppData {
       }
       return same;
     }
+    // A class, course or event that is full (that day): refused, with how many places are left.
+    if (!manager) await _capacity(t, clean);
     if (via != null) clean['_via'] = via;
     final shape = BookingShape.of(spec, t);
     try {
       if (shape != null) await _holdResource(shape, clean);
-      if (shape == null) await _holdStay(t, clean);
+      if (shape == null) await _holdStay(t, clean, manager: manager);
     } on AppDataError {
       // Test set-up ("someone has The Loft"): an earlier test record may hold it already — taken either way.
       if (via != 'seed') rethrow;
     }
+    // Enough in stock for what's ordered (checked before it is saved, taken off after).
+    await _stock(t, const {}, clean, check: !manager, apply: false);
     final now = DateTime.now().millisecondsSinceEpoch;
-    return db.raw.insert('app_rows', {'app_id': appId, 'tbl': t.id, 'data': jsonEncode(clean), 'created_at': now, 'updated_at': now});
+    final id = await db.raw.insert('app_rows', {'app_id': appId, 'tbl': t.id, 'data': jsonEncode(clean), 'created_at': now, 'updated_at': now});
+    await _stock(t, const {}, clean, check: false, apply: true);
+    return id;
   }
 
-  /// Customers can't order what is marked out of stock (or book a home no longer available).
+  /// Customers can't order what is marked out of stock or sold out (or book a home no longer available,
+  /// or one that is sold or let).
   Future<void> _inStock(TableSpec t, Map<String, Object?> clean) async {
     for (final f in t.fields.where((f) => (f.type == 'link' || f.type == 'links') && clean[f.id] != null)) {
       final target = spec.table(f.link!)!;
       final flag = target.fields.where((x) => x.type == 'yesno' && RegExp(r'stock|available|availab', caseSensitive: false).hasMatch('${x.id} ${x.label}')).firstOrNull;
-      if (flag == null) continue;
+      final sold = target.fields.where((x) => x.type == 'yesno' && RegExp(r'sold', caseSensitive: false).hasMatch(x.id)).firstOrNull;
+      final state = target.fields.where((x) => x.type == 'choice' && x.id == 'status' && !x.managerOnly && x.options.any((o) => _gone.hasMatch(o))).firstOrNull;
+      if (flag == null && sold == null && state == null) continue;
       final ids = [for (final x in (clean[f.id] is List ? clean[f.id] as List : [clean[f.id]])) x is Map ? x['id'] : x];
       for (final r in await list(target.id, manager: true)) {
-        if (ids.contains(r['id']) && r[flag.id] == false) {
+        if (!ids.contains(r['id'])) continue;
+        if (flag != null && r[flag.id] == false) {
           throw AppDataError('${r[target.labelField]} is ${RegExp('stock').hasMatch(flag.id) ? 'out of stock' : 'not available'} right now: tell the caller, and offer something else.');
         }
+        if (sold != null && r[sold.id] == true) throw AppDataError('${r[target.labelField]} is sold out: tell the caller, and offer another one.');
+        if (state != null && _gone.hasMatch('${r[state.id] ?? ''}')) {
+          throw AppDataError('${r[target.labelField]} is ${'${r[state.id]}'.toLowerCase()}, so it is no longer available: tell the caller, and offer another one.');
+        }
+      }
+    }
+  }
+
+  /// A home that is gone: sold or let.
+  static final _gone = RegExp(r'^(sold|let|sold stc|let agreed)$', caseSensitive: false);
+
+  // ---------------- places: classes, courses, events ----------------
+
+  /// How many a record can take: a class's spots, a course's seats, an event's capacity.
+  static FieldSpec? capacityOf(TableSpec target) =>
+      target.fields.where((f) => f.type == 'number' && RegExp(r'^(spots|seats|places|spaces|capacity|max_places|max_people)$|capacity').hasMatch(f.id)).firstOrNull;
+
+  /// The links of [t] that take one of a limited number of places (a sign-up for a class, an
+  /// enrolment on a course, tickets for an event) — not a table or stylist, booked by time.
+  List<FieldSpec> placeLinks(TableSpec t) => [
+        for (final f in t.fields)
+          if (f.type == 'link' && !f.managerOnly && !BookingShape._bookable.hasMatch('${f.id} ${f.link}') && spec.table(f.link!) != null && capacityOf(spec.table(f.link!)!) != null) f,
+      ];
+
+  /// How many places one record takes (its number of tickets or people), at least 1.
+  static FieldSpec? _howMany(TableSpec t) =>
+      t.fields.where((f) => f.type == 'number' && !f.managerOnly && RegExp(r'quantity|qty|ticket|places|people|guests|party|spots|seats').hasMatch(f.id)).firstOrNull;
+
+  /// The day a place is for (a class on a date); null when places are for the whole thing (a course, an event).
+  static FieldSpec? _placeDay(TableSpec t) => t.fields.where((f) => f.type == 'date' && !f.managerOnly).firstOrNull;
+
+  /// "tickets" for events, else "places".
+  static String placeWord(TableSpec t, TableSpec target) => RegExp(r'ticket|event|show|gig', caseSensitive: false).hasMatch('${t.id} ${target.id}') ? 'tickets' : 'places';
+
+  /// The places [target]'s record has, and how many are taken (on [date], when they are by day).
+  Future<({int capacity, int taken})?> places(TableSpec t, FieldSpec link, Map<String, Object?> target, {String? date, int? ignore}) async {
+    final cap = capacityOf(spec.table(link.link!)!);
+    final c = cap == null ? null : target[cap.id];
+    if (c is! num) return null;
+    final status = statusOf(t), many = _howMany(t), day = _placeDay(t);
+    var taken = 0;
+    for (final r in await list(t.id, manager: true, limit: 100000)) {
+      if (r[link.id] != target['id'] || r['id'] == ignore) continue;
+      if (status != null && RegExp(r'cancel|declin|reject|refund', caseSensitive: false).hasMatch('${r[status.id] ?? ''}')) continue;
+      if (day != null && date != null && '${r[day.id] ?? ''}' != date) continue;
+      taken += ((r[many?.id] as num?)?.toInt() ?? 1).clamp(1, 100000);
+    }
+    return (capacity: c.toInt(), taken: taken);
+  }
+
+  /// A booking is refused when what it is for is full (that day, when it has one), with how many are left.
+  Future<void> _capacity(TableSpec t, Map<String, Object?> clean, {int? ignore}) async {
+    for (final f in placeLinks(t)) {
+      if (clean[f.id] is! int) continue;
+      final target = spec.table(f.link!)!;
+      final row = await get(target.id, clean[f.id] as int, manager: true);
+      if (row == null) continue;
+      final day = _placeDay(t);
+      final date = day == null ? null : clean[day.id] as String?;
+      final p = await places(t, f, row, date: date, ignore: ignore);
+      if (p == null) continue;
+      final want = ((clean[_howMany(t)?.id] as num?)?.toInt() ?? 1).clamp(1, 100000);
+      final left = p.capacity - p.taken;
+      final word = placeWord(t, target), name = '${row[target.labelField] ?? ''}';
+      final on = date == null ? '' : ' on ${withDay(date)}';
+      if (left <= 0) {
+        throw AppDataError(word == 'tickets'
+            ? 'Sorry, $name is sold out$on: no tickets are left. Tell the caller, and offer another event.'
+            : 'Sorry, $name is full$on (all ${p.capacity} places are taken). Tell the caller, and offer another ${date == null ? 'one' : 'day'}.');
+      }
+      if (want > left) throw AppDataError('Only $left $word left for $name$on (asked for $want). Ask whether $left will do.');
+    }
+  }
+
+  /// Places left on each record of [target] (for "3 places left" and "Full" on the website): for a
+  /// class by day of the week, at its next session. Counts only, never who.
+  Future<Map<String, Object?>> placesLeft(TableSpec target, {DateTime? now}) async {
+    now ??= DateTime.now();
+    final out = <String, Object?>{};
+    var word = 'places';
+    for (final t in spec.tables.where((t) => t.access.add && !t.single)) {
+      for (final f in placeLinks(t).where((f) => f.link == target.id)) {
+        word = placeWord(t, target);
+        final wd = weekdayOf(target);
+        for (final r in await list(target.id, manager: true)) {
+          String? date;
+          if (_placeDay(t) != null) {
+            // The next session: the class's day of the week, today or later.
+            final i = wd == null ? -1 : const ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].indexWhere((d) => '${r[wd.id] ?? ''}'.toLowerCase().startsWith(d));
+            if (i < 0) continue;
+            var k = 0;
+            while (DateTime(now.year, now.month, now.day + k).weekday != i + 1) {
+              k++;
+            }
+            final d = DateTime(now.year, now.month, now.day + k);
+            date = '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+          }
+          final p = await places(t, f, r, date: date);
+          if (p == null) continue;
+          out['${r['id']}'] = {'left': (p.capacity - p.taken).clamp(0, 1 << 30), 'capacity': p.capacity, 'date': ?date};
+        }
+      }
+    }
+    return {'word': word, 'items': out};
+  }
+
+  // ---------------- stock ----------------
+
+  /// A product's count in stock (the manager's): taken off as it is ordered. Empty = not counted.
+  static FieldSpec? stockOf(TableSpec target) =>
+      target.fields.where((f) => f.type == 'number' && RegExp(r'^(stock|stock_qty|stock_level|qty_in_stock|quantity_in_stock|in_stock_qty)$').hasMatch(f.id)).firstOrNull;
+
+  /// What an order holds of counted products: table → record id → quantity (nothing once cancelled).
+  Map<String, Map<int, int>> _counted(TableSpec t, Map<String, Object?> r) {
+    final out = <String, Map<int, int>>{};
+    final st = statusOf(t);
+    if (r.isEmpty || (st != null && RegExp(r'cancel|declin|reject|refund', caseSensitive: false).hasMatch('${r[st.id] ?? ''}'))) return out;
+    for (final f in t.fields.where((f) => f.type == 'links' && f.qty)) {
+      final target = spec.table(f.link!);
+      if (target == null || stockOf(target) == null) continue;
+      for (final x in (r[f.id] is List ? r[f.id] as List : const [])) {
+        if (x is! Map || x['id'] is! int) continue;
+        final m = out[target.id] ??= {};
+        m[x['id'] as int] = (m[x['id'] as int] ?? 0) + ((x['qty'] as num?)?.toInt() ?? 1);
+      }
+    }
+    return out;
+  }
+
+  /// An order went from [before] to [after]: the difference comes off (or goes back on) the stock.
+  /// With [check], more than is left is refused, with how many there are.
+  Future<void> _stock(TableSpec t, Map<String, Object?> before, Map<String, Object?> after, {required bool check, required bool apply}) async {
+    final was = _counted(t, before), now = _counted(t, after);
+    for (final table in {...was.keys, ...now.keys}) {
+      final target = spec.table(table)!;
+      final sf = stockOf(target)!;
+      final flag = target.fields.where((x) => x.type == 'yesno' && RegExp(r'stock', caseSensitive: false).hasMatch(x.id)).firstOrNull;
+      for (final id in {...?was[table]?.keys, ...?now[table]?.keys}) {
+        final delta = (now[table]?[id] ?? 0) - (was[table]?[id] ?? 0);
+        if (delta == 0) continue;
+        final r = await get(table, id, manager: true);
+        final have = r?[sf.id];
+        if (r == null || have is! num) continue;
+        if (check && delta > 0 && have < delta) {
+          final name = '${r[target.labelField] ?? ''}';
+          throw AppDataError(have <= 0
+              ? '$name is out of stock right now: tell the caller, and offer something else.'
+              : 'Only ${have.toInt()} × $name left in stock (asked for ${now[table]?[id] ?? 0}). Ask whether ${have.toInt()} will do, or offer something else.');
+        }
+        if (!apply) continue;
+        final left = (have - delta) < 0 ? 0 : have - delta;
+        await update(table, id, {sf.id: left, if (flag != null && left <= 0) flag.id: false});
       }
     }
   }
@@ -384,13 +546,30 @@ class AppData {
     return (free: [for (final r in rooms) if (!taken.contains(r['id']) && fits(r)) r], taken: [for (final r in rooms) if (taken.contains(r['id'])) r]);
   }
 
-  /// A stay: the room must be free for those nights.
-  Future<void> _holdStay(TableSpec t, Map<String, Object?> clean, {int? ignore}) async {
+  /// The least number of nights a room is let for (its "minimum nights"), or null.
+  static FieldSpec? minNightsOf(TableSpec rooms) => rooms.fields.where((f) => f.type == 'number' && RegExp(r'min.*(night|stay)').hasMatch(f.id)).firstOrNull;
+
+  /// Nights from [from] to [to] ("YYYY-MM-DD").
+  static int nights(String from, String to) {
+    final a = DateTime.tryParse('${from}T00:00:00Z'), b = DateTime.tryParse('${to}T00:00:00Z');
+    return a == null || b == null ? 0 : b.difference(a).inDays;
+  }
+
+  /// A stay: the room must be free for those nights (and for at least its minimum nights).
+  Future<void> _holdStay(TableSpec t, Map<String, Object?> clean, {int? ignore, bool manager = false}) async {
     final s = stayOf(t);
     if (s == null) return;
     final from = '${clean[s.from.id] ?? ''}', to = '${clean[s.to.id] ?? ''}', want = clean[s.room.id];
     if (from.isEmpty || to.isEmpty || want == null) return;
     if (to.compareTo(from) <= 0) throw AppDataError('${s.to.label} must be after ${s.from.label.toLowerCase()}.');
+    final rooms = spec.table(s.room.link!)!, minF = minNightsOf(rooms);
+    if (minF != null && !manager && want is int) {
+      final room = await get(rooms.id, want, manager: true);
+      final min = (room?[minF.id] as num?)?.toInt() ?? 1;
+      if (nights(from, to) < min) {
+        throw AppDataError('${room?[rooms.labelField] ?? 'That room'} is let for at least $min nights (this stay is ${nights(from, to)}). Ask whether they can stay longer, or offer another room.');
+      }
+    }
     final a = await freeStay(t, from, to, guests: (clean[s.guests?.id] as num?)?.toInt() ?? 0, ignore: ignore);
     final hit = a.taken.where((r) => r['id'] == want).firstOrNull;
     if (hit == null) return;
@@ -445,6 +624,8 @@ class AppData {
     final clean = await _clean(t, values, manager: false, partial: true)..removeWhere((k, v) => v == null);
     final merged = {...old, ...clean};
     await _open(t, merged);
+    await _inStock(t, clean);
+    await _capacity(t, merged, ignore: id);
     final shape = BookingShape.of(spec, t);
     // A stay moved to other nights or another room: never onto a taken one.
     if (shape == null) await _holdStay(t, merged, ignore: id);
@@ -467,8 +648,10 @@ class AppData {
       if (!f.appliesTo(out)) out.remove(f.id);
     }
     await _minimum(t, out);
+    await _stock(t, old, out, check: true, apply: false);
     await _fillTotal(t, out);
     await db.raw.update('app_rows', {'data': jsonEncode(out), 'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
+    await _stock(t, old, out, check: false, apply: true);
   }
 
   /// The stylist, doctor, barber… the caller asked for by name in [heard] (their words; the last one named
@@ -538,10 +721,12 @@ class AppData {
     final merged = {...old, ...clean};
     // Items or delivery changed: the total follows (unless the manager typed a new one).
     final tf = _totalField(t);
-    if (tf != null && (!clean.containsKey(tf.id) || clean[tf.id] == old[tf.id]) && t.fields.any((f) => (f.type == 'links' || f.type == 'choice') && !f.managerOnly && jsonEncode(old[f.id]) != jsonEncode(merged[f.id]))) {
+    if (tf != null && (!clean.containsKey(tf.id) || clean[tf.id] == old[tf.id]) && t.fields.any((f) => const {'links', 'link', 'choice', 'date', 'number'}.contains(f.type) && !f.managerOnly && jsonEncode(old[f.id]) != jsonEncode(merged[f.id]))) {
       await _fillTotal(t, merged);
     }
     await db.raw.update('app_rows', {'data': jsonEncode(merged), 'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
+    // Cancelled: what it held goes back in stock (and comes off again if it is un-cancelled).
+    if (!t.single) await _stock(t, old, merged, check: false, apply: true);
   }
 
   Future<int> setSingle(String table, Map<String, dynamic> values, {bool manager = true}) async {
@@ -711,12 +896,12 @@ class AppData {
     final lines = <String>[];
     for (final r in rows) {
       final parts = ['id ${r['id']}'];
+      final tot = await orderTotal(t.id, r, prices: prices);
       for (final f in t.fields) {
-        if (!r.containsKey(f.id) || f == tf) continue;
-        final v = show(f, r[f.id]);
+        if (!r.containsKey(f.id) || (f == tf && tot != null)) continue;
+        final v = f == tf && r[f.id] is num ? money(r[f.id] as num) : show(f, r[f.id]);
         if (v.isNotEmpty) parts.add('${f.label}: $v');
       }
-      final tot = await orderTotal(t.id, r, prices: prices);
       if (tot != null) parts.add('Total: ${money(tot.total)}${tot.fee > 0 ? ' (${money(tot.items)} + ${money(tot.fee)} delivery)' : ''}');
       lines.add(parts.join(' · '));
     }
@@ -730,11 +915,24 @@ class AppData {
     final out = <String, Map<int, num>>{};
     for (final f in t.fields.where((f) => f.type == 'links' && f.qty)) {
       final target = spec.table(f.link!);
-      final price = target?.fields.where((x) => x.type == 'money').firstOrNull;
-      if (target == null || price == null) continue;
-      out[f.id] = {for (final r in await list(target.id, manager: true, limit: 5000)) if (r[price.id] is num) r['id'] as int: r[price.id] as num};
+      if (target == null || priceOf(target) == null) continue;
+      out[f.id] = {for (final r in await list(target.id, manager: true, limit: 5000)) if (unitPrice(target, r) != null) r['id'] as int: unitPrice(target, r)!};
     }
     return out;
+  }
+
+  /// A record's price field (the first price that isn't a sale price).
+  static FieldSpec? priceOf(TableSpec t) =>
+      t.fields.where((x) => x.type == 'money' && !x.managerOnly && !_sale.hasMatch(x.id)).firstOrNull ?? t.fields.where((x) => x.type == 'money').firstOrNull;
+  static final _sale = RegExp(r'sale|offer|special|discount');
+
+  /// What one costs now: the sale price when there is one (and it is lower), else the price.
+  static num? unitPrice(TableSpec t, Map<String, Object?> r) {
+    final p = priceOf(t), sale = t.fields.where((x) => x.type == 'money' && x != p && _sale.hasMatch(x.id)).firstOrNull;
+    final base = r[p?.id] is num ? r[p!.id] as num : null;
+    final s = sale == null ? null : r[sale.id];
+    if (s is num && s > 0 && (base == null || s < base)) return s;
+    return base;
   }
 
   /// A delivery (its "Collection or delivery" choice says Delivery).
@@ -777,7 +975,29 @@ class AppData {
     final f = _totalField(t);
     if (f == null) return;
     final tot = await orderTotal(t.id, r);
-    if (tot != null) r[f.id] = (tot.total * 100).round() / 100;
+    final v = tot?.total ?? await _bookingTotal(t, r);
+    if (v != null) r[f.id] = (v * 100).round() / 100;
+  }
+
+  /// A booking's total: the nights × the room's price, or the number of tickets × the event's price.
+  Future<num?> _bookingTotal(TableSpec t, Map<String, Object?> r) async {
+    final s = stayOf(t);
+    if (s != null) {
+      final rooms = spec.table(s.room.link!)!;
+      final room = r[s.room.id] is int ? await get(rooms.id, r[s.room.id] as int, manager: true) : null;
+      final n = nights('${r[s.from.id] ?? ''}', '${r[s.to.id] ?? ''}');
+      final p = room == null ? null : unitPrice(rooms, room);
+      return p == null || n <= 0 ? null : p * n;
+    }
+    final many = _howMany(t);
+    for (final f in t.fields.where((f) => f.type == 'link' && !f.managerOnly && r[f.id] is int)) {
+      final target = spec.table(f.link!);
+      if (target == null || priceOf(target) == null) continue;
+      final row = await get(target.id, r[f.id] as int, manager: true);
+      final p = row == null ? null : unitPrice(target, row);
+      if (p != null) return p * ((r[many?.id] as num?) ?? 1);
+    }
+    return null;
   }
 
   /// A delivery below the minimum order is refused (collection is fine).
@@ -849,6 +1069,8 @@ class AppData {
     final ended = RegExp(r'done|complet|collected|delivered|cancel|finish|closed|no.?show|served|redeemed|attended|checked out|viewed|declin|reject', caseSensitive: false);
     final cancelled = RegExp(r'cancel|no.?show|declin|reject', caseSensitive: false);
     var bookingsToday = 0, openOrders = 0, newToday = 0, ordersToday = 0;
+    final monthAgo = ymd(DateTime(now.year, now.month, now.day - 29));
+    final byService = <String, Object?>{}, noShows = <String, Object?>{};
     num revenueToday = 0, revenueWeek = 0;
     final hours = List<int>.filled(24, 0);
     final tables = <String, Object?>{};
@@ -882,6 +1104,38 @@ class AppData {
         if (at != null) hours[at ~/ 60 % 24]++;
       }
       tables[t.id] = {'title': t.title, 'kind': isOrder ? 'orders' : (dateF != null ? 'bookings' : 'requests'), 'total': rows.length, 'counts': counts};
+      if (isOrder || dateF == null) continue;
+      // The last 30 days of bookings (up to today): what each service brought in, and who didn't come.
+      final recent = [for (final r in rows) if ('${r[dateF.id] ?? ''}'.length >= 10 && '${r[dateF.id]}'.substring(0, 10).compareTo(monthAgo) >= 0 && '${r[dateF.id]}'.substring(0, 10).compareTo(today) <= 0) r];
+      final service = _serviceField(t);
+      if (service != null) {
+        final target = spec.table(service.link!)!;
+        final byId = {for (final r in await list(target.id, manager: true, limit: 5000)) r['id']: r};
+        final items = <String, ({int count, num revenue})>{};
+        for (final r in recent) {
+          if (st != null && cancelled.hasMatch('${r[st.id] ?? ''}')) continue;
+          for (final id in (r[service.id] is List ? r[service.id] as List : [r[service.id]])) {
+            final s = byId[id is Map ? id['id'] : id];
+            if (s == null) continue;
+            final name = '${s[target.labelField] ?? ''}', was = items[name];
+            items[name] = (count: (was?.count ?? 0) + 1, revenue: (was?.revenue ?? 0) + (unitPrice(target, s) ?? 0));
+          }
+        }
+        final sorted = items.entries.toList()..sort((a, b) => b.value.revenue.compareTo(a.value.revenue));
+        if (sorted.isNotEmpty) {
+          byService[t.id] = {
+            'title': t.title,
+            'what': target.title,
+            'items': [for (final e in sorted.take(8)) {'name': e.key, 'count': e.value.count, 'revenue': (e.value.revenue * 100).round() / 100}],
+          };
+        }
+      }
+      final noShow = st?.options.where((o) => RegExp(r'no.?show', caseSensitive: false).hasMatch(o)).firstOrNull;
+      if (noShow != null) {
+        final due = [for (final r in recent) if (!RegExp(r'cancel|declin|reject', caseSensitive: false).hasMatch('${r[st!.id] ?? ''}')) r];
+        final missed = due.where((r) => r[st!.id] == noShow).length;
+        noShows[t.id] = {'title': t.title, 'count': missed, 'of': due.length, 'rate': due.isEmpty ? 0 : (missed * 1000 / due.length).round() / 10};
+      }
     }
     return {
       'today': today,
@@ -895,6 +1149,53 @@ class AppData {
       'days': days,
       'tables': tables,
       'hours': hours,
+      'by_service': byService,
+      'no_shows': noShows,
+    };
+  }
+
+  /// What a booking is for, with a price (the service, treatment, class…): not the stylist or table.
+  FieldSpec? _serviceField(TableSpec t) {
+    final res = BookingShape.of(spec, t)?.resourceField;
+    return t.fields
+        .where((f) => (f.type == 'link' || f.type == 'links') && !f.managerOnly && f != res && spec.table(f.link!) != null && priceOf(spec.table(f.link!)!) != null)
+        .firstOrNull;
+  }
+
+  // ---------------- rooms by night (the manager's) ----------------
+
+  /// Every room for [days] nights from [from]: who stays when. Manager only (it has names).
+  Future<Map<String, Object?>> occupancy(TableSpec t, String from, {int days = 14}) async {
+    final s = stayOf(t) ?? (throw AppDataError('${t.title} is not a list of stays.'));
+    final start = DateTime.tryParse(from) ?? DateTime.now();
+    String ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final nightsList = [for (var i = 0; i < days.clamp(1, 62); i++) ymd(DateTime(start.year, start.month, start.day + i))];
+    final rooms = spec.table(s.room.link!)!;
+    final status = statusOf(t);
+    final last = ymd(DateTime(start.year, start.month, start.day + nightsList.length));
+    final closed = <String, String>{};
+    for (final d in nightsList) {
+      final why = await closedOn(d);
+      if (why != null) closed[d] = why;
+    }
+    return {
+      'nights': nightsList,
+      'closed': closed,
+      'rooms': [for (final r in await list(rooms.id, manager: true)) {'id': r['id'], 'name': '${r[rooms.labelField] ?? r['id']}'}],
+      'stays': [
+        for (final r in await list(t.id, manager: true, limit: 100000))
+          if ('${r[s.from.id] ?? ''}'.compareTo(last) < 0 && '${r[s.to.id] ?? ''}'.compareTo(nightsList.first) > 0 &&
+              !(status != null && RegExp(r'cancel|declin|reject', caseSensitive: false).hasMatch('${r[status.id] ?? ''}')))
+            {
+              'id': r['id'],
+              'room': r[s.room.id],
+              'from': r[s.from.id],
+              'to': r[s.to.id],
+              'who': '${r[t.labelField] ?? ''}',
+              if (status != null) 'status': r[status.id],
+              if (s.guests != null) 'guests': r[s.guests!.id],
+            },
+      ],
     };
   }
 }

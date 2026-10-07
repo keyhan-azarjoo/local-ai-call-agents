@@ -622,6 +622,98 @@ a.tel:hover{color:var(--accent)}
 .gal-add{width:180px}
 .gal-add .drop{padding:12px}
 .item.out{opacity:.6}
+/* sale prices, places left, sold homes */
+.price s{color:var(--muted);font-weight:500;font-size:.85em;margin-right:4px}
+.price small{font-weight:500;color:var(--muted);font-size:.75em}
+.media .flags{position:absolute;top:12px;left:12px;display:flex;flex-wrap:wrap;gap:6px;z-index:1}
+.media .flags .dbadge{box-shadow:0 2px 8px rgba(0,0,0,.18)}
+.dbadge.sale{background:#dc2626;color:#fff}
+.dbadge.places{background:#e8f6ec;color:#166534}
+.dbadge.few{background:#fff4e5;color:#9a3412}
+.media .flags .dbadge.places{background:#fff;color:#166534}.media .flags .dbadge.few{background:#fff;color:#9a3412}
+
+/* weekly timetable */
+.tt{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;align-items:start}
+.tt-day{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px}
+.tt-day.today{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent)}
+.tt-day h3{font-size:17px;display:flex;align-items:center;gap:8px}
+.tt-day h3 span{font:700 11px var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--on-accent);background:var(--accent);padding:3px 7px;border-radius:999px}
+.tt-c{position:relative;border-radius:12px;background:var(--soft);padding:12px;display:flex;flex-direction:column;gap:3px}
+.tt-c b{font-family:var(--head);font-weight:var(--head-weight);font-size:16px}
+.tt-c small{color:var(--muted);font-size:13px}
+.tt-t{display:flex;align-items:baseline;gap:8px;font:700 14px var(--body);color:var(--accent);font-variant-numeric:tabular-nums}
+.tt-t small{font-weight:500}
+.tt-f{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:6px;flex-wrap:wrap}
+.tt-f:empty{display:none}
+.tt-c.full{opacity:.6}
+.tt-c .edit-btn{top:6px;right:6px;width:28px;height:28px;font-size:12px}
+
+/* rooms for a stay */
+.stay .avail-ctl{align-items:flex-end}
+.stay-sum{margin-left:auto;font-size:15px}
+.stay-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
+.room{border:1.5px solid var(--line);border-radius:var(--radius);overflow:hidden;background:var(--surface);display:flex;flex-direction:column;transition:transform .2s,box-shadow .2s}
+.room:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+.room.off{opacity:.55}.room.off:hover{transform:none;box-shadow:none}
+.room.picked{border-color:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent)}
+.room-img{aspect-ratio:16/10;background:var(--soft);overflow:hidden}
+.room-img img,.room-img .ph{width:100%;height:100%;object-fit:cover}
+.room-b{padding:16px 18px 18px;display:flex;flex-direction:column;gap:8px;flex:1}
+.room-b .top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+.room-b h3{font-size:19px}
+.room-b .desc{color:var(--muted);font-size:14.5px}
+.room-b .meta{display:flex;flex-wrap:wrap;gap:6px}
+.room-b .foot{margin-top:auto;padding-top:8px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+
+/* manager: week */
+.wk{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+.wk table{border-collapse:collapse;width:100%;min-width:760px;table-layout:fixed;font-size:13px}
+.wk th,.wk td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);vertical-align:top}
+.wk th{background:var(--soft);color:var(--muted);font-weight:600;padding:8px 6px;white-space:nowrap}
+.wk th small{display:block;color:#b91c1c;font-size:11px}
+.wk th.today{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.wk th.hr{width:62px;text-align:right;font-variant-numeric:tabular-nums}
+.wk td{height:46px;padding:3px;cursor:pointer}
+.wk td:hover{background:var(--soft)}
+.wk td.past{background:color-mix(in srgb,var(--soft) 55%,transparent)}
+.wk td.shut,.wk th.shut{background:repeating-linear-gradient(45deg,transparent,transparent 5px,#fde2e2 5px,#fde2e2 10px);cursor:default}
+.wk-b{display:block;width:100%;text-align:left;border:0;border-left:3px solid var(--pc,var(--accent));background:var(--pb,var(--soft));color:var(--ink);font:500 12px/1.3 var(--body);padding:4px 6px;border-radius:6px;margin-bottom:3px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wk-b b{font-variant-numeric:tabular-nums}
+.wk-b small{display:block;color:var(--muted);font-size:11px}
+.wk-b:hover{filter:brightness(.97)}
+
+/* manager: month */
+.cal{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:16px}
+.cal-h{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.cal-h h3{font-size:20px;min-width:170px;text-align:center}
+.cal-h .small{margin-left:auto}
+.cal-g{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-top:1px solid var(--line);border-left:1px solid var(--line)}
+.cal-dn{padding:8px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-right:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--soft)}
+.cal-d{min-height:104px;padding:6px;border-right:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:3px;cursor:pointer;min-width:0}
+.cal-d:hover{background:color-mix(in srgb,var(--soft) 70%,transparent)}
+.cal-d.other{background:color-mix(in srgb,var(--soft) 45%,transparent)}.cal-d.other .cal-n{opacity:.45}
+.cal-d.today .cal-n{background:var(--accent);color:var(--on-accent)}
+.cal-n{align-self:flex-start;font:600 13px/1 var(--body);padding:5px 7px;border-radius:999px;font-variant-numeric:tabular-nums}
+.cal-b{display:block;width:100%;text-align:left;border:0;border-left:3px solid var(--pc,var(--accent));background:var(--pb,var(--soft));color:var(--ink);font:500 12px/1.3 var(--body);padding:3px 6px;border-radius:5px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cal-more{border:0;background:transparent;color:var(--accent);font:600 12px var(--body);text-align:left;cursor:pointer;padding:2px 4px}
+@media (max-width:700px){.cal-d{min-height:70px}.cal-b{font-size:10.5px;padding:2px 4px}}
+
+/* manager: rooms by night */
+.occ th small{display:block;font-size:13px;color:var(--ink)}
+.occ th.today{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.occ th{height:44px}
+.occ td.b{background:var(--pc,var(--accent));color:#fff}
+.occ td.b.t-blue{background:#3b6fd8}.occ td.b.t-green{background:#0f8a62}.occ td.b.t-amber{background:#c2650a}.occ td.b.t-grey{background:#71717a}
+.occ td.shut,.occ th.shut{background:repeating-linear-gradient(45deg,transparent,transparent 5px,#fde2e2 5px,#fde2e2 10px)}
+.occ-rate{font-size:14px;color:var(--muted)}.occ-rate b{color:var(--ink);font-size:18px}
+
+/* manager: takings by service */
+.svc{display:flex;flex-direction:column;gap:12px;cursor:pointer}
+.svc-r{display:grid;grid-template-columns:minmax(120px,1.1fr) 2fr auto;gap:12px;align-items:center}
+.svc-n{display:flex;flex-direction:column;min-width:0}.svc-n b{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.svc-bar{height:10px;border-radius:99px;background:var(--soft);overflow:hidden}
+.svc-bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+.svc-r .num{font-variant-numeric:tabular-nums;font-size:14px}
 ''';
 
 const appJs = r'''
@@ -814,14 +906,14 @@ async function fieldInput(f, value, ctx = {}) {
         get = () => Object.keys(sel).map(Number);
       } else {
         // Picked items with steppers, plus a list to add more; prices and total when there are prices.
-        const priceF = firstOf(t, 'money'), imgF = firstOf(t, 'image');
-        const box = add(el('<div></div>')), adder = el('<select style="margin-top:14px"><option value="">+ Add ' + esc(t.title.toLowerCase()) + '…</option>' + list.map((r) => '<option value="' + r.id + '">' + esc(nameOf(t, r)) + (priceF ? ' — ' + money(r[priceF.id]) : '') + '</option>').join('') + '</select>');
+        const priceF = priceFieldOf(t), imgF = firstOf(t, 'image');
+        const box = add(el('<div></div>')), adder = el('<select style="margin-top:14px"><option value="">+ Add ' + esc(t.title.toLowerCase()) + '…</option>' + list.filter((r) => !soldOut(t, r)).map((r) => '<option value="' + r.id + '">' + esc(nameOf(t, r)) + (priceF ? ' — ' + money(priceNow(t, r)) : '') + '</option>').join('') + '</select>');
         const draw = () => {
           const items = Object.entries(sel).filter(([, q]) => q > 0);
           let h = items.length ? '' : '<div class="cart-empty">' + (ctx.hasList ? 'Tap “Add” on anything above, or choose here.' : 'Nothing chosen yet.') + '</div>', sum = 0;
           for (const [id, q] of items) {
             const r = list.find((x) => String(x.id) === id); if (!r) continue;
-            const p = priceF ? Number(r[priceF.id] || 0) : 0; sum += p * q;
+            const p = priceF ? Number(priceNow(t, r) || 0) : 0; sum += p * q;
             h += '<div class="cart-line"><div class="thumb">' + media(imgF && r[imgF.id], nameOf(t, r), 'sm') + '</div><div class="nm">' + esc(nameOf(t, r)) + (priceF ? '<small>' + money(p) + '</small>' : '') + '</div><div class="stepper"><button type="button" data-d="-1" data-id="' + id + '">' + icon('minus') + '</button><b>' + q + '</b><button type="button" data-d="1" data-id="' + id + '">' + icon('plus') + '</button></div></div>';
           }
           // Delivery: its fee on top, and the least an order may come to.
@@ -874,7 +966,7 @@ function orderCalc(t, r, links) {
   for (const f of t.fields) {
     if (f.type !== 'links' || !f.qty || !Array.isArray(r[f.id])) continue;
     const lt = table(f.link), pf = lt && lt.fields.find((x) => x.type === 'money'); if (!pf) continue;
-    for (const x of r[f.id]) { const it = links[f.link]?.[x.id]; if (!it) continue; const p = Number(it[pf.id] || 0), q = Number(x.qty || 1); items += p * q; any = true; lines.push({name: nameOf(lt, it), qty: q, price: p}); }
+    for (const x of r[f.id]) { const it = links[f.link]?.[x.id]; if (!it) continue; const p = Number(priceNow(lt, it) || 0), q = Number(x.qty || 1); items += p * q; any = true; lines.push({name: nameOf(lt, it), qty: q, price: p}); }
   }
   if (!any) { const tf = t.fields.find((f) => f.type === 'money' && /^(order_)?total$/.test(f.id)); return tf && r[tf.id] != null ? {items: Number(r[tf.id]), fee: 0, total: Number(r[tf.id]), lines} : null; }
   const fee = isDelivery(t, r) ? siteNum('delivery_fee') : 0;
@@ -884,10 +976,29 @@ function orderCalc(t, r, links) {
 const isClosures = (t) => /closure|holiday|closed/i.test(t.id + ' ' + (t.purpose || '')) && t.fields.some((f) => f.type === 'date');
 
 // ---------- menu, gallery, reviews, contact, highlights ----------
-const BADGES = [[/^vegan$/, 'Vegan', 'vg'], [/vegetarian|^veg$/, 'Vegetarian', 'v'], [/gluten/, 'Gluten free', 'gf'], [/spicy|hot|chilli/, 'Spicy', 'sp'], [/popular|favourite|bestseller|signature/, 'Popular', 'pop'], [/^new$/, 'New', 'new']];
+const BADGES = [[/^vegan$/, 'Vegan', 'vg'], [/vegetarian|^veg$/, 'Vegetarian', 'v'], [/gluten/, 'Gluten free', 'gf'], [/spicy|hot|chilli/, 'Spicy', 'sp'], [/popular|favourite|bestseller|signature/, 'Popular', 'pop'], [/featured/, 'Featured', 'pop'], [/^new$/, 'New', 'new']];
 const badgesOf = (t, r) => t.fields.filter((f) => f.type === 'yesno' && !f.manager_only && r[f.id] === true && !/stock|availab|sold/.test(f.id))
   .map((f) => { const b = BADGES.find(([re]) => re.test(f.id)); return '<span class="dbadge ' + (b ? b[2] : '') + '">' + (b && b[2] === 'pop' ? icon('star') : '') + esc(b ? b[1] : f.label) + '</span>'; }).join('');
-const soldOut = (t, r) => t.fields.some((f) => f.type === 'yesno' && ((/stock|availab/.test(f.id) && r[f.id] === false) || (/sold/.test(f.id) && r[f.id] === true)));
+/// A home that is sold or let (its status), or something marked out of stock / sold out.
+const goneOf = (t, r) => { const f = t.fields.find((x) => x.type === 'choice' && x.id === 'status' && !x.manager_only); return f && /^(sold|let)$/i.test(String(r[f.id] || '')) ? r[f.id] : ''; };
+const soldOut = (t, r) => !!goneOf(t, r) || t.fields.some((f) => f.type === 'yesno' && ((/stock|availab/.test(f.id) && r[f.id] === false) || (/sold/.test(f.id) && r[f.id] === true)));
+/// Prices: the usual one, and a sale price that wins when it is lower ("£4 £3.20").
+const SALE = /sale|offer|special|discount/;
+const priceFieldOf = (t) => visible(t).find((f) => f.type === 'money' && !SALE.test(f.id)) || visible(t).find((f) => f.type === 'money');
+const saleFieldOf = (t) => visible(t).find((f) => f.type === 'money' && SALE.test(f.id) && f !== priceFieldOf(t));
+function priceNow(t, r) { const p = priceFieldOf(t), s = saleFieldOf(t); const base = p ? r[p.id] : null, sv = s ? r[s.id] : null; return sv != null && sv !== '' && Number(sv) > 0 && (base == null || Number(sv) < Number(base)) ? Number(sv) : base; }
+function priceHtml(t, r) { const p = priceFieldOf(t); if (!p || r[p.id] === undefined || r[p.id] === null || r[p.id] === '') return ''; const now = priceNow(t, r); return '<span class="price">' + (Number(now) !== Number(r[p.id]) ? '<s>' + money(r[p.id]) + '</s> ' : '') + money(now) + '</span>'; }
+const onSale = (t, r) => { const p = priceFieldOf(t); return p && r[p.id] != null && Number(priceNow(t, r)) < Number(r[p.id]); };
+/// Places left on classes, courses and events (counts only, never who): "3 places left", "Full", "Sold out".
+async function placesOf(t) { if (!(SPEC.places || []).includes(t.id)) return null; try { return await api('_places/' + t.id); } catch (_) { return null; } }
+const fullOf = (p, id) => { const x = p && p.items[id]; return !!x && x.left <= 0; };
+function placesBadge(p, id) {
+  const x = p && p.items[id]; if (!x) return '';
+  if (x.left <= 0) return '<span class="dbadge out">' + (p.word === 'tickets' ? 'Sold out' : 'Full') + '</span>';
+  const few = x.left <= Math.max(3, Math.round(x.capacity * .25));
+  if (p.word === 'tickets' && !few) return '';
+  return '<span class="dbadge places' + (few ? ' few' : '') + '">' + (few ? 'Only ' : '') + x.left + ' ' + (x.left === 1 ? p.word.replace(/s$/, '') : p.word) + ' left</span>';
+}
 
 /// A printed-menu look: a section per category (headings stay in view), dotted lines to the price,
 /// dietary badges and allergens.
@@ -909,7 +1020,7 @@ function menuBlock(b, t, all, pick, state) {
       for (const r of items) {
         const out = soldOut(t, r), q2 = state.sel[t.id]?.[r.id] || 0;
         const row = el('<article class="mi' + (out ? ' out' : '') + '">' + (imgF && r[imgF.id] ? '<div class="mi-img">' + media(r[imgF.id], nameOf(t, r)) + '</div>' : '')
-          + '<div class="mi-b"><div class="mi-top"><h4>' + esc(nameOf(t, r)) + '</h4><span class="dots"></span>' + (priceF && r[priceF.id] != null ? '<span class="price">' + money(r[priceF.id]) + '</span>' : '') + '</div>'
+          + '<div class="mi-b"><div class="mi-top"><h4>' + esc(nameOf(t, r)) + '</h4><span class="dots"></span>' + (priceF && r[priceF.id] != null ? priceHtml(t, r) : '') + '</div>'
           + (descF && r[descF.id] ? '<p class="mi-d">' + esc(r[descF.id]) + '</p>' : '')
           + '<div class="mi-meta">' + badgesOf(t, r) + (allergF && r[allergF.id] ? '<span class="allerg">Contains: ' + esc(r[allergF.id]) + '</span>' : '') + (out ? '<span class="dbadge out">Sold out today</span>' : '') + '</div></div>'
           + (pick && !out ? '<div class="mi-add">' + (q2 ? '<span class="qtybadge">' + q2 + '×</span>' : '') + '<button class="iconbtn" aria-label="Add ' + esc(nameOf(t, r)) + '">' + icon('plus') + '</button></div>' : '') + '</article>');
@@ -1101,7 +1212,7 @@ function navbar(pages, current) {
 
 /// Where to book or order (a page with free times first, then one with a form).
 const actionPages = (pages) => {
-  const rank = (p) => p.blocks.some((b) => b.type === 'availability') ? 0 : p.blocks.some((b) => b.type === 'form' && table(b.table) && isOrders(table(b.table))) ? 1 : p.blocks.some((b) => b.type === 'form') ? 2 : 9;
+  const rank = (p) => p.blocks.some((b) => b.type === 'availability' || b.type === 'stay') ? 0 : p.blocks.some((b) => b.type === 'form' && table(b.table) && isOrders(table(b.table))) ? 1 : p.blocks.some((b) => b.type === 'form') ? 2 : 9;
   return pages.filter((p) => rank(p) < 9).sort((a, b) => rank(a) - rank(b));
 };
 
@@ -1146,14 +1257,23 @@ function textBlock(b) {
 
 async function listBlock(b, t, page, state) {
   const fields = (b.fields ? b.fields.map((x) => t.fields.find((f) => f.id === x)).filter(Boolean) : visible(t)).filter((f) => !f.manager_only);
-  const label = labelOf(t), imgF = firstOf(t, 'image'), priceF = fields.find((f) => f.type === 'money'), descF = fields.find((f) => f.type === 'longtext'), catF = fields.find((f) => f.type === 'choice');
+  const label = labelOf(t), imgF = firstOf(t, 'image'), descF = fields.find((f) => f.type === 'longtext'), catF = fields.find((f) => f.type === 'choice');
+  const priceF = fields.find((f) => f.type === 'money' && !SALE.test(f.id)) || fields.find((f) => f.type === 'money'), saleF = fields.find((f) => f.type === 'money' && SALE.test(f.id) && f !== priceF);
   const pick = page.blocks.some((o) => o.type === 'form' && table(o.table)?.fields.some((f) => f.type === 'links' && f.qty && f.link === t.id));
   let all = await rows(t.id, true);
   const links = await linkMaps(t);
   // Only the ones ticked (e.g. popular dishes); closed days that are over aren't shown.
   if (b.only) all = all.filter((r) => r[b.only] === true);
   if (isClosures(t)) { const ds = t.fields.filter((f) => f.type === 'date'); all = all.filter((r) => String(r[ds[1]?.id] || r[ds[0].id] || '') >= todayISO()); }
+  // Events that are over aren't shown (a list whose date must be given: shows, events), soonest first.
+  const whenF = t.fields.find((f) => f.type === 'date' && f.required);
+  if (whenF && !isClosures(t)) all = all.filter((r) => !r[whenF.id] || String(r[whenF.id]) >= todayISO()).sort((x, y) => String(x[whenF.id] || '').localeCompare(String(y[whenF.id] || '')));
+  const places = await placesOf(t);
   if (b.layout === 'menu') return menuBlock(b, t, all, pick, state);
+  if (b.layout === 'timetable') return timetableBlock(b, t, all, places, page, state, links);
+  // A form on this page that books one of these (a class, a course, an event, a home): "Book" fills it in.
+  const formB = page.blocks.find((o) => o.type === 'form' && table(o.table)?.fields.some((f) => f.type === 'link' && f.link === t.id && !f.manager_only));
+  const formT = formB && table(formB.table), formF = formT && formT.fields.find((f) => f.type === 'link' && f.link === t.id && !f.manager_only);
   const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2>' + (SPEC.manager ? '<div class="sec-actions"><button class="btn sm" data-a="photo">' + icon('image') + ' Add from a photo</button><button class="btn primary sm" data-a="add">' + icon('plus') + ' Add</button></div>' : '') + '</div><div class="toolbar"></div><div class="grid' + (imgF ? '' : ' compact') + '"></div></div></section>');
   if (SPEC.manager) {
     $('[data-a=add]', n).onclick = () => drawer(t, null, () => site());
@@ -1175,20 +1295,123 @@ async function listBlock(b, t, page, state) {
     const list = all.filter((r) => (!cat || r[catF.id] === cat) && (!q || JSON.stringify(r).toLowerCase().includes(q)));
     grid.innerHTML = list.length ? '' : '<div class="empty" style="grid-column:1/-1">' + icon('search') + '<div>' + (all.length ? 'Nothing found.' : 'Nothing here yet.') + '</div></div>';
     list.forEach((r, i) => {
-      const tags = fields.filter((f) => ![label, priceF?.id, descF?.id].includes(f.id) && f.type !== 'image' && r[f.id] !== undefined && r[f.id] !== '' && r[f.id] !== null && r[f.id] !== false)
+      const tags = fields.filter((f) => ![label, priceF?.id, saleF?.id, descF?.id].includes(f.id) && f.type !== 'image' && !(f.id === 'status' && goneOf(t, r)) && r[f.id] !== undefined && r[f.id] !== '' && r[f.id] !== null && r[f.id] !== false)
         .slice(0, 4).map((f) => '<span class="tag' + (f === catF ? ' acc' : '') + '">' + (f.type === 'yesno' ? icon('check') + ' ' + esc(f.label) : (f.type === 'choice' ? '' : esc(f.label) + ': ') + esc(fmt(f, r[f.id], links))) + '</span>').join('');
-      const q2 = state.sel[t.id]?.[r.id] || 0, out = soldOut(t, r);
-      const card = el('<article class="item' + (out ? ' out' : '') + '" style="animation-delay:' + Math.min(i, 12) * 40 + 'ms">' + (imgF ? '<div class="media">' + media(r[imgF.id], nameOf(t, r)) + '</div>' : '')
-        + '<div class="body"><div class="top"><h3>' + esc(nameOf(t, r)) + '</h3>' + (priceF && r[priceF.id] !== undefined && r[priceF.id] !== null ? '<span class="price">' + money(r[priceF.id]) + '</span>' : '') + '</div>'
+      const q2 = state.sel[t.id]?.[r.id] || 0, full = fullOf(places, r.id), out = soldOut(t, r) || full, gone = goneOf(t, r);
+      const flags = (gone ? '<span class="dbadge out">' + esc(gone) + '</span>' : '') + (onSale(t, r) ? '<span class="dbadge sale">Sale</span>' : '') + placesBadge(places, r.id);
+      const card = el('<article class="item' + (out ? ' out' : '') + '" style="animation-delay:' + Math.min(i, 12) * 40 + 'ms">' + (imgF ? '<div class="media">' + media(r[imgF.id], nameOf(t, r)) + (flags ? '<div class="flags">' + flags + '</div>' : '') + '</div>' : '')
+        + '<div class="body"><div class="top"><h3>' + esc(nameOf(t, r)) + '</h3>' + (priceF ? priceHtml(t, r) : '') + '</div>' + (!imgF && flags ? '<div class="meta">' + flags + '</div>' : '')
         + (descF && r[descF.id] ? '<p class="desc">' + esc(r[descF.id]) + '</p>' : '') + (tags ? '<div class="meta">' + tags + '</div>' : '')
-        + (pick ? '<div class="foot"><span class="qtybadge">' + (out ? 'Sold out today' : q2 ? q2 + ' in your ' + esc(state.formName) : '') + '</span>' + (out ? '' : '<button class="btn primary sm">' + icon('plus') + ' Add</button>') + '</div>' : '') + '</div></article>');
+        + (pick ? '<div class="foot"><span class="qtybadge">' + (out ? (full ? (places.word === 'tickets' ? 'Sold out' : 'Full') : 'Sold out today') : q2 ? q2 + ' in your ' + esc(state.formName) : '') + '</span>' + (out ? '' : '<button class="btn primary sm">' + icon('plus') + ' Add</button>') + '</div>'
+          : formF && !out ? '<div class="foot"><span></span><button class="btn primary sm">' + esc(formB.submit && formB.submit.length < 18 ? formB.submit : 'Choose') + ' ' + icon('arrow') + '</button></div>' : '') + '</div></article>');
       if (pick && !out) $('.foot button', card).onclick = () => state.add(t.id, r.id);
+      if (!pick && formF && !out) $('.foot button', card).onclick = () => chooseFor(formT, formF, t, r, state);
       if (SPEC.manager) { const e = el('<button class="edit-btn" title="Edit">✎</button>'); e.onclick = () => drawer(t, r, () => site()); card.prepend(e); }
       grid.append(card);
     });
   };
   state.redrawLists.push(() => { grid.classList.add('settled'); draw(); });
   draw();
+  return n;
+}
+
+/// The next date of a weekly class ("Tuesday" → the coming Tuesday, today included).
+function nextDay(name) {
+  const i = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].indexOf(String(name || '').toLowerCase().slice(0, 3));
+  if (i < 0) return '';
+  const d = new Date(); d.setHours(12); while ((d.getDay() + 6) % 7 !== i) d.setDate(d.getDate() + 1);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10);
+}
+const weekdayField = (t) => t.fields.find((f) => f.type === 'choice' && f.options.filter((o) => /^(mon|tue|wed|thu|fri|sat|sun)/i.test(o)).length >= 5);
+
+/// "Book" on a card: the form below gets it (and the class's next date), and the page scrolls to it.
+function chooseFor(formT, formF, t, r, state) {
+  const form = state.forms && state.forms[formT.id]; if (!form) return;
+  form[formF.id]?.set(r.id);
+  const wd = weekdayField(t), df = formT.fields.find((f) => f.type === 'date' && !f.manager_only);
+  if (wd && df && r[wd.id]) form[df.id]?.set(nextDay(r[wd.id]));
+  $('#form-' + formT.id)?.scrollIntoView({behavior: 'smooth', block: 'start'});
+  toast(nameOf(t, r) + ' — add your details below');
+}
+
+/// A week of classes: a column per day, each class in time order, with its coach, length and places left.
+async function timetableBlock(b, t, all, places, page, state, links) {
+  const wd = weekdayField(t), timeF = firstOf(t, 'time'), durF = visible(t).find((f) => f.type === 'number' && /duration|minutes|length|mins/.test(f.id));
+  const levelF = visible(t).find((f) => f.type === 'choice' && f !== wd), whoF = visible(t).find((f) => f.type === 'link');
+  const formB = page.blocks.find((o) => o.type === 'form' && table(o.table)?.fields.some((f) => f.type === 'link' && f.link === t.id && !f.manager_only));
+  const formT = formB && table(formB.table), formF = formT && formT.fields.find((f) => f.type === 'link' && f.link === t.id && !f.manager_only);
+  const today = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][(new Date().getDay() + 6) % 7];
+  const days = wd.options.filter((o) => all.some((r) => r[wd.id] === o));
+  const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || t.title) + '</h2>' + (SPEC.manager ? '<button class="btn primary sm" data-a="add">' + icon('plus') + ' Add</button>' : '') + '</div><div class="tt"></div></div></section>');
+  if (SPEC.manager) $('[data-a=add]', n).onclick = () => drawer(t, null, () => site());
+  const box = $('.tt', n);
+  if (!days.length) box.innerHTML = '<div class="empty">Nothing on the timetable yet.</div>';
+  for (const d of days) {
+    const col = el('<div class="tt-day' + (d === today ? ' today' : '') + '"><h3>' + esc(d) + (d === today ? ' <span>Today</span>' : '') + '</h3></div>');
+    const list = all.filter((r) => r[wd.id] === d).sort((x, y) => String(x[timeF?.id] || '').localeCompare(String(y[timeF?.id] || '')));
+    for (const r of list) {
+      const full = fullOf(places, r.id);
+      const c = el('<div class="tt-c' + (full ? ' full' : '') + '"><div class="tt-t">' + esc(r[timeF?.id] || '') + (durF && r[durF.id] ? '<small>' + esc(r[durF.id]) + ' min</small>' : '') + '</div><b>' + esc(nameOf(t, r)) + '</b>'
+        + '<small>' + [whoF && r[whoF.id] ? fmt(whoF, r[whoF.id], links) : '', levelF ? r[levelF.id] : ''].filter(Boolean).map(esc).join(' · ') + '</small>'
+        + '<div class="tt-f">' + placesBadge(places, r.id) + (formF && !full ? '<button class="btn sm">Book</button>' : '') + '</div></div>');
+      if (formF && !full) $('button', c).onclick = () => chooseFor(formT, formF, t, r, state);
+      if (SPEC.manager) { const e = el('<button class="edit-btn" title="Edit">✎</button>'); e.onclick = () => drawer(t, r, () => site()); c.prepend(e); }
+      col.append(c);
+    }
+    box.append(col);
+  }
+  return n;
+}
+
+/// A stay: pick check-in and check-out (and how many), see which rooms are free for every night and
+/// what the stay costs, and pick one to fill the form. Shows rooms, never who is staying.
+async function stayBlock(b, t, state) {
+  const ds = t.fields.filter((f) => f.type === 'date'), roomF = t.fields.find((f) => f.type === 'link' && /room|suite|cabin|lodge|apartment|unit|pitch/.test(f.id + ' ' + f.link)) || t.fields.find((f) => f.type === 'link');
+  const rt = table(roomF.link), guestsF = t.fields.find((f) => f.type === 'number' && /guest|people|party|person/.test(f.id));
+  const rooms = await rows(rt.id).catch(() => []), imgF = firstOf(rt, 'image'), descF = visible(rt).find((f) => f.type === 'longtext');
+  const sleepsF = visible(rt).find((f) => f.type === 'number' && /guest|sleep|people|capacity/.test(f.id));
+  const add = (iso, k) => { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + k); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
+  const n = el('<section class="sec"><div class="wrap"><div class="sec-head"><h2>' + esc(b.title || 'Find a free ' + singular(rt.title).toLowerCase()) + '</h2></div><div class="avail stay">'
+    + '<div class="avail-ctl"><div class="field"><label class="lbl">' + esc(ds[0].label) + '</label><input type="date" data-k="from"></div><div class="field"><label class="lbl">' + esc(ds[1].label) + '</label><input type="date" data-k="to"></div>'
+    + (guestsF ? '<div class="field"><label class="lbl">' + esc(guestsF.label) + '</label><div class="guests"><button type="button" data-d="-1">' + icon('minus') + '</button><b></b><button type="button" data-d="1">' + icon('plus') + '</button></div></div>' : '')
+    + '<div class="stay-sum muted"></div></div><div class="stay-grid"></div></div></div></section>');
+  const from = $('[data-k=from]', n), to = $('[data-k=to]', n), grid = $('.stay-grid', n), sum = $('.stay-sum', n);
+  from.value = add(todayISO(), 1); from.min = todayISO(); to.value = add(from.value, 2); to.min = add(from.value, 1);
+  let guests = 2, picked = null, ans = null;
+  const fill = () => {
+    const form = state.forms && state.forms[t.id]; if (!form) return;
+    form[ds[0].id]?.set(from.value); form[ds[1].id]?.set(to.value); if (guestsF) form[guestsF.id]?.set(guests); if (picked) form[roomF.id]?.set(picked);
+  };
+  const draw = () => {
+    grid.innerHTML = '';
+    if (!ans) return;
+    if (ans.closed) { grid.innerHTML = '<div class="closed-note">' + icon('cal') + ' We’re closed on ' + esc(dayLabel(ans.closed_on)) + (ans.closed !== 'closed' ? ' (' + esc(ans.closed) + ')' : '') + '. Please choose other dates.</div>'; sum.textContent = ''; return; }
+    const nights = ans.nights;
+    sum.innerHTML = '<b>' + nights + ' night' + (nights === 1 ? '' : 's') + '</b> · ' + esc(dayLabel(from.value)) + ' → ' + esc(dayLabel(to.value));
+    const free = rooms.filter((r) => ans.free.includes(r.id)), rest = rooms.filter((r) => !ans.free.includes(r.id));
+    if (!free.length) grid.append(el('<div class="closed-note" style="grid-column:1/-1">' + icon('cal') + ' Nothing is free for all of those nights' + (guestsF ? ' for ' + guests : '') + '. Try other dates.</div>'));
+    for (const r of [...free, ...rest]) {
+      const ok = ans.free.includes(r.id), min = ans.too_short && ans.too_short[r.id], big = guestsF && sleepsF && r[sleepsF.id] != null && Number(r[sleepsF.id]) < guests;
+      const p = priceNow(rt, r), total = p != null ? Number(p) * nights : null;
+      const c = el('<article class="room' + (ok ? '' : ' off') + (picked === r.id ? ' picked' : '') + '"><div class="room-img">' + media(imgF && r[imgF.id], nameOf(rt, r)) + '</div><div class="room-b"><div class="top"><h3>' + esc(nameOf(rt, r)) + '</h3>' + (p != null ? '<span class="price">' + money(p) + '<small> / night</small></span>' : '') + '</div>'
+        + (descF && r[descF.id] ? '<p class="desc">' + esc(r[descF.id]) + '</p>' : '') + '<div class="meta">' + badgesOf(rt, r) + (sleepsF && r[sleepsF.id] ? '<span class="tag">' + icon('users') + ' ' + esc(sleepsF.label) + ' ' + esc(r[sleepsF.id]) + '</span>' : '') + '</div>'
+        + '<div class="foot">' + (ok ? '<span><b>' + (total != null ? money(total) : '') + '</b>' + (total != null ? ' <small class="muted">for ' + nights + ' night' + (nights === 1 ? '' : 's') + '</small>' : '') + '</span><button class="btn primary sm">' + (picked === r.id ? icon('check') + ' Chosen' : 'Choose') + '</button>'
+          : '<span class="dbadge out">' + (min ? 'At least ' + min + ' nights' : big ? 'Too small for ' + guests : 'Booked those nights') + '</span>') + '</div></div></article>');
+      if (ok) $('button', c).onclick = () => { picked = r.id; draw(); fill(); $('#form-' + t.id)?.scrollIntoView({behavior: 'smooth', block: 'start'}); toast(nameOf(rt, r) + ' · ' + nights + ' night' + (nights === 1 ? '' : 's') + ' — add your details below'); };
+      grid.append(c);
+    }
+  };
+  const load = async () => {
+    if (to.value <= from.value) to.value = add(from.value, 1);
+    to.min = add(from.value, 1);
+    try { ans = await api('_stay/' + t.id + '?from=' + from.value + '&to=' + to.value + (guestsF ? '&guests=' + guests : '')); } catch (e) { ans = null; grid.innerHTML = '<div class="err">' + esc(e.message) + '</div>'; return; }
+    if (picked && !ans.free.includes(picked)) picked = null;
+    draw(); fill();
+  };
+  from.onchange = load; to.onchange = load;
+  $$('.guests button', n).forEach((x) => x.onclick = () => { guests = Math.max(1, Math.min(20, guests + +x.dataset.d)); $('.guests b', n).textContent = guests + (guests === 1 ? ' guest' : ' guests'); load(); });
+  if (guestsF) $('.guests b', n).textContent = '2 guests';
+  await load();
   return n;
 }
 
@@ -1315,6 +1538,7 @@ async function site() {
       else if (b.type === 'list' && table(b.table)) nodes[i] = await listBlock(b, table(b.table), pg, state);
       else if (b.type === 'info' && table(b.table)) nodes[i] = await infoBlock(b, table(b.table));
       else if (b.type === 'availability' && table(b.table)) nodes[i] = await availabilityBlock(b, table(b.table), state);
+      else if (b.type === 'stay' && table(b.table)) nodes[i] = await stayBlock(b, table(b.table), state);
       else if (b.type === 'gallery') nodes[i] = await galleryBlock(b);
       else if (b.type === 'testimonials' && table(b.table)) nodes[i] = await testimonialsBlock(b, table(b.table));
       else if (b.type === 'contact') nodes[i] = await contactBlock(b);
@@ -1440,6 +1664,9 @@ async function overview(c) {
   if (kinds.includes('bookings')) tiles.push(['cal', 'Bookings today', st.bookings_today, 'Not counting cancellations']);
   if (kinds.includes('orders')) tiles.push(['bag', 'Open orders', st.open_orders, 'Not done or cancelled yet'], ['tag', 'Takings today', money(st.revenue_today), st.orders_today + ' order' + (st.orders_today === 1 ? '' : 's') + ' today'], ['chart', 'Last 7 days', money(st.revenue_7d), 'Orders, by when they came in']);
   tiles.push(['bell', 'New today', st.new_today, 'Everything that came in today']);
+  // Who didn't turn up (the last 30 days), where bookings can be marked "No-show".
+  const ns = Object.values(st.no_shows || {});
+  if (ns.length) { const k2 = ns.reduce((a, x) => a + x.count, 0), of = ns.reduce((a, x) => a + x.of, 0); tiles.push(['x', 'No-shows · 30 days', k2, of ? (Math.round(k2 * 1000 / of) / 10) + '% of ' + of + ' booking' + (of === 1 ? '' : 's') : 'No bookings in the last 30 days']); }
   const k = el('<div class="kpis">' + tiles.map(([ic, l, v, sub]) => '<div class="kpi"><small>' + icon(ic) + esc(l) + '</small><b>' + esc(String(v)) + '</b><span>' + esc(sub) + '</span></div>').join('') + '</div>');
   c.append(k);
   const dash = el('<div class="dash"><div class="dcol"></div><div class="dcol"></div></div>'); c.append(dash);
@@ -1451,6 +1678,14 @@ async function overview(c) {
     m.onclick = () => go('t:' + id); $('.minis', charts).append(m);
   }
   left.append(charts);
+  // What each service brought in (bookings in the last 30 days, not cancelled).
+  for (const [id, x] of Object.entries(st.by_service || {})) {
+    const max = Math.max(1, ...x.items.map((i) => i.revenue)), total = x.items.reduce((a, i) => a + i.revenue, 0);
+    const card = el('<div class="card"><div class="card-h"><h3>' + esc(x.what) + ' · last 30 days</h3><span class="muted small">' + esc(money(total)) + ' booked</span></div><div class="card-b svc">'
+      + x.items.map((i) => '<div class="svc-r"><div class="svc-n"><b>' + esc(i.name) + '</b><span class="muted small">' + i.count + ' booked</span></div><div class="svc-bar"><i style="width:' + Math.max(3, Math.round(i.revenue / max * 100)) + '%"></i></div><b class="num">' + esc(money(i.revenue)) + '</b></div>').join('') + '</div></div>');
+    card.onclick = () => go('t:' + id);
+    left.append(card);
+  }
   left.append(el('<div class="card"><div class="card-h"><h3>Busiest hours</h3><span class="muted small">Booked times, and when orders come in</span></div><div class="card-b">' + hourStrip(st.hours || []) + '</div></div>'));
   right.append(await todayCard());
   right.append(await attentionCard());
@@ -1627,10 +1862,14 @@ async function manageTable(t, c) {
     return;
   }
   const sf = statusField(t), df = dateOf(t), canBoard = sf && sf.options.length >= 3;
-  const modeKey = 'view_' + location.port + '_' + t.id;
-  let mode = canBoard && localStorage.getItem(modeKey) === 'board' ? 'board' : 'table';
+  // A month calendar for records on a day (cars booked in, viewings, events): timed bookings have the day plan instead.
+  const canCal = df && df.type === 'date' && !shapeOf(t) && !stayShape(t);
+  const modes = [['table', 'list', 'Table'], ...(canBoard ? [['board', 'board', 'Board']] : []), ...(canCal ? [['calendar', 'cal', 'Calendar']] : [])];
+  const modeKey = 'view_' + location.port + '_' + t.id, saved = localStorage.getItem(modeKey);
+  // A job that moves along (in the workshop, preparing, packing) opens as a board.
+  let mode = modes.some(([m]) => m === saved) ? saved : canBoard && /workshop|progress|prepar|packing/i.test(sf.options.join(' ')) ? 'board' : 'table';
   const head = el('<div class="head"><h1>' + esc(t.title) + ' <span class="count"></span></h1>'
-    + (canBoard ? '<div class="seg"><button data-m="table">' + icon('list') + ' Table</button><button data-m="board">' + icon('board') + ' Board</button></div>' : '')
+    + (modes.length > 1 ? '<div class="seg">' + modes.map(([m, ic, l]) => '<button data-m="' + m + '">' + icon(ic) + ' ' + l + '</button>').join('') + '</div>' : '')
     + '<button class="btn" data-a="csv">' + icon('download') + ' Export</button><button class="btn" data-a="photo">' + icon('image') + ' Add from a photo</button><button class="btn primary" data-a="add">' + icon('plus') + ' Add</button><p class="sub">' + esc(t.purpose || '') + '</p></div>');
   $('[data-a=add]', head).onclick = () => drawer(t, null, () => go(VIEW));
   $('[data-a=photo]', head).onclick = () => importPhoto(t, () => go(VIEW));
@@ -1646,9 +1885,10 @@ async function manageTable(t, c) {
   const count = (n) => { $('.count', head).textContent = n + ' ' + (n === 1 ? singular(t.title).toLowerCase() : t.title.toLowerCase()); };
   const draw = async () => {
     $$('.seg button', head).forEach((b) => b.classList.toggle('on', b.dataset.m === mode));
-    if (stChips) stChips.style.display = mode === 'board' ? 'none' : '';
+    if (stChips) stChips.style.display = mode === 'table' ? '' : 'none';
     box.classList.toggle('plain', mode === 'board');
     if (mode === 'board') { await boardView(t, $('.tablewrap', box), {q, when}); const n = $$('.kcard', box).length; count(n); }
+    else if (mode === 'calendar') { await monthView(t, $('.tablewrap', box), {q}); count((await rows(t.id)).length); }
     else await dataTable(t, $('.tablewrap', box), {q, filter, when, fresh: false, out, onCount: count});
   };
   $$('.seg button', head).forEach((b) => b.onclick = () => { mode = b.dataset.m; localStorage.setItem(modeKey, mode); draw(); });
@@ -1658,7 +1898,13 @@ async function manageTable(t, c) {
   if (shapeOf(t)) {
     const plan = el('<div class="card" style="margin-bottom:22px"></div>');
     c.insertBefore(plan, bar);
-    await dayPlanView(t, plan);
+    await (localStorage.getItem(modeKey + '_plan') === 'week' ? weekView(t, plan) : dayPlanView(t, plan));
+  }
+  // Stays (rooms by night): who is in which room, two weeks at a time.
+  if (stayShape(t)) {
+    const occ = el('<div class="card" style="margin-bottom:22px"></div>');
+    c.insertBefore(occ, bar);
+    await occupancyView(t, occ);
   }
   await rows(t.id, true); await draw();
 }
@@ -1672,7 +1918,7 @@ async function dayPlanView(t, box, date) {
   const shift = (d) => { const x = new Date(date + 'T12:00'); x.setDate(x.getDate() + d); return x.toISOString().slice(0, 10); };
   const label = new Date(date + 'T12:00').toLocaleDateString(undefined, {weekday: 'long', day: 'numeric', month: 'long'});
   const count = new Set(plan.busy.map((h) => h.id)).size;
-  let h = '<div class="card-h"><h3>Day plan · ' + esc(label) + '</h3><div class="daynav"><button class="btn sm" data-d="-1">←</button><input type="date" style="width:auto" value="' + date + '"><button class="btn sm" data-d="1">→</button><button class="btn sm" data-d="0">Today</button></div></div>'
+  let h = '<div class="card-h"><h3>Day plan · ' + esc(label) + '</h3><div class="seg"><button class="on">Day</button><button data-w="1">Week</button></div><div class="daynav"><button class="btn sm" data-d="-1">←</button><input type="date" style="width:auto" value="' + date + '"><button class="btn sm" data-d="1">→</button><button class="btn sm" data-d="0">Today</button></div></div>'
     + '<div class="card-b">' + (plan.closed ? '<div class="closed-note">' + icon('cal') + ' Closed this day' + (plan.closed !== 'closed' ? ': ' + esc(plan.closed) : '') + '. Customers can’t book it.</div>' : '')
     + '<div class="muted" style="margin-bottom:8px">' + count + ' booking' + (count === 1 ? '' : 's') + ' · each holds a ' + esc(sh.res.title.toLowerCase().replace(/s$/, '')) + ' for ' + plan.minutes + ' minutes (change it in Design & texts). Click an empty slot to add a booking.</div><div class="tl"><table><tr><th class="rn">' + esc(sh.res.title) + '</th>' + ss.map((m) => '<th>' + toHHMM(m) + '</th>').join('') + '</tr>';
   for (const r of plan.resources) {
@@ -1695,10 +1941,124 @@ async function dayPlanView(t, box, date) {
   }
   $$('[data-d]', box).forEach((b) => b.onclick = () => dayPlanView(t, box, +b.dataset.d === 0 ? todayISO() : shift(+b.dataset.d)));
   $('input[type=date]', box).onchange = (e) => dayPlanView(t, box, e.target.value);
+  $('[data-w]', box).onclick = () => { localStorage.setItem('view_' + location.port + '_' + t.id + '_plan', 'week'); weekView(t, box, date); };
   $('table', box).onclick = async (e) => {
     const c = e.target.closest('td'); if (!c) return;
     if (c.dataset.id) { const r = (await rows(t.id, true)).find((x) => String(x.id) === c.dataset.id); if (r) record(t, r, () => go(VIEW)); return; }
     if (c.dataset.r) drawer(t, null, () => go(VIEW), {[sh.date.id]: date, [sh.time.id]: toHHMM(+c.dataset.m), [sh.link.id]: +c.dataset.r});
+  };
+}
+
+const isoOf = (d) => { const x = new Date(d); x.setMinutes(x.getMinutes() - x.getTimezoneOffset()); return x.toISOString().slice(0, 10); };
+const plusDays = (iso, k) => { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + k); return isoOf(d); };
+
+/// The manager's week: a column per day, the opening hours down the side, each booking with who and with whom.
+async function weekView(t, box, date) {
+  const sh = shapeOf(t), sf = statusField(t);
+  const d0 = new Date((date || todayISO()) + 'T12:00'); d0.setDate(d0.getDate() - (d0.getDay() + 6) % 7);
+  const days = [...Array(7)].map((_, i) => plusDays(isoOf(d0), i));
+  const plans = await Promise.all(days.map((d) => api('_plan/' + t.id + '?date=' + d)));
+  const all = await rows(t.id, true), links = await linkMaps(t);
+  const o = toMin(plans[0].open) ?? 540, cl = toMin(plans[0].close) ?? 1080, c2 = cl <= o ? cl + 1440 : cl;
+  const hours = []; for (let k = Math.floor(o / 60); k * 60 < c2; k++) hours.push(k % 24);
+  const by = {}; let n = 0;
+  for (const r of all) {
+    const d = String(r[sh.date.id] || ''), m = toMin(r[sh.time.id]);
+    if (!days.includes(d) || m === null || (sf && tone(r[sf.id]) === 'red')) continue;
+    let k = Math.floor(m / 60); if (!hours.includes(k)) k = m < o ? hours[0] : hours[hours.length - 1];
+    (by[d + '|' + k] = by[d + '|' + k] || []).push(r); n++;
+  }
+  for (const l of Object.values(by)) l.sort((x, y) => String(x[sh.time.id]).localeCompare(String(y[sh.time.id])));
+  const label = dayLabel(days[0], {day: 'numeric', month: 'long'}) + ' – ' + dayLabel(days[6], {day: 'numeric', month: 'long'});
+  let h = '<div class="card-h"><h3>Week · ' + esc(label) + '</h3><div class="seg"><button data-w="0">Day</button><button class="on">Week</button></div><div class="daynav"><button class="btn sm" data-k="-7">←</button><button class="btn sm" data-k="0">This week</button><button class="btn sm" data-k="7">→</button></div></div>'
+    + '<div class="card-b"><div class="muted" style="margin-bottom:8px">' + n + ' booking' + (n === 1 ? '' : 's') + ' this week · click a booking to open it, or an empty hour to add one.</div><div class="wk"><table><tr><th></th>'
+    + days.map((d, i) => '<th class="' + (d === todayISO() ? 'today' : '') + (plans[i].closed ? ' shut' : '') + '">' + esc(dayLabel(d)) + (plans[i].closed ? '<small>Closed</small>' : '') + '</th>').join('') + '</tr>';
+  for (const k of hours) {
+    h += '<tr><th class="hr">' + String(k).padStart(2, '0') + ':00</th>';
+    days.forEach((d, i) => {
+      const list = by[d + '|' + k] || [];
+      h += '<td class="' + (plans[i].closed ? 'shut' : '') + (d < todayISO() ? ' past' : '') + '" data-d="' + d + '" data-h="' + k + '">' + list.map((r) => '<button class="wk-b t-' + tone(sf ? r[sf.id] : '') + '" data-id="' + r.id + '"><b>' + esc(r[sh.time.id]) + '</b> ' + esc(nameOf(t, r)) + '<small>' + esc(fmt(sh.link, r[sh.link.id], links)) + '</small></button>').join('') + '</td>';
+    });
+    h += '</tr>';
+  }
+  box.innerHTML = h + '</table></div></div>';
+  $$('[data-k]', box).forEach((b) => b.onclick = () => weekView(t, box, +b.dataset.k === 0 ? todayISO() : plusDays(days[0], +b.dataset.k)));
+  $('[data-w]', box).onclick = () => { localStorage.setItem('view_' + location.port + '_' + t.id + '_plan', 'day'); dayPlanView(t, box, days.includes(todayISO()) ? todayISO() : days[0]); };
+  $('table', box).onclick = (e) => {
+    const b = e.target.closest('.wk-b');
+    if (b) { const r = all.find((x) => String(x.id) === b.dataset.id); if (r) record(t, r, () => go(VIEW)); return; }
+    const c = e.target.closest('td[data-d]');
+    if (c && !c.classList.contains('shut')) drawer(t, null, () => go(VIEW), {[sh.date.id]: c.dataset.d, [sh.time.id]: String(c.dataset.h).padStart(2, '0') + ':00'});
+  };
+}
+
+/// A month at a glance: each record on its day (cars booked in, viewings, events), today marked.
+async function monthView(t, box, o = {}) {
+  const df = dateOf(t), sf = statusField(t);
+  let all = await rows(t.id);
+  if (o.q) { const links = await linkMaps(t); all = all.filter((r) => JSON.stringify(r).toLowerCase().includes(o.q) || t.fields.some((f) => f.link && fmt(f, r[f.id], links).toLowerCase().includes(o.q))); }
+  const m0 = box._month || todayISO().slice(0, 7);
+  const first = new Date(m0 + '-01T12:00'), start = new Date(first); start.setDate(1 - (first.getDay() + 6) % 7);
+  const cells = []; for (let i = 0; i < 42; i++) { const d = new Date(start); d.setDate(start.getDate() + i); cells.push(isoOf(d)); if (i % 7 === 6 && cells[i].slice(0, 7) > m0) break; }
+  const by = {}; for (const r of all) { const d = String(r[df.id] || '').slice(0, 10); (by[d] = by[d] || []).push(r); }
+  const shown = all.filter((r) => String(r[df.id] || '').startsWith(m0) && !(sf && tone(r[sf.id]) === 'red')).length;
+  const title = first.toLocaleDateString(undefined, {month: 'long', year: 'numeric'});
+  let h = '<div class="cal"><div class="cal-h"><button class="btn sm" data-m="-1">←</button><h3>' + esc(title) + '</h3><button class="btn sm" data-m="1">→</button><button class="btn sm" data-m="0">Today</button><span class="muted small">' + shown + ' this month · click a day to add one</span></div><div class="cal-g">'
+    + ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((d) => '<div class="cal-dn">' + d + '</div>').join('');
+  for (const d of cells) {
+    const list = (by[d] || []).sort((x, y) => String(x[df.id]).localeCompare(String(y[df.id])));
+    h += '<div class="cal-d' + (d.slice(0, 7) !== m0 ? ' other' : '') + (d === todayISO() ? ' today' : '') + (d < todayISO() ? ' past' : '') + '" data-d="' + d + '"><span class="cal-n">' + Number(d.slice(8)) + '</span>'
+      + list.slice(0, 3).map((r) => '<button class="cal-b t-' + tone(sf ? r[sf.id] : '') + '" data-id="' + r.id + '">' + esc(nameOf(t, r)) + '</button>').join('')
+      + (list.length > 3 ? '<button class="cal-more" data-more="' + d + '">+' + (list.length - 3) + ' more</button>' : '') + '</div>';
+  }
+  box.innerHTML = h + '</div></div>';
+  $$('[data-m]', box).forEach((b) => b.onclick = () => { const k = +b.dataset.m; if (!k) box._month = todayISO().slice(0, 7); else { const d = new Date(m0 + '-15T12:00'); d.setMonth(d.getMonth() + k); box._month = isoOf(d).slice(0, 7); } monthView(t, box, o); });
+  $('.cal-g', box).onclick = (e) => {
+    const b = e.target.closest('.cal-b');
+    if (b) { const r = all.find((x) => String(x.id) === b.dataset.id); if (r) record(t, r, () => monthView(t, box, o)); return; }
+    const more = e.target.closest('.cal-more');
+    if (more) { const c = more.parentElement; c.classList.add('open'); c.innerHTML = '<span class="cal-n">' + Number(more.dataset.more.slice(8)) + '</span>' + by[more.dataset.more].map((r) => '<button class="cal-b t-' + tone(sf ? r[sf.id] : '') + '" data-id="' + r.id + '">' + esc(nameOf(t, r)) + '</button>').join(''); return; }
+    const c = e.target.closest('.cal-d');
+    if (c) drawer(t, null, () => monthView(t, box, o), {[df.id]: c.dataset.d});
+  };
+}
+
+/// Stays (a room from one date to another): the dates and the room.
+function stayShape(t) {
+  const ds = t.fields.filter((f) => f.type === 'date'), room = t.fields.find((f) => f.type === 'link' && /room|suite|cabin|lodge|apartment|unit|pitch/.test(f.id + ' ' + f.link)) || t.fields.find((f) => f.type === 'link');
+  return t.kind !== 'single' && ds.length >= 2 && room && !t.fields.some((f) => f.type === 'time') ? {from: ds[0], to: ds[1], room} : null;
+}
+
+/// Rooms by night: who is staying where, two weeks at a time, today marked; click a free night to add a stay.
+async function occupancyView(t, box, from) {
+  const st = stayShape(t);
+  from = from || todayISO();
+  const o = await api('_occupancy/' + t.id + '?from=' + from + '&days=14');
+  const nights = o.nights, last = plusDays(nights[nights.length - 1], 1);
+  let booked = 0;
+  for (const s of o.stays) for (const d of nights) if (s.from <= d && d < s.to) booked++;
+  const rate = o.rooms.length ? Math.round(booked * 100 / (o.rooms.length * nights.length)) : 0;
+  let h = '<div class="card-h"><h3>Rooms by night · ' + esc(dayLabel(nights[0], {day: 'numeric', month: 'short'})) + ' – ' + esc(dayLabel(last, {day: 'numeric', month: 'short'})) + '</h3><span class="occ-rate"><b>' + rate + '%</b> full</span><div class="daynav"><button class="btn sm" data-k="-7">←</button><button class="btn sm" data-k="0">Today</button><button class="btn sm" data-k="7">→</button></div></div>'
+    + '<div class="card-b"><div class="muted" style="margin-bottom:8px">' + o.stays.length + ' stay' + (o.stays.length === 1 ? '' : 's') + ' in these two weeks · click a stay to open it, or a free night to add one.</div><div class="tl occ"><table><tr><th class="rn">' + esc(table(st.room.link)?.title || 'Rooms') + '</th>'
+    + nights.map((d) => '<th class="' + (d === todayISO() ? 'today' : '') + (o.closed[d] ? ' shut' : '') + '">' + esc(dayLabel(d, {weekday: 'short'})) + '<small>' + Number(d.slice(8)) + '</small></th>').join('') + '</tr>';
+  for (const r of o.rooms) {
+    h += '<tr><th class="rn">' + esc(r.name) + '</th>';
+    for (let i = 0; i < nights.length; i++) {
+      const s = o.stays.find((x) => x.room === r.id && x.from <= nights[i] && nights[i] < x.to);
+      if (s) {
+        let k = 1; while (i + k < nights.length && nights[i + k] < s.to) k++;
+        h += '<td class="b t-' + tone(s.status) + '" colspan="' + k + '" data-id="' + s.id + '" title="' + esc(s.who + (s.guests ? ' · ' + s.guests + ' guests' : '') + ' · ' + s.from + ' → ' + s.to) + '">' + (s.from < nights[0] ? '← ' : '') + esc(s.who) + (s.to > last ? ' →' : '') + '</td>';
+        i += k - 1;
+      } else h += '<td class="' + (o.closed[nights[i]] ? 'shut' : 'f') + (nights[i] < todayISO() ? ' past' : '') + '" data-r="' + r.id + '" data-d="' + nights[i] + '"></td>';
+    }
+    h += '</tr>';
+  }
+  box.innerHTML = h + '</table></div><div class="legend"><span><i style="background:var(--accent)"></i>Booked</span><span><i style="background:var(--soft);border:1px solid var(--line)"></i>Free</span>' + (Object.keys(o.closed).length ? '<span><i style="background:#fde2e2"></i>Closed</span>' : '') + '</div></div>';
+  $$('[data-k]', box).forEach((b) => b.onclick = () => occupancyView(t, box, +b.dataset.k === 0 ? todayISO() : plusDays(from, +b.dataset.k)));
+  $('table', box).onclick = async (e) => {
+    const c = e.target.closest('td'); if (!c) return;
+    if (c.dataset.id) { const r = (await rows(t.id, true)).find((x) => String(x.id) === c.dataset.id); if (r) record(t, r, () => go(VIEW)); return; }
+    if (c.dataset.r) drawer(t, null, () => go(VIEW), {[st.from.id]: c.dataset.d, [st.to.id]: plusDays(c.dataset.d, 1), [st.room.id]: +c.dataset.r});
   };
 }
 
@@ -1943,7 +2303,7 @@ async function website(c) {
         drawG();
         box.append(k);
       } else {
-        const what = b.type === 'form' ? 'form' : b.type === 'testimonials' ? 'reviews' : b.layout === 'menu' ? 'menu' : 'list';
+        const what = b.type === 'form' ? 'form' : b.type === 'testimonials' ? 'reviews' : b.type === 'stay' ? 'room finder' : b.type === 'availability' ? 'free times' : b.layout === 'menu' ? 'menu' : b.layout === 'timetable' ? 'timetable' : 'list';
         const k = el('<div class="blk"><div class="field"><label class="lbl">Heading above the ' + what + ' of ' + esc((table(b.table)?.title || '').toLowerCase()) + '</label><input></div></div>');
         $('input', k).value = b.title || ''; $('input', k).oninput = (x) => e.title = x.target.value;
         box.append(k);

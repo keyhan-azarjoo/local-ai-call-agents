@@ -918,7 +918,12 @@ class ScenarioRunner {
       // A real hand-over: hold music, then they speak in their own voice (not the first agent carrying on).
       final person = (await s.db.all('agents', where: 'lower(name) = ?', args: [who])).firstOrNull?['handles'] == 'human';
       if (!person && !aiText.toLowerCase().contains('(on hold) $who')) f.add('no real hand-over to ${ex['passed_to']} (hold music, then their own voice)');
-      if (!audit.any((a) => a.toLowerCase().contains('to $who')) && !RegExp('\\b$who\\b', caseSensitive: false).hasMatch(ai.skip(1).join(' '))) {
+      // A hand-over to a person is a [connect:id] (nobody is rung in tests): count it if the id is theirs.
+      final rang = <String>[
+        for (final p in passedTo.where((p) => p.startsWith('person#')))
+          '${(await s.db.all('agents', where: 'id = ?', args: [int.parse(p.substring(7))])).firstOrNull?['name'] ?? ''}'.toLowerCase(),
+      ];
+      if (!rang.contains(who) && !audit.any((a) => a.toLowerCase().contains('to $who')) && !RegExp('\\b$who\\b', caseSensitive: false).hasMatch(ai.skip(1).join(' '))) {
         f.add('was not passed to ${ex['passed_to']} (passed: ${passedTo.join(', ')}; audit: ${audit.where((a) => a.contains('passed')).join('; ')})');
       }
     }

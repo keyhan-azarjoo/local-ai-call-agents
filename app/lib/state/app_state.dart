@@ -1610,12 +1610,37 @@ class AppState extends ChangeNotifier {
           'id': sc['id'], 'app': sc['app'], 'intent': sc['intent'], 'setup': 'your assistant', 'style': sc['style'], 'goal': sc['goal'] ?? '',
           'done': n - 1, 'total': list.length, 'passed': passed, 'turns': [], 'tools': [], 'line': w + 1, 'lines': workers,
         });
-        final t0 = DateTime.now();
+        // The model being away (restarting, say) is not the scenario's fault: wait for it, then run
+        // the scenario again from the start instead of counting it as a failure.
+        Future<bool> modelBack() async {
+          for (var i = 0; i < 120 && !r.stopRequested; i++) {
+            if (await ollama.version() != null) return true;
+            if (i == 0) {
+              scenarioStatus = 'Waiting for the AI model to come back…';
+              notifyListeners();
+            }
+            await Future<void>.delayed(const Duration(seconds: 5));
+          }
+          return false;
+        }
+        bool modelAway(Object res) => RegExp(r'Connection (refused|closed before full header)|11434').hasMatch('$res');
+
+        var t0 = DateTime.now();
         Map<String, Object?> res;
-        try {
-          res = await r.run(sc);
-        } catch (e) {
-          res = {'pass': false, 'failures': ['could not run: $e']};
+        for (var attempt = 0;; attempt++) {
+          if (!await modelBack()) {
+            res = {'pass': false, 'failures': ['could not run: the AI model is not running']};
+            break;
+          }
+          t0 = DateTime.now();
+          try {
+            res = await r.run(sc);
+          } catch (e) {
+            res = {'pass': false, 'failures': ['could not run: $e']};
+          }
+          if (res['pass'] == true || attempt >= 1 || !modelAway(res) || r.stopRequested) break;
+          await log('Test ${sc['id']}: the AI model went away mid-call, running it again');
+          r.live.clear();
         }
         res = {'id': sc['id'], 'n': sc['n'], 'app': sc['app'], 'intent': sc['intent'], 'setup': 'your assistant', 'style': sc['style'], ...res,
           'seconds': DateTime.now().difference(t0).inSeconds, if (workers > 1) 'parallel': workers};

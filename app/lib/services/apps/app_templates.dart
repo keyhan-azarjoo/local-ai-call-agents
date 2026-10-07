@@ -879,7 +879,7 @@ final appTemplates = <AppTemplate>[
       ]),
       _t('viewings', 'Viewing requests', 'People who want to see a home', 'add', [
         _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('email', 'Email', 'email'), _f('property', 'Property', 'link', link: 'listings', req: true),
-        _f('date', 'Preferred date', 'date'), _f('message', 'Message', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Booked', 'Viewed', 'Offer made', 'Closed'], manager: true),
+        _f('date', 'Preferred date', 'date'), _f('message', 'Message', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Booked', 'Viewed', 'Offer made', 'Closed', 'Cancelled'], manager: true),
         _f('position', 'Your position', 'choice', options: ['First-time buyer', 'Nothing to sell', 'Need to sell first', 'Looking to rent']),
       ]),
       _t('valuations', 'Valuation requests', 'Owners who want their home valued', 'add', [

@@ -1298,7 +1298,7 @@ async function listBlock(b, t, page, state) {
       const tags = fields.filter((f) => ![label, priceF?.id, saleF?.id, descF?.id].includes(f.id) && f.type !== 'image' && !(f.id === 'status' && goneOf(t, r)) && r[f.id] !== undefined && r[f.id] !== '' && r[f.id] !== null && r[f.id] !== false)
         .slice(0, 4).map((f) => '<span class="tag' + (f === catF ? ' acc' : '') + '">' + (f.type === 'yesno' ? icon('check') + ' ' + esc(f.label) : (f.type === 'choice' ? '' : esc(f.label) + ': ') + esc(fmt(f, r[f.id], links))) + '</span>').join('');
       const q2 = state.sel[t.id]?.[r.id] || 0, full = fullOf(places, r.id), out = soldOut(t, r) || full, gone = goneOf(t, r);
-      const flags = (gone ? '<span class="dbadge out">' + esc(gone) + '</span>' : '') + (onSale(t, r) ? '<span class="dbadge sale">Sale</span>' : '') + placesBadge(places, r.id);
+      const flags = (gone ? '<span class="dbadge out">' + esc(gone) + '</span>' : out && !full ? '<span class="dbadge out">Sold out</span>' : '') + (onSale(t, r) ? '<span class="dbadge sale">Sale</span>' : '') + placesBadge(places, r.id);
       const card = el('<article class="item' + (out ? ' out' : '') + '" style="animation-delay:' + Math.min(i, 12) * 40 + 'ms">' + (imgF ? '<div class="media">' + media(r[imgF.id], nameOf(t, r)) + (flags ? '<div class="flags">' + flags + '</div>' : '') + '</div>' : '')
         + '<div class="body"><div class="top"><h3>' + esc(nameOf(t, r)) + '</h3>' + (priceF ? priceHtml(t, r) : '') + '</div>' + (!imgF && flags ? '<div class="meta">' + flags + '</div>' : '')
         + (descF && r[descF.id] ? '<p class="desc">' + esc(r[descF.id]) + '</p>' : '') + (tags ? '<div class="meta">' + tags + '</div>' : '')
@@ -1821,8 +1821,10 @@ async function boardView(t, box, {q = '', when = ''} = {}) {
     const calc = orders ? orderCalc(t, r, links) : null;
     const when2 = df && r[df.id] ? dayLabel(r[df.id]) + (tf && r[tf.id] ? ' · ' + r[tf.id] : '') : '';
     const items = calc ? calc.lines.map((l) => l.qty + '× ' + l.name).join(', ') : '';
+    // What it is about at a glance (the car and its registration, say).
+    const about = t.fields.filter((f) => f.type === 'text' && f.required && !f.when && !f.manager_only && f.id !== labelOf(t) && r[f.id]).slice(0, 2).map((f) => r[f.id]).join(' · ');
     const card = el('<div class="kcard" draggable="true"><div class="k-top"><b>' + esc(nameOf(t, r)) + '</b>' + (calc ? '<span class="price">' + esc(money(calc.total)) + '</span>' : '') + '</div>'
-      + (when2 ? '<small>' + icon('cal') + ' ' + esc(when2) + '</small>' : '') + (items ? '<small class="k-items">' + esc(items) + '</small>' : '')
+      + (about ? '<small>' + icon('tag') + ' ' + esc(about) + '</small>' : '') + (when2 ? '<small>' + icon('cal') + ' ' + esc(when2) + '</small>' : '') + (items ? '<small class="k-items">' + esc(items) + '</small>' : '')
       + '<div class="k-foot"><span class="muted small">' + esc(ago(r.created_at)) + (r.via === 'phone' ? ' · phone' : '') + '</span>' + (next && tone(next) !== 'red' ? '<button class="btn sm" title="Move to ' + esc(next) + '">' + esc(next) + ' ' + icon('arrow') + '</button>' : '') + '</div></div>');
     card.ondragstart = (e) => { e.dataTransfer.setData('text/plain', String(r.id)); card.classList.add('drag'); };
     card.ondragend = () => card.classList.remove('drag');

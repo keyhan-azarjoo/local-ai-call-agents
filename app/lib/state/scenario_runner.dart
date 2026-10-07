@@ -281,6 +281,9 @@ class ScenarioRunner {
 
   final _paused = <int>{};
 
+  /// Numbers the scenarios' callers say (their bookings are test ones too).
+  Set<String> testNumbers = const {};
+
   /// This scenario's own seeds (e.g. "The Loft is taken"): never cancelled to make room.
   final _keep = <Object?>{};
 
@@ -297,7 +300,7 @@ class ScenarioRunner {
     final ours = {for (final n in numbers.values) _digits(n)};
     bool test(Map<String, Object?> r) {
       final p = _digits('${r['phone'] ?? ''}');
-      return (p.startsWith('447700') || r['via'] == 'seed') && !ours.contains(p) && !_keep.contains(r['id']);
+      return (p.startsWith('447700') || r['via'] == 'seed' || (p.length >= 9 && testNumbers.contains(p.substring(p.length - 9)))) && !ours.contains(p) && !_keep.contains(r['id']);
     }
     final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
     final off = status?.options.where((o) => RegExp('cancel', caseSensitive: false).hasMatch(o)).firstOrNull;
@@ -338,7 +341,9 @@ class ScenarioRunner {
     final one = '${resolve(v, numbers)}';
     if (v is! Map || v['weekday'] == null) return [one];
     final d = DateTime.parse(one);
-    return [one, ymd(DateTime(d.year, d.month, d.day + 7))];
+    // "Wednesday" said on a Wednesday: today too (the seeds fill both, see _run).
+    final today = DateTime.now().weekday == (v['weekday'] as num).toInt();
+    return [one, ymd(DateTime(d.year, d.month, d.day + 7)), if (today) ymd(DateTime(d.year, d.month, d.day - 7))];
   }
 
   // ---------------- dates ----------------
@@ -427,7 +432,8 @@ class ScenarioRunner {
       ended = said.contains('[END]');
       said = said.replaceAll('[END]', '').trim();
       // Asked something but only said goodbye: a real caller would answer.
-      if (said.isEmpty && (extra > 0 || (i > 0 && turns.last['content']!.trim().endsWith('?') && extra++ < 2))) said = 'Yes, please.';
+      final wanted = RegExp(r"\?\s*$|\b(please (provide|give|tell|confirm)|(can|could|may) i (have|take|get)|i.?ll need)\b", caseSensitive: false).hasMatch(turns.last['content']!);
+      if (said.isEmpty && (extra > 0 || (i > 0 && wanted && extra++ < 2))) said = 'Yes, please.';
       if (said.isEmpty) break;
       turns.add({'role': 'user', 'content': said});
       times.add({'at': hms(DateTime.now())});
@@ -456,7 +462,7 @@ class ScenarioRunner {
       }
       // The voice engine hangs up only on a goodbye (see _FAREWELL in localline_voice.py).
       final before = text.split('[hangup]').first;
-      if (text.contains('[hangup]') && _farewell.hasMatch(before.length > 90 ? before.substring(before.length - 90) : before) && !before.contains('?')) hungUp = true;
+      if (text.contains('[hangup]') && _farewell.hasMatch(before.length > 90 ? before.substring(before.length - 90) : before) && !before.trim().endsWith('?')) hungUp = true;
       text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
       turns.add({'role': 'assistant', 'content': text});
       // Where the time went inside the app (its own log of this turn).
@@ -500,6 +506,7 @@ class ScenarioRunner {
         'A fixed timetable time for your course or class is fine. If asked to confirm details that are right, say yes. If the assistant suggests or reads back a day, time, number of people, item or detail that is NOT in your facts, '
         'say no and give the right one from your facts — never accept a wrong suggestion (except: when a fact says flexible, or your goal says to take another option, and they say yours is not free, say yes to the first other option they offer). ${RegExp(r'^(find|cancel)').hasMatch('${sc['intent']}') ? 'You are asking about a booking you already have: the day, time, room or people they find for it are the answer, not a suggestion — accept them. ' : ''}A calendar date the assistant adds (like "Saturday 2026-10-10") is fine when the weekday '
         'matches yours: never argue about date numbers, and never say date numbers yourself (no "10 October", no "the 10th"): say the day only as your facts do. '
+        'Prices, delivery fees and totals the assistant tells you are not in your facts: accept them, never argue about money. Always give your name when asked. '
         'Never say the same sentence twice in a row; if asked for a time or detail you have no fact for, say any time is fine / not needed. '
         'If asked something not in your facts (e.g. allergies, special requests, email) say no / not needed. '
         'When your goal is done (they clearly confirmed it) or clearly cannot be done, say a short goodbye and end with [END]. '

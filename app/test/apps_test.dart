@@ -297,10 +297,10 @@ void main() {
     expect(r.text, contains('1 was taken, so it is 2 instead'));
     await s.callTool('cancel_my_reservations', {'phone': '07700 100001'});
     // After the first one ends, it's free again.
-    r = await s.callTool('add_reservations', {'name': 'Bo', 'phone': '1', 'date': '2026-10-07', 'time': '21:00', 'guests': 2, 'table': '1'});
+    r = await s.callTool('add_reservations', {'name': 'Bo', 'phone': '07700 100011', 'date': '2026-10-07', 'time': '21:00', 'guests': 2, 'table': '1'});
     expect(r.isError, isFalse, reason: r.text);
     // Too big for a 2-seater.
-    r = await s.callTool('add_reservations', {'name': 'Cy', 'phone': '1', 'date': '2026-10-07', 'time': '13:00', 'guests': 6, 'table': '1'});
+    r = await s.callTool('add_reservations', {'name': 'Cy', 'phone': '07700 100012', 'date': '2026-10-07', 'time': '13:00', 'guests': 6, 'table': '1'});
     expect(r.text, contains('too small'));
     final c = await s.callTool('check_reservations', {'date': '2026-10-07', 'time': '19:30', 'guests': 2});
     expect(c.text, startsWith('Free tables at 19:30'));

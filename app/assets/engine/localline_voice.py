@@ -716,7 +716,7 @@ class Ava(Agent):
             # goodbye must be at the end ("Hi, thanks for calling! … Would you like to order?" is not one),
             # and never after a question.
             before = t[: t.lower().find("[hangup]")]
-            self.hangup_requested = bool(_FAREWELL.search(before[-90:])) and "?" not in before
+            self.hangup_requested = bool(_FAREWELL.search(before[-90:])) and not before.rstrip().endswith("?")
             t = _HANGUP.sub("", t)
         c = _CONNECT.search(t)
         if c:

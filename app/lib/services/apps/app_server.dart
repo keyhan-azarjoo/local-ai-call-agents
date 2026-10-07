@@ -543,13 +543,22 @@ class AppServer {
             final v = '${args[f.id] ?? ''}'.trim();
             if (v.isNotEmpty && _placeholder.hasMatch(v)) throw AppDataError('Ask the caller for their ${f.label.toLowerCase().replaceFirst('your ', '')} first ("$v" is not a name), then save it.');
           }
+          // A phone number without its digits ("Lily"), or "unknown" for something required: ask for it.
+          for (final f in t.fields.where((f) => !f.managerOnly)) {
+            final v = '${args[f.id] ?? ''}'.trim();
+            if (v.isEmpty) continue;
+            if (f.type == 'phone' && v.replaceAll(RegExp(r'\D'), '').length < 7) throw AppDataError('Ask the caller for their phone number first ("$v" is not one), then save it.');
+            if (f.required && f.type == 'text' && RegExp(r'^(unknown|n/?a|none|tbc|tbd|not given|not provided|\?+|-+)$', caseSensitive: false).hasMatch(v)) {
+              throw AppDataError('Ask the caller for the ${f.label.toLowerCase().replaceFirst('your ', '')} first ("$v" is not one), then save it.');
+            }
+          }
         }
         if (!manager) {
           // The stylist, doctor or barber the caller asked for (else the first free one is given).
           args = await _keepNamed(t, args, heard);
           // Saved already in this call (the caller corrected something, or the AI saved twice): change that one —
           // unless they asked for two ("also a table on Saturday", "both").
-          final two = heard.any((h) => RegExp(r'\b(also|both|another|second|as well|two (tables|bookings|appointments|orders))\b', caseSensitive: false).hasMatch(h));
+          final two = heard.any((h) => RegExp(r'\b(also|another|second|both)\b[^.?!]{0,40}\b(book|table|appointment|reservation|order|room|stay)|\btwo (tables|bookings|appointments|orders)\b', caseSensitive: false).hasMatch(h));
           final shape = BookingShape.of(spec, t);
           final prev = await data.recentByPhone(t, '${args[t.fields.where((f) => f.type == 'phone').firstOrNull?.id] ?? ''}',
               date: shape == null ? null : parseDate('${args[shape.dateField.id] ?? ''}'), name: '${args[t.labelField] ?? ''}');

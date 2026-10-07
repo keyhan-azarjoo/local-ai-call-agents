@@ -567,7 +567,10 @@ class AppServer {
           'ask the caller for the exact name it was booked under. If they don\'t know it, they can\'t change or cancel it by phone.');
     }
     if (!cancel) {
-      if (mine.isEmpty) return 'No $what found for the phone number $phone under the name $named. Tell the caller you can\'t find one (they may have used another number or name).';
+      if (mine.isEmpty) {
+        return 'No $what found under the name $named on the number they are calling from. Tell the caller once, kindly: bookings can only be found from the number they were made with, '
+            'so if they booked from another phone they should call from that one. Do not ask for their phone number (it can\'t be used) and do not look again.';
+      }
       return 'Found ${mine.length} for $named on $phone:\n'
           '${await data.describe(t.id, [for (final r in mine) {for (final e in r.entries) if (e.key != 'created_at' && e.key != 'via') e.key: e.value}])}';
     }

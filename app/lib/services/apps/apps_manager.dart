@@ -368,7 +368,7 @@ class AppsManager extends ChangeNotifier {
     return true;
   }
 
-  /// A template's sample photo ("unsplash:<id>"), saved into the app's files (null without internet:
+  /// A template's sample photo (`unsplash:<id>`), saved into the app's files (null without internet:
   /// tidy placeholders instead).
   Future<Object?> _photo(Directory dir, Map<String, String?> pics, Object? v, {bool big = false}) async {
     if (v is! String || !v.startsWith('unsplash:')) return v;

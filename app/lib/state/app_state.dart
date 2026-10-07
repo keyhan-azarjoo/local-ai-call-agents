@@ -983,11 +983,20 @@ class AppState extends ChangeNotifier {
             }
           }
         }
+        // Already looked for on this call and nothing there: say so instead of looking again and again.
+        if (callerNumber != null && b.tool.name.startsWith('find_my_') && (_notFound[callerNumber] ?? 0) >= 2) {
+          return Future.value((
+            text: 'Already looked twice on this call: nothing under this number. Don\'t look again. Tell the caller you can\'t find it from this number, '
+                'offer to take a message for the manager, or help with something else.',
+            isError: true,
+          ));
+        }
         final r = mcp.callCached(b.serverId, b.tool.name, args, readOnly: b.tool.readOnly);
         if (callerNumber == null || !RegExp(r'^(find|cancel|change)_my_').hasMatch(b.tool.name)) return r;
         // Found under the name they gave: that is who they are for the rest of this call.
         return r.then((x) {
           if (!x.isError && x.text.startsWith(RegExp(r'Found|Done|Cancelled'))) _verifiedName[callerNumber] = '${args['name']}';
+          if (x.text.startsWith('No ') || x.text.contains('not under the name')) _notFound[callerNumber] = (_notFound[callerNumber] ?? 0) + 1;
           return x;
         });
       },
@@ -1156,6 +1165,7 @@ class AppState extends ChangeNotifier {
     _onCall.remove(room);
     _lastCheck.remove('${b['number'] ?? ''}');
     _verifiedName.remove('${b['number'] ?? ''}');
+    _notFound.remove('${b['number'] ?? ''}');
     _savedOn.remove(room);
     roomAgent.remove(room);
     final turns = [for (final t in (b['transcript'] as List? ?? []).cast<Map>()) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': '${t['text']}'}];
@@ -1560,6 +1570,9 @@ class AppState extends ChangeNotifier {
 
   /// The name a caller's own booking was found under on this call (by their number): their word for it.
   final _verifiedName = <String, String>{};
+
+  /// How many times a caller's own booking was looked for and not found on this call (by their number).
+  final _notFound = <String, int>{};
 
   /// The name the caller gave ("my name is Hugo Khan", "it's under Patel", "this is Sara").
   static String? saidName(String said) {

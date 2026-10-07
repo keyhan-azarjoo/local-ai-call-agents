@@ -16,6 +16,7 @@ import '../services/agent_loop.dart';
 import '../services/agent_templates.dart';
 import '../services/apps/app_data.dart' show parseDate, spokenDates, withDay;
 import '../services/apps/apps_manager.dart';
+import '../services/apps/app_server.dart' show sameName;
 import '../services/catalog.dart';
 import '../services/tool_results.dart';
 import '../services/cloud_llm.dart';
@@ -294,6 +295,9 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _snapTimer?.cancel();
+    try {
+      knowledge.stopEmbedServer();
+    } catch (_) {} // (never started)
     super.dispose();
   }
 
@@ -305,7 +309,8 @@ class AppState extends ChangeNotifier {
     if (!dirRoot.existsSync()) return null;
     final allowed = {
       for (final srv in await mcp.servers())
-        if (srv.enabled && scopes.contains(srv.scope)) srv.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
+        // (On a call: only a built app's customer lists — menus, prices — never another service's data.)
+        if (srv.enabled && scopes.contains(srv.scope) && (scopes.contains('me') || _customerApp(srv))) srv.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
     };
     String stem(String w) => w.endsWith('ies') ? '${w.substring(0, w.length - 3)}y' : (w.endsWith('s') ? w.substring(0, w.length - 1) : w);
     final qWords = RegExp(r'[a-z]{3,}').allMatches(question.toLowerCase()).map((m) => stem(m.group(0)!)).toSet();
@@ -425,12 +430,18 @@ class AppState extends ChangeNotifier {
     for (final srv in await mcp.servers()) {
       if (!srv.enabled || !scopes.contains(srv.scope) || _outOfFocus(srv, number)) continue;
       if (access?.tools != null && !access!.tools!.contains(srv.id)) continue;
+      // On a call (callers are strangers): the business's own customer tools, and other connected
+      // services only when this agent was given them by name — never just because they're shared.
+      if (!scopes.contains('me') && !_customerApp(srv) && !(access?.tools?.contains(srv.id) ?? false)) continue;
       for (final t in srv.tools) {
         out.add(ToolBinding(serverId: srv.id, serverName: srv.name, tool: t, fnName: ToolBinding.safeName(srv.name, t.name)));
       }
     }
     return out;
   }
+
+  /// A built app's customer tools (only ever what customers may see or do, and their own bookings).
+  static bool _customerApp(McpServer srv) => srv.secret['app'] != null && srv.secret['role'] == 'customers';
 
   /// Customers' tools of the apps built in LocalAILine (bookings, orders, menus…).
   Future<List<ToolBinding>> builtAppTools(Set<String> scopes, {String? number}) async => [
@@ -695,7 +706,8 @@ class AppState extends ChangeNotifier {
         'Only say it is booked or placed after the tool answered "Done"; if it answers with a problem (e.g. that time is taken), tell the caller and offer what is free. '
         'Never repeat a confirmation you already gave: if they ask again, just say yes, it is booked, in a few words.'
         '${tools.any((t) => t.tool.name.startsWith('find_my_')) ? ' For a NEW booking never call the find_my_ tool. When someone asks about, wants to change or cancel their own booking or order: '
-            'call the find_my_ tool (it uses the number they are calling from: never ask for their number) and tell them what you found (day, time, room, people). '
+            'first ask for the name it is booked under, then call the find_my_ tool with that name (it uses the number they are calling from: never ask for their number) and tell them what you found (day, time, room, people). '
+            'Never give any details of a booking or order to someone who is not on it, and never say who else has booked. '
             'To cancel: confirm which booking, then call the cancel_my_ tool; '
             'to change one (new time, day, people, items), call the change_my_ tool with only what changes — never make a second booking. If nothing is found, say you can\'t find a booking under this number. '
             'Never guess or assume details of someone\'s booking (time, table, people): look them up first.' : ''}'
@@ -744,10 +756,16 @@ class AppState extends ChangeNotifier {
     // An agent limited to some connected systems only sees those systems' data snapshots.
     // The business apps it answers for are always in (their price lists, opening times): without them
     // an agent with no other tools makes prices up.
-    final allowedSnapshots = access?.tools == null
+    // On a call, data snapshots only from the business's customer lists (and services given to this
+    // agent by name): never a contacts list or another service's records in a stranger's call.
+    final caller = !scopes.contains('me');
+    final allowedSnapshots = access?.tools == null && !caller
         ? null
         : {
-            for (final m in await db.all('mcp_servers', orderBy: 'id')) if (access!.tools!.contains(m['id'])) 'MCP: ${m['name']}',
+            if (caller)
+              for (final srv in await mcp.servers())
+                if (_customerApp(srv)) 'MCP: ${srv.name}',
+            for (final m in await db.all('mcp_servers', orderBy: 'id')) if (access?.tools?.contains(m['id']) ?? false) 'MCP: ${m['name']}',
             for (final t in await builtAppTools(scopes)) 'MCP: ${t.serverName}',
           };
     final users = messages.where((m) => m.role == 'user').toList();
@@ -909,6 +927,19 @@ class AppState extends ChangeNotifier {
         // On a call, someone's own bookings are found and cancelled by the number they're calling
         // from, not by the number they say: only they can cancel theirs.
         if (callerNumber != null && RegExp(r'^(find|cancel|change)_my_').hasMatch(b.tool.name)) args = {...args, 'phone': callerNumber};
+        // A caller's own bookings need both: the number they call from, and the name it is under — a
+        // name they said themselves on this call (not one the AI read somewhere).
+        if (!scopes.contains('me') && RegExp(r'^(find|cancel|change)_my_').hasMatch(b.tool.name)) {
+          if (callerNumber == null) {
+            return Future.value((text: 'Their number is withheld, so no booking can be looked up, changed or cancelled on this call. Tell them to call back from the number they booked with.', isError: true));
+          }
+          final said = [for (final m in messages) if (m.role == 'user') callerWords(m.content)].join(' ');
+          final name = '${args['name'] ?? ''}'.trim().isNotEmpty ? '${args['name']}' : (_verifiedName[callerNumber] ?? saidName(said) ?? '');
+          if (name.isNotEmpty && !sameName(name, said) && _verifiedName[callerNumber] != name) {
+            return Future.value((text: 'The caller has not said the name "$name". Ask them for the name it is booked under; never suggest one.', isError: true));
+          }
+          args = {...args, 'name': name};
+        }
         // Making a new booking or order: never change or cancel another one (small models try every tool).
         if (callerNumber != null && RegExp(r'^(cancel|change)_my_').hasMatch(b.tool.name) &&
             _askedForNew([for (final m in messages) if (m.role == 'user') ChatMessage('user', callerWords(m.content))])) {
@@ -952,7 +983,13 @@ class AppState extends ChangeNotifier {
             }
           }
         }
-        return mcp.callCached(b.serverId, b.tool.name, args, readOnly: b.tool.readOnly);
+        final r = mcp.callCached(b.serverId, b.tool.name, args, readOnly: b.tool.readOnly);
+        if (callerNumber == null || !RegExp(r'^(find|cancel|change)_my_').hasMatch(b.tool.name)) return r;
+        // Found under the name they gave: that is who they are for the rest of this call.
+        return r.then((x) {
+          if (!x.isError && x.text.startsWith(RegExp(r'Found|Done|Cancelled'))) _verifiedName[callerNumber] = '${args['name']}';
+          return x;
+        });
       },
       onText: onText == null && cancelled == null
           ? null
@@ -1118,6 +1155,7 @@ class AppState extends ChangeNotifier {
     liveEnded(room);
     _onCall.remove(room);
     _lastCheck.remove('${b['number'] ?? ''}');
+    _verifiedName.remove('${b['number'] ?? ''}');
     _savedOn.remove(room);
     roomAgent.remove(room);
     final turns = [for (final t in (b['transcript'] as List? ?? []).cast<Map>()) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': '${t['text']}'}];
@@ -1272,6 +1310,7 @@ class AppState extends ChangeNotifier {
     speech = await Speech.create();
     mcp = McpManager(db, openBrowser: (u) => openBrowser(u))..addListener(notifyListeners);
     knowledge = KnowledgeService(db)..addListener(notifyListeners);
+    unawaited(knowledge.startEmbedServer(Ollama.findBinary()));
     apps = AppsManager(db, mcp, ask: askWhole, visionModel: visionModel, log: log, forgetServer: forgetMcpData)..addListener(notifyListeners);
     if (!isPhone) {
       unawaited(apps.restore());
@@ -1519,6 +1558,19 @@ class AppState extends ChangeNotifier {
   /// Who is on each call now (room → agent id) and what they were told when it was passed over.
   final _onCall = <String, ({int agentId, String brief, String from})>{};
 
+  /// The name a caller's own booking was found under on this call (by their number): their word for it.
+  final _verifiedName = <String, String>{};
+
+  /// The name the caller gave ("my name is Hugo Khan", "it's under Patel", "this is Sara").
+  static String? saidName(String said) {
+    final intro = RegExp(r"\b(?:my name(?: is|'s)|name is|this is|it'?s under(?: the name)?|under the name|booked (?:it )?under|i'?m|i am|it'?s)\b", caseSensitive: false);
+    for (final m in intro.allMatches(said)) {
+      final n = RegExp(r"^\s+([A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+)?)").firstMatch(said.substring(m.end))?.group(1)?.trim();
+      if (n != null && !RegExp(r'^(Calling|Looking|Just|Sorry|Fine|Good|Here|Not|The|A|Ringing|Phoning|Okay|Ok|Under|From|On|Booked)\b').hasMatch(n)) return n;
+    }
+    return null;
+  }
+
   /// The last day checked on each call (by caller number), to catch a booking saved on another day.
   final _lastCheck = <String, String>{};
 
@@ -1703,7 +1755,7 @@ class AppState extends ChangeNotifier {
     if (!llmReady) throw StateError('Set up the AI first (Settings).');
     if (host?.running != true) throw StateError('The call service isn\'t running.');
     final all = [
-      for (final f in ['scenarios.json', 'journeys.json', 'challenges.json']) ...(jsonDecode(await rootBundle.loadString('assets/scenarios/$f')) as List).cast<Map<String, dynamic>>(),
+      for (final f in ['scenarios.json', 'journeys.json', 'challenges.json', 'security.json']) ...(jsonDecode(await rootBundle.loadString('assets/scenarios/$f')) as List).cast<Map<String, dynamic>>(),
     ];
     final dir = Directory(p.join(p.dirname(db.path), 'test-runs'))..createSync(recursive: true);
     // Already passed in an earlier run: not again (failed ones run again, e.g. after a fix).
@@ -2158,7 +2210,10 @@ class AppState extends ChangeNotifier {
   /// Does what the caller agreed to with [tool]: a cancel by their own number, or the booking/order from the call.
   Future<({bool ok, String text})?> _runYes(ToolBinding tool, List<ChatMessage> convo, String? callerNumber) async {
     if (tool.tool.name.startsWith('cancel_my_')) {
-      final r = await mcp.call(tool.serverId, tool.tool.name, {'phone': callerNumber});
+      final said = [for (final m in convo) if (m.role == 'user') callerWords(m.content)].join(' ');
+      final name = callerNumber == null ? null : _verifiedName[callerNumber] ?? saidName(said);
+      if (name == null) return (ok: false, text: 'First ask the caller for the name it is booked under.');
+      final r = await mcp.call(tool.serverId, tool.tool.name, {'phone': callerNumber, 'name': name});
       return (ok: !r.isError, text: r.text);
     }
     return commitWith(toolLoop, modelTarget, tool, convo, _notAgentName(tool), callerNumber: callerNumber, checked: callerNumber == null ? null : _lastCheck[callerNumber]);
@@ -2891,7 +2946,8 @@ class AppState extends ChangeNotifier {
     final stream = body['stream'] == true;
 
     if (!stream) {
-      final full = await agentReply(messages, scopes: scopes, approve: (_, _) async => false);
+      // (The same limits as a streamed call turn: this agent's tools, the caller's number.)
+      final full = await agentReply(messages, scopes: scopes, approve: (_, _) async => false, access: access, abilities: abilitiesOf(flow?.agent), agentName: '${flow?.agent['name'] ?? ''}', callerNumber: callerNumber);
       await saveTask(full);
       final text = spokenText(full).trim();
       return json(200, {
@@ -3020,9 +3076,17 @@ class AppState extends ChangeNotifier {
         }
         if (find != null) {
           try {
-            final r = await mcp.call(find.serverId, find.tool.name, {'phone': callerNumber});
+            // Only with the name it is under, said by the caller: else ask for it first (no details before that).
+            final said = [for (final m in convo) if (m.role == 'user') callerWords(m.content)].join(' ');
+            final name = _verifiedName[callerNumber] ?? saidName(said);
             final last = messages.removeLast();
-            messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: ${find.fnName} for the number they are calling from, already looked up (never ask for their number): ${r.text.trim()} ${act(find)})'));
+            if (name == null) {
+              messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: before saying anything about their booking, ask for the name it is booked under (their number is the one they are calling from). Give no details until then.)'));
+            } else {
+              final r = await mcp.call(find.serverId, find.tool.name, {'phone': callerNumber, 'name': name});
+              if (!r.isError) _verifiedName[callerNumber] = name;
+              messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: ${find.fnName} for the number they are calling from and the name $name, already looked up (never ask for their number): ${r.text.trim()} ${r.isError ? '' : act(find)})'));
+            }
           } catch (_) {}
         }
       }

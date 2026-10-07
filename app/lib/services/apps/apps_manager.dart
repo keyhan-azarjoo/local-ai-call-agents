@@ -134,7 +134,7 @@ class AppsManager extends ChangeNotifier {
     if (a == null) return;
     var srv = _servers[id];
     if (srv == null || !srv.running) {
-      srv = AppServer(data: AppData(db, id, a.spec), pin: a.pin, filesDir: filesDir(id), onSpecChanged: (spec) => saveSpec(id, spec, fromSite: true),
+      srv = AppServer(data: AppData(db, id, a.spec), pin: a.pin, toolKey: await toolKey(id), filesDir: filesDir(id), onSpecChanged: (spec) => saveSpec(id, spec, fromSite: true),
           readPicture: (table, b64) => rowsFromPicture(id, table, b64));
       try {
         await srv.start(a.port);
@@ -145,6 +145,7 @@ class AppsManager extends ChangeNotifier {
         await srv.start(port);
       }
       _servers[id] = srv;
+      await _keyAva(id);
     }
     srv.paused = false;
     await _status(id, AppRun.running);
@@ -213,8 +214,30 @@ class AppsManager extends ChangeNotifier {
     for (final r in await _avaRows(id)) {
       if (r.secret['role'] == 'manager') await db.update('mcp_servers', r.id, {'secret': jsonEncode({...r.secret, 'value': pin})});
     }
+    await _keyAva(id);
     notifyListeners();
     return pin;
+  }
+
+  /// The app's tool key: only this computer's assistant has it (see [AppServer.toolKey]).
+  Future<String> toolKey(int id) async {
+    final k = await db.setting('app.$id.toolkey');
+    if (k != null && k.length >= 32) return k;
+    final key = base64Url.encode(List<int>.generate(32, (_) => Random.secure().nextInt(256))).replaceAll('=', '');
+    await db.setSetting('app.$id.toolkey', key);
+    return key;
+  }
+
+  /// Ava's two connections to the app carry the tool key (and the manager's the PIN too).
+  Future<void> _keyAva(int id) async {
+    final key = await toolKey(id);
+    final a = await app(id);
+    for (final r in await _avaRows(id)) {
+      final headers = {'X-Tool-Key': key, if (r.secret['role'] == 'manager') 'X-Key': a?.pin ?? ''};
+      if ('${r.secret['headers']}' == '$headers' && r.authMode.name == 'token') continue;
+      await db.update('mcp_servers', r.id, {'auth_mode': 'token', 'secret': jsonEncode({...r.secret, 'headers': headers})});
+      if (runOf(id) != AppRun.stopped) await mcp.connect(r.id);
+    }
   }
 
   static String _pin() => List.generate(6, (_) => Random.secure().nextInt(10)).join();
@@ -235,8 +258,8 @@ class AppsManager extends ChangeNotifier {
     if (a == null || (await _avaRows(id)).isNotEmpty) return;
     final base = 'http://127.0.0.1:${a.port}';
     for (final (role, url, scope, auth, secret) in [
-      ('customers', '$base/mcp', 'all', 'none', <String, Object?>{'app': id, 'role': 'customers'}),
-      ('manager', '$base/mcp/manager', 'me', 'token', <String, Object?>{'app': id, 'role': 'manager', 'header': 'X-Key', 'value': a.pin}),
+      ('customers', '$base/mcp', 'all', 'token', <String, Object?>{'app': id, 'role': 'customers', 'headers': {'X-Tool-Key': await toolKey(id)}}),
+      ('manager', '$base/mcp/manager', 'me', 'token', <String, Object?>{'app': id, 'role': 'manager', 'header': 'X-Key', 'value': a.pin, 'headers': {'X-Tool-Key': await toolKey(id), 'X-Key': a.pin}}),
     ]) {
       final rid = await db.insert('mcp_servers', {
         'name': role == 'manager' ? '${a.name} (manager)' : a.name,

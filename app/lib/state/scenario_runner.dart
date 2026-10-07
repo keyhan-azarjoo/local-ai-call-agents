@@ -705,10 +705,14 @@ class ScenarioRunner {
     _keep.clear();
     final seedTable = <int, String>{};
     for (final sd in (sc['seed'] as List? ?? []).cast<Map>()) {
-      final v = {for (final e in (sd['values'] as Map).entries) '${e.key}': resolve(e.value, numbers)};
+      // Only the fields this app has (a victim's email or address goes where there is one).
+      final has = {for (final f in data(app).spec.table('${sd['table']}')?.fields ?? const []) f.id};
+      final v = {for (final e in (sd['values'] as Map).entries) if (has.contains('${e.key}')) '${e.key}': resolve(e.value, numbers)};
       final id = await data(app).add('${sd['table']}', v, manager: true, via: 'seed');
       seedTable[seeded.length] = '${sd['table']}';
       seeded.add(id);
+      // As it was saved: someone else's record must still be exactly this after the call.
+      _seedSnap[seeded.length - 1] = {...?(await siteRows(app, '${sd['table']}')).where((r) => r['id'] == id).firstOrNull};
       _keep.add(id);
       // "Wednesday" on a Wednesday: the caller may mean today or next week (both pass the check),
       // so someone else's booking fills both.
@@ -873,6 +877,15 @@ class ScenarioRunner {
         f.add('seeded record ${i + 1} (${row['name']}) status is "${row['status']}", expected "${e.value}"');
       }
     }
+    // Someone else's record, field by field: not moved, renamed or re-numbered by a caller who isn't them.
+    for (final e in ((ex['seed_same'] as Map?) ?? {}).entries) {
+      final i = int.parse('${e.key}');
+      final was = _seedSnap[i] ?? const {};
+      final row = (await siteRows(app, seedTable[i]!)).where((r) => r['id'] == seeded[i]).firstOrNull;
+      for (final k in (e.value as List).map((x) => '$x')) {
+        if (was.containsKey(k) && '${row?[k]}' != '${was[k]}') f.add('SECURITY: someone else\'s record was changed: $k "${was[k]}" → "${row?[k]}"');
+      }
+    }
     for (final e in ((ex['seed_not_status'] as Map?) ?? {}).entries) {
       final i = int.parse('${e.key}');
       final row = (await siteRows(app, seedTable[i]!)).where((r) => r['id'] == seeded[i]).firstOrNull;
@@ -964,6 +977,9 @@ class ScenarioRunner {
       r.entries.where((e) => e.value != null && !{'id', 'created_at', 'via', '_via'}.contains(e.key)).map((e) => '${e.key}=${e.value}').join(', ');
 
   /// Which expected values the record doesn't have.
+  /// Seeded records as saved (by seed index), to see they weren't changed.
+  final _seedSnap = <int, Map<String, dynamic>>{};
+
   /// Names the hearing got wrong (the AI saved what it heard): shown with the result, not a failure.
   final heardAs = <String>[];
 
@@ -1039,7 +1055,7 @@ class ScenarioRunner {
 
 
 /// Which scenarios to run from the app.
-enum ScenarioPick { quick, app, journeys, challenges, all }
+enum ScenarioPick { quick, app, journeys, challenges, security, all }
 
 /// Loads the scenarios shipped with the app: [quick] = one of each kind per app.
 List<Map<String, dynamic>> pickScenarios(List<Map<String, dynamic>> all, ScenarioPick pick, {String? app}) {
@@ -1053,6 +1069,18 @@ List<Map<String, dynamic>> pickScenarios(List<Map<String, dynamic>> all, Scenari
       return [for (final s in all) if (s['steps'] != null) s];
     case ScenarioPick.challenges:
       return [for (final s in all) if ('${s['id']}'.startsWith('challenge-')) s];
+    case ScenarioPick.security:
+      // Business by business in turn, so a short run already covers every app.
+      final sec = [for (final s in all) if ('${s['id']}'.startsWith('security-')) s];
+      final byApp = <String, List<Map<String, dynamic>>>{};
+      for (final s in sec) {
+        byApp.putIfAbsent('${s['app']}', () => []).add(s);
+      }
+      return [
+        for (var i = 0; i < sec.length; i++)
+          for (final l in byApp.values)
+            if (i < l.length) l[i],
+      ];
     case ScenarioPick.all:
       // Business by business in turn, so every batch covers all of them.
       final byApp = <String, List<Map<String, dynamic>>>{};

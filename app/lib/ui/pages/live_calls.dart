@@ -166,46 +166,42 @@ class _LiveCall extends StatelessWidget {
 }
 
 /// A finished conversation, opened to read it.
-class _RecentCall extends StatelessWidget {
+class _RecentCall extends StatefulWidget {
   const _RecentCall(this.number, this.ended, this.lines);
   final String number;
   final DateTime ended;
   final List<LiveLine> lines;
 
   @override
+  State<_RecentCall> createState() => _RecentCallState();
+}
+
+class _RecentCallState extends State<_RecentCall> {
+  var open = false;
+
+  @override
   Widget build(BuildContext context) {
-    final first = lines.where((l) => l.who == 'caller').firstOrNull?.text ?? '';
-    final t =
-        '${ended.hour.toString().padLeft(2, '0')}:${ended.minute.toString().padLeft(2, '0')}';
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: Material(
-        type: MaterialType.transparency,
-        child: ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          dense: true,
-          title: Row(
-            children: [
-              Muted(number, mono: true, size: 12.5),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  first,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13),
-                ),
-              ),
-              Muted(
-                'ended $t · ${lines.where((l) => l.who != 'note').length} lines',
-                size: 12,
-              ),
-            ],
-          ),
-          children: [for (final l in lines) LiveBubble(l)],
+    final first = widget.lines.where((l) => l.who == 'caller').firstOrNull?.text ?? '';
+    final e = widget.ended;
+    final t = '${e.hour.toString().padLeft(2, '0')}:${e.minute.toString().padLeft(2, '0')}';
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      InkWell(
+        onTap: () => setState(() => open = !open),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(children: [
+            Icon(open ? Icons.expand_less : Icons.expand_more, size: 18, color: context.c.muted),
+            const SizedBox(width: 6),
+            Muted(widget.number, mono: true, size: 12.5),
+            const SizedBox(width: 10),
+            Expanded(child: Text(first, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+            const SizedBox(width: 10),
+            Muted('ended $t · ${widget.lines.where((l) => l.who != 'note').length} lines', size: 12),
+          ]),
         ),
       ),
-    );
+      if (open) ...[for (final l in widget.lines) LiveBubble(l), const SizedBox(height: 8)],
+    ]);
   }
 }
 

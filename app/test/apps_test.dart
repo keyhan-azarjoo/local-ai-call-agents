@@ -73,6 +73,9 @@ final restaurant = {
   ],
 };
 
+/// The tool key the assistant holds (see AppServer.toolKey).
+const testKey = 'test-tool-key-0123456789abcdefghijkl';
+
 void main() {
   group('spec repair', () {
     final spec = AppSpec.fromJson(restaurant);
@@ -126,7 +129,7 @@ void main() {
       await data.add('menu_items', {'name': 'Carbonara', 'price': 12, 'category': 'Pasta'}, manager: true);
       await data.add('tables', {'number': 'T1', 'seats': 4}, manager: true);
       await data.setSingle('hours', {'open': '12:00', 'close': '22:00'});
-      server = AppServer(data: data, pin: '123456');
+      server = AppServer(data: data, pin: '123456', toolKey: testKey);
       await server.start(0);
       base = 'http://127.0.0.1:${server.port}';
     });
@@ -143,14 +146,14 @@ void main() {
       expect(menu.single['name'], 'Margherita');
       expect(menu.single['price'], 9.5);
       expect((await http.get(Uri.parse('$base/api/t/orders'))).statusCode, 403, reason: 'customers cannot see orders');
-      final add = await http.post(Uri.parse('$base/api/t/orders'),
+      final add = await http.post(Uri.parse('$base/api/t/orders'), headers: {'X-Key': ''},
           body: jsonEncode({'customer': 'Ann', 'table': 'T1', 'items': [{'id': 'margherita', 'qty': 2}], 'status': 'Served'}));
       expect(add.statusCode, 200, reason: add.body);
       final mine = jsonDecode((await http.get(Uri.parse('$base/api/t/orders'), headers: {'X-Key': '123456'})).body) as List;
       expect(mine.single['status'], 'New', reason: 'customers cannot set manager-only fields');
       expect(mine.single['items'], [{'id': 1, 'qty': 2}]);
-      expect((await http.delete(Uri.parse('$base/api/t/menu_items/1'))).statusCode, 403);
-      expect((await http.post(Uri.parse('$base/api/t/orders'), body: jsonEncode({'table': 'T1'}))).statusCode, 400, reason: 'customer is required');
+      expect((await http.delete(Uri.parse('$base/api/t/menu_items/1'), headers: {'X-Key': ''})).statusCode, 403);
+      expect((await http.post(Uri.parse('$base/api/t/orders'), headers: {'X-Key': ''}, body: jsonEncode({'table': 'T1'}))).statusCode, 400, reason: 'customer is required');
       final spec = jsonDecode((await http.get(Uri.parse('$base/api/_spec'))).body) as Map;
       expect((spec['tables'] as List).firstWhere((t) => t['id'] == 'orders')['fields'].map((f) => f['id']), isNot(contains('status')));
     });
@@ -158,7 +161,7 @@ void main() {
     test('pause shows a paused page and stops tools', () async {
       server.paused = true;
       expect((await http.get(Uri.parse('$base/'))).statusCode, 503);
-      final s = McpSession(HttpTransport('$base/mcp'));
+      final s = McpSession(HttpTransport('$base/mcp', headers: {'X-Tool-Key': testKey}));
       await s.initialize();
       final r = await s.callTool('list_menu_items', {});
       expect(r.isError, isTrue);
@@ -166,7 +169,7 @@ void main() {
     });
 
     test('MCP: customers order by name; manager tools need the PIN', () async {
-      final pub = McpSession(HttpTransport('$base/mcp'));
+      final pub = McpSession(HttpTransport('$base/mcp', headers: {'X-Tool-Key': testKey}));
       await pub.initialize();
       final tools = await pub.listTools();
       expect(tools.map((t) => t.name), containsAll(['list_menu_items', 'add_orders', 'get_hours', 'list_tables']));
@@ -181,10 +184,10 @@ void main() {
       expect(r.text, contains('1 × Carbonara'));
       expect((await pub.callTool('get_hours', {})).text, contains('12:00'));
 
-      final bad = McpSession(HttpTransport('$base/mcp/manager'));
+      final bad = McpSession(HttpTransport('$base/mcp/manager', headers: {'X-Tool-Key': testKey}));
       await expectLater(bad.initialize(), throwsA(isA<McpNeedsAuth>()));
 
-      final mgr = McpSession(HttpTransport('$base/mcp/manager', headers: {'X-Key': '123456'}));
+      final mgr = McpSession(HttpTransport('$base/mcp/manager', headers: {'X-Key': '123456', 'X-Tool-Key': testKey}));
       await mgr.initialize();
       final mt = (await mgr.listTools()).map((t) => t.name).toSet();
       expect(mt, containsAll(['list_orders', 'update_orders', 'add_menu_items', 'set_hours', 'delete_menu_items']));
@@ -253,14 +256,14 @@ void main() {
     final now = DateTime.now().millisecondsSinceEpoch;
     final id = await db.insert('apps', {'name': 'x', 'request': 'x', 'spec': jsonEncode(spec.toJson()), 'port': 0, 'pin': '1234', 'created_at': now, 'updated_at': now});
     String? seenTable;
-    final srv = AppServer(data: AppData(db, id, spec), pin: '1234', readPicture: (t, b64) async {
+    final srv = AppServer(data: AppData(db, id, spec), pin: '1234', toolKey: testKey, readPicture: (t, b64) async {
       seenTable = t;
       expect(base64Decode(b64), [1, 2, 3]);
       return [{'name': 'Lasagne', 'price': 11}];
     });
     await srv.start(0);
     final url = Uri.parse('http://127.0.0.1:${srv.port}/api/_import/menu_items');
-    expect((await http.post(url, body: [1, 2, 3], headers: {'Content-Type': 'image/jpeg'})).statusCode, 403);
+    expect((await http.post(url, body: [1, 2, 3], headers: {'Content-Type': 'image/jpeg', 'X-Key': ''})).statusCode, 403);
     final r = await http.post(url, body: [1, 2, 3], headers: {'Content-Type': 'image/jpeg', 'X-Key': '1234'});
     expect(r.statusCode, 200);
     expect(seenTable, 'menu_items');
@@ -281,9 +284,9 @@ void main() {
     }
     await data.setSingle('opening_hours', {'opens': '12:00', 'closes': '22:30'});
     expect(spec.page('book')!.blocks.map((b) => b.type), ['hero', 'availability', 'form']);
-    final srv = AppServer(data: data, pin: '1234');
+    final srv = AppServer(data: data, pin: '1234', toolKey: testKey);
     await srv.start(0);
-    final s = McpSession(HttpTransport('http://127.0.0.1:${srv.port}/mcp'));
+    final s = McpSession(HttpTransport('http://127.0.0.1:${srv.port}/mcp', headers: {'X-Tool-Key': testKey}));
     await s.initialize();
     expect((await s.listTools()).map((t) => t.name), contains('check_reservations'));
 
@@ -295,7 +298,7 @@ void main() {
     r = await s.callTool('add_reservations', {'name': 'Ann', 'phone': '07700 100001', 'date': '2026-10-07', 'time': '20:00', 'guests': 2, 'table': '1'});
     expect(r.isError, isFalse, reason: r.text);
     expect(r.text, contains('1 was taken, so it is 2 instead'));
-    await s.callTool('cancel_my_reservations', {'phone': '07700 100001'});
+    await s.callTool('cancel_my_reservations', {'phone': '07700 100001', 'name': 'Ann'});
     // After the first one ends, it's free again.
     r = await s.callTool('add_reservations', {'name': 'Bo', 'phone': '07700 100011', 'date': '2026-10-07', 'time': '21:00', 'guests': 2, 'table': '1'});
     expect(r.isError, isFalse, reason: r.text);
@@ -332,22 +335,22 @@ void main() {
     final day = DateTime.now().add(const Duration(days: 1)).toIso8601String().substring(0, 10);
     final mine = await data.add('reservations', {'name': 'Keyhan', 'phone': '07700 900124', 'date': day, 'time': '19:00', 'guests': 2});
     await data.add('reservations', {'name': 'Other', 'phone': '07000 000000', 'date': day, 'time': '19:00', 'guests': 2});
-    final srv = AppServer(data: data, pin: '1234');
+    final srv = AppServer(data: data, pin: '1234', toolKey: testKey);
     await srv.start(0);
-    final s = McpSession(HttpTransport('http://127.0.0.1:${srv.port}/mcp'));
+    final s = McpSession(HttpTransport('http://127.0.0.1:${srv.port}/mcp', headers: {'X-Tool-Key': testKey}));
     await s.initialize();
-    final found = await s.callTool('find_my_reservations', {'phone': '07700 900124'});
+    final found = await s.callTool('find_my_reservations', {'phone': '07700 900124', 'name': 'Keyhan'});
     expect(found.text, contains('Keyhan'));
     expect(found.text, isNot(contains('Other')));
-    expect((await s.callTool('find_my_reservations', {'phone': '+441111111111'})).text, contains('No reservations found'));
+    expect((await s.callTool('find_my_reservations', {'phone': '+441111111111', 'name': 'Keyhan'})).text, contains('No reservations found'));
     final other = (await data.list('reservations', manager: true)).firstWhere((r) => r['name'] == 'Other')['id'];
-    final denied = await s.callTool('cancel_my_reservations', {'id': other, 'phone': '07700 900124'});
+    final denied = await s.callTool('cancel_my_reservations', {'id': other, 'phone': '07700 900124', 'name': 'Keyhan'});
     expect(denied.isError, isTrue);
-    expect(denied.text, contains('different phone number'));
-    final ok = await s.callTool('cancel_my_reservations', {'id': mine, 'phone': '07700 900124'});
+    expect(denied.text, contains('not under this phone number'));
+    final ok = await s.callTool('cancel_my_reservations', {'id': mine, 'phone': '07700 900124', 'name': 'Keyhan'});
     expect(ok.isError, isFalse, reason: ok.text);
     expect((await data.get('reservations', mine, manager: true))!['status'], 'Cancelled');
-    expect((await s.callTool('find_my_reservations', {'phone': '07700 900124'})).text, contains('No reservations found'));
+    expect((await s.callTool('find_my_reservations', {'phone': '07700 900124', 'name': 'Keyhan'})).text, contains('No reservations found'));
     await srv.stop();
   });
 }

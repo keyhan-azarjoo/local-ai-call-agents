@@ -126,11 +126,18 @@ class FieldSpec {
     return vals.isEmpty ? null : MapEntry(slug(e.key), vals);
   }
 
-  FieldSpec copyWith({String? type, String? link, bool clearLink = false, bool? qty}) => FieldSpec(
-      id: id, label: label, type: type ?? this.type, required: required, options: options, link: clearLink ? null : (link ?? this.link), managerOnly: managerOnly, qty: qty ?? this.qty, when: when);
+  FieldSpec copyWith({String? type, String? link, bool clearLink = false, bool? qty, bool? managerOnly}) => FieldSpec(
+      id: id, label: label, type: type ?? this.type, required: required, options: options, link: clearLink ? null : (link ?? this.link), managerOnly: managerOnly ?? this.managerOnly, qty: qty ?? this.qty, when: when);
 }
 
 /// Who, besides the manager, may use a table: website visitors and phone callers.
+/// A field that holds someone's personal details: their number, email, address, date of birth,
+/// health or payment details, private notes.
+bool personal(FieldSpec f) =>
+    f.type == 'phone' ||
+    f.type == 'email' ||
+    RegExp(r'address|post ?code|zip|street|birth|\bdob\b|allerg|medical|health|nhs|insurance|card|payment|passport|national|private|notes?\b', caseSensitive: false).hasMatch('${f.id} ${f.label}');
+
 class Access {
   const Access({this.see = false, this.add = false});
   final bool see, add;
@@ -139,9 +146,16 @@ class Access {
 
   Object toJson() => [if (see) 'see', if (add) 'add'];
 
+  /// Read from exact words ("see", "add", "see+add", ["see","add"]): loose wording like "customers
+  /// can't see" or "all" must never make a table public.
   static Access fromJson(Object? j) {
-    final s = (j is List ? j.join(' ') : '$j').toLowerCase();
-    return Access(see: RegExp(r'see|read|view|list|public|all').hasMatch(s), add: RegExp(r'add|create|write|submit|order|book|all').hasMatch(s));
+    final raw = (j is List ? j.join(' ') : '$j').toLowerCase();
+    final words = raw.split(RegExp(r'[^a-z]+')).toSet();
+    final no = RegExp(r"\b(can[’']?t|cannot|not|no|none|never)\b").hasMatch(raw);
+    if (no || words.contains('manager') || words.contains('private')) {
+      return Access(add: !no && words.contains('add'));
+    }
+    return Access(see: words.any(const {'see', 'read', 'view', 'list', 'public'}.contains), add: words.any(const {'add', 'create', 'submit', 'order', 'book'}.contains));
   }
 }
 
@@ -405,14 +419,29 @@ class AppSpec {
               f,
         ]),
     ];
-    // Customers who can add to a table must be able to pick the records it links to.
+    // People's details are never public, whatever the app's description says: a table customers
+    // add to that holds phone numbers or emails (bookings, orders, patients) can't be listed by
+    // customers — each caller only reaches their own, by their number and name.
+    fixedTables = [
+      for (final t in fixedTables)
+        t.access.see && t.access.add && t.fields.any(personal) && !t.single ? t.copyWith(access: Access(add: true)) : t,
+    ];
+    final private = {for (final t in fixedTables) if (!t.single && t.fields.any((f) => f.type == 'phone' || f.type == 'email') && (t.access.add || !t.access.see)) t.id};
+    // Customers who can add to a table must be able to pick the records it links to — but not
+    // people's records (a "patient" link is filled in by the manager, not picked from a list).
     final mustSee = {
       for (final t in fixedTables)
         if (t.access.add)
           for (final f in t.fields)
-            if (f.link != null && !f.managerOnly) f.link!,
+            if (f.link != null && !f.managerOnly && !private.contains(f.link)) f.link!,
     };
-    fixedTables = [for (final t in fixedTables) mustSee.contains(t.id) && !t.access.see ? t.copyWith(access: Access(see: true, add: t.access.add)) : t];
+    fixedTables = [
+      for (final t in fixedTables)
+        (mustSee.contains(t.id) && !t.access.see ? t.copyWith(access: Access(see: true, add: t.access.add)) : t).copyWith(fields: [
+          for (final f in t.fields)
+            if (f.link != null && private.contains(f.link) && t.access.add && !f.managerOnly) f.copyWith(managerOnly: true) else f,
+        ]),
+    ];
     final byId = {for (final t in fixedTables) t.id: t};
 
     final fixedPages = <PageSpec>[];

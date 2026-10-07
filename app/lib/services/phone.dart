@@ -224,7 +224,9 @@ class Phone {
     final number = '${cfg['number']}';
     if (_inbound.contains(number)) return;
     final t = await _livekit('CreateSIPInboundTrunk', {
-      'trunk': {'name': 'Twilio $number', 'numbers': [number]},
+      // Calls only from the call bridge on this computer: anything else on the network could ring
+      // in pretending to be any number (and act on that person's bookings).
+      'trunk': {'name': 'Twilio $number', 'numbers': [number], 'allowed_addresses': ['127.0.0.1/32']},
     });
     await _livekit('CreateSIPDispatchRule', {
       'rule': {

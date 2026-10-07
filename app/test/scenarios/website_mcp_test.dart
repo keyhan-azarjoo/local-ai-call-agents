@@ -42,7 +42,9 @@ void main() {
   Future<({int code, dynamic body})> req(String app, String method, String path, {Object? body, bool manager = false}) async {
     final a = (await apps.app(ids[app]!))!;
     final rq = await http.openUrl(method, Uri.parse('http://127.0.0.1:${a.port}$path'));
-    if (manager) rq.headers.set('x-key', a.pin);
+    // The site's own header on every request (the website always sends it), and the tools' key.
+    rq.headers.set('x-key', manager ? a.pin : '');
+    if (path.startsWith('/mcp')) rq.headers.set('x-tool-key', await apps.toolKey(ids[app]!));
     if (body != null) {
       rq.headers.contentType = ContentType.json;
       rq.write(jsonEncode(body));
@@ -156,19 +158,32 @@ void main() {
           final added2 = await tool(tpl.id, 'add_$tid', other);
           expect(added2.error, false, reason: added2.text);
           // …finds only their own…
-          final found = await tool(tpl.id, 'find_my_$tid', {'phone': '07700 900555'});
+          final who = '${mine[table.labelField]}';
+          // (Their number AND the name it's under: without the name, nothing is said.)
+          final noName = await tool(tpl.id, 'find_my_$tid', {'phone': '07700 900555'});
+          expect(noName.error, true);
+          expect(noName.text, isNot(contains('900555')));
+          final found = await tool(tpl.id, 'find_my_$tid', {'phone': '07700 900555', 'name': who});
           expect(found.text, contains('Found 1'));
           expect(found.text, isNot(contains('900666')));
-          expect((await tool(tpl.id, 'find_my_$tid', {'phone': '+447700900777'})).text, contains('No '));
+          expect((await tool(tpl.id, 'find_my_$tid', {'phone': '+447700900777', 'name': who})).text, contains('No '));
+          // The right number with a name that isn't on it: no details at all.
+          final wrongName = await tool(tpl.id, 'find_my_$tid', {'phone': '07700 900555', 'name': 'Zebedee Quarrington'});
+          expect(wrongName.error, true);
+          for (final v in mine.values.whereType<String>().where((v) => v.length > 3 && !v.startsWith('+'))) {
+            expect(wrongName.text, isNot(contains(v)), reason: 'nothing of the booking is given');
+          }
           // …can't cancel someone else's…
           final theirs = ((await req(tpl.id, 'GET', '/api/t/$tid', manager: true)).body as List).firstWhere((r) => '${r['phone']}'.contains('900666'));
-          final bad = await tool(tpl.id, 'cancel_my_$tid', {'phone': '+447700900555', 'id': theirs['id']});
+          final bad = await tool(tpl.id, 'cancel_my_$tid', {'phone': '+447700900555', 'name': who, 'id': theirs['id']});
           expect(bad.error, true);
-          expect(bad.text, contains('different phone number'));
-          final nobody = await tool(tpl.id, 'cancel_my_$tid', {'phone': '+447700900999'});
+          expect(bad.text, contains('not under this phone number'));
+          final nobody = await tool(tpl.id, 'cancel_my_$tid', {'phone': '+447700900999', 'name': who});
           expect(nobody.error, true);
+          // Their number said aloud by someone else: the tools only take a whole number (9+ digits).
+          expect((await tool(tpl.id, 'find_my_$tid', {'phone': '900555', 'name': who})).error, true);
           // …and cancels their own.
-          final ok = await tool(tpl.id, 'cancel_my_$tid', {'phone': '+44 7700 900555'});
+          final ok = await tool(tpl.id, 'cancel_my_$tid', {'phone': '+44 7700 900555', 'name': who});
           expect(ok.error, false, reason: ok.text);
           final rows = (await req(tpl.id, 'GET', '/api/t/$tid', manager: true)).body as List;
           final st = table.fields.where((f) => f.managerOnly && f.type == 'choice').first.id;
@@ -220,7 +235,7 @@ void main() {
           final clash = await tool(app, 'add_$table', {...one, 'name': 'Second Person', 'phone': '07700 100002'});
           expect(clash.error, false, reason: clash.text);
           expect(clash.text, contains('was taken'));
-          await tool(app, 'cancel_my_$table', {'phone': '07700 100002'});
+          await tool(app, 'cancel_my_$table', {'phone': '07700 100002', 'name': 'Second Person'});
           final web = await req(app, 'POST', '/api/t/$table', body: {...one, 'name': 'Web Person', 'phone': '07700 100004'});
           expect(web.code, 400);
         } else {
@@ -248,7 +263,7 @@ void main() {
         expect(check.text, contains('Nothing is free'));
         // A cancelled booking frees its slot.
         final first = (await d.list(table, manager: true)).firstWhere((r) => r['phone'] == '07700 100001');
-        expect((await tool(app, 'cancel_my_$table', {'phone': '07700 100001', 'id': first['id']})).error, false);
+        expect((await tool(app, 'cancel_my_$table', {'phone': '07700 100001', 'name': '${first[t.labelField]}', 'id': first['id']})).error, false);
         final again = await tool(app, 'add_$table', {...one, 'name': 'Gets the freed one', 'phone': '07700 100009'});
         expect(again.error, false, reason: again.text);
       });
@@ -405,7 +420,7 @@ void main() {
       // The website form (not the phone): so the phone tool doesn't treat it as "saved in this call".
       final mine = await req('restaurant', 'POST', '/api/t/reservations', body: {'name': 'Rosa Diaz', 'phone': '07700 800001', 'date': date, 'time': '19:00', 'guests': 4});
       await req('restaurant', 'POST', '/api/t/reservations', body: {'name': 'Other', 'phone': '07700 800002', 'date': date, 'time': '21:00', 'guests': 4, 'table': '3'});
-      final moved = await tool('restaurant', 'change_my_reservations', {'phone': '+447700800001', 'time': '9pm'});
+      final moved = await tool('restaurant', 'change_my_reservations', {'phone': '+447700800001', 'name': 'Rosa Diaz', 'time': '9pm'});
       expect(moved.error, false, reason: moved.text);
       expect(moved.text, contains('21:00'));
       final row = await d.get('reservations', (mine.body as Map)['id'] as int, manager: true);
@@ -413,7 +428,7 @@ void main() {
       expect(row['table'], isNot((await d.list('dining_tables', manager: true)).firstWhere((t) => t['number'] == '3')['id']), reason: 'table 3 is taken at 21:00');
       expect((await d.list('reservations', manager: true)).where((r) => r['phone'] == '07700 800001').length, 1, reason: 'moved, not a second booking');
       final theirs = (await d.list('reservations', manager: true)).firstWhere((r) => r['phone'] == '07700 800002');
-      final bad = await tool('restaurant', 'change_my_reservations', {'phone': '+447700800001', 'id': theirs['id'], 'time': '22:00'});
+      final bad = await tool('restaurant', 'change_my_reservations', {'phone': '+447700800001', 'name': 'Rosa Diaz', 'id': theirs['id'], 'time': '22:00'});
       expect(bad.error, true);
       expect((await d.get('reservations', theirs['id'] as int, manager: true))!['time'], '21:00');
     });

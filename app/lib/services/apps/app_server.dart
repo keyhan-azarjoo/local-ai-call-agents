@@ -18,9 +18,13 @@ class AppServer {
   /// Every tool call from an assistant (tests and diagnostics): app, tool, arguments, answer.
   static void Function(String app, String tool, Map<String, dynamic> args, String result, bool error)? onToolCall;
 
-  AppServer({required this.data, required this.pin, this.filesDir, this.onSpecChanged, this.readPicture});
+  AppServer({required this.data, required this.pin, this.toolKey = '', this.filesDir, this.onSpecChanged, this.readPicture});
   final AppData data;
   String pin;
+
+  /// The secret only this computer's assistant holds: the tools (/mcp) answer no one else. Without
+  /// it anyone on the same Wi-Fi could skip the assistant and look up or cancel any booking.
+  final String toolKey;
 
   /// Where uploaded pictures are kept (null = uploads off).
   final String? filesDir;
@@ -48,14 +52,60 @@ class AppServer {
     _http = null;
   }
 
-  bool _isManager(HttpRequest req) => pin.isNotEmpty && req.headers.value('x-key') == pin;
+  bool _isManager(HttpRequest req) {
+    final key = req.headers.value('x-key');
+    if (pin.isEmpty || key == null || key.isEmpty) return false;
+    final ip = req.connectionInfo?.remoteAddress.address ?? '?';
+    if (_lockedOut(ip)) return false;
+    if (sameSecret(key, pin)) return true;
+    _failed(ip);
+    return false;
+  }
+
+  // Guessing the PIN: after 5 wrong tries from one address it is locked out for 15 minutes, and
+  // after 30 wrong tries in an hour from anywhere, every address is (a 6-digit PIN has a million
+  // values, so unlimited tries would find it in minutes).
+  final _fails = <String, List<DateTime>>{};
+  void _failed(String ip) {
+    final now = DateTime.now();
+    (_fails[ip] ??= []).add(now);
+    (_fails['*'] ??= []).add(now);
+  }
+
+  bool _lockedOut(String ip) {
+    final now = DateTime.now();
+    for (final l in _fails.values) {
+      l.removeWhere((t) => now.difference(t) > const Duration(hours: 1));
+    }
+    final mine = (_fails[ip] ?? const []).where((t) => now.difference(t) < const Duration(minutes: 15)).length;
+    return mine >= 5 || (_fails['*']?.length ?? 0) >= 30;
+  }
+
+  /// Only this computer may use the tools, and only with the key (constant-time compare).
+  bool _isAssistant(HttpRequest req) =>
+      (req.connectionInfo?.remoteAddress.isLoopback ?? false) && toolKey.isNotEmpty && sameSecret(req.headers.value('x-tool-key') ?? '', toolKey);
+
+  /// A web page elsewhere can't use this site behind the visitor's back: writes need the site's own
+  /// header (other sites can't send it without asking first), and the address must be this
+  /// computer's (not a look-alike name pointed here).
+  bool _trusted(HttpRequest req) {
+    final host = (req.headers.host ?? '').toLowerCase();
+    final okHost = host.isEmpty || host == 'localhost' || host.endsWith('.local') || InternetAddress.tryParse(host) != null;
+    if (!okHost) return false;
+    if (req.method == 'GET' || req.method == 'HEAD') return true;
+    return req.headers.value('x-key') != null || req.headers.value('x-tool-key') != null;
+  }
 
   Future<void> _handle(HttpRequest req) async {
     final path = req.uri.path;
     try {
       if (path == '/app.css') return _send(req, 200, appCss, 'text/css');
       if (path == '/app.js') return _send(req, 200, appJs, 'application/javascript');
-      if (path.startsWith('/mcp')) return await _mcp(req, manager: path == '/mcp/manager');
+      if (!_trusted(req)) return _json(req, 403, {'error': 'Not allowed.'});
+      if (path.startsWith('/mcp')) {
+        if (!_isAssistant(req)) return _json(req, 401, {'error': 'Not allowed.'});
+        return await _mcp(req, manager: path == '/mcp/manager');
+      }
       if (path.startsWith('/files/')) return await _file(req, path.substring(7));
       if (paused && !(_isManager(req) && path.startsWith('/api/'))) {
         // The manager still sees and handles what came in; customers see "paused".
@@ -68,7 +118,9 @@ class AppServer {
     } on AppDataError catch (e) {
       return _json(req, 400, {'error': e.message});
     } catch (e) {
-      return _json(req, 500, {'error': '$e'});
+      // (The details stay here: they can show file paths and how the data is stored.)
+      stderr.writeln('app ${spec.name}: $path failed: $e');
+      return _json(req, 500, {'error': 'Something went wrong.'});
     }
   }
 
@@ -110,7 +162,10 @@ class AppServer {
     if (rest == '_spec') return _json(req, 200, publicSpec(manager));
     if (rest == '_login' && req.method == 'POST') {
       final b = await _body(req);
-      if ('${b['pin']}'.trim() == pin) return _json(req, 200, {'ok': true});
+      final ip = req.connectionInfo?.remoteAddress.address ?? '?';
+      if (_lockedOut(ip)) return _json(req, 429, {'error': 'Too many wrong PINs. Try again in 15 minutes.'});
+      if (sameSecret('${b['pin']}'.trim(), pin)) return _json(req, 200, {'ok': true});
+      _failed(ip);
       await Future.delayed(const Duration(milliseconds: 600)); // slows down guessing
       return _json(req, 403, {'error': 'Wrong PIN.'});
     }
@@ -355,19 +410,21 @@ class AppServer {
       }
       final phoneF = t.fields.where((f) => f.type == 'phone').firstOrNull;
       if (!manager && t.access.add && !t.single && phoneF != null) {
-        out.add(AppTool('find_my_${t.id}', 'Looks up the caller\'s EXISTING $what in $app by phone number — for "when is my booking?", "what time is my table?", "cancel/change my booking". Use it before saying anything about their booking.', {
+        out.add(AppTool('find_my_${t.id}', 'Looks up the caller\'s EXISTING $what in $app by phone number — for "when is my booking?", "what time is my table?", "cancel/change my booking". Use it before saying anything about their booking. Needs their phone number AND the name it is under (ask for the name first).', {
           'phone': {'type': 'string', 'description': 'The caller\'s phone number'},
-          'name': {'type': 'string', 'description': 'Their name, if given'},
-        }, const ['phone'], readOnly: true));
-        out.add(AppTool('change_my_${t.id}', 'Changes one of the caller\'s own $what in $app (a new time or day, more people, other items…) instead of making a new one. Give only what changes. Only works for their phone number.', {
+          'name': {'type': 'string', 'description': 'The name it is booked under, as the caller said it'},
+        }, const ['phone', 'name'], readOnly: true));
+        out.add(AppTool('change_my_${t.id}', 'Changes one of the caller\'s own $what in $app (a new time or day, more people, other items…) instead of making a new one. Give only what changes. Only works for their phone number and the name it is under.', {
           'id': {'type': 'integer', 'description': 'Its id, from find_my_${t.id} (leave out if they have only one)'},
           'phone': {'type': 'string', 'description': 'The caller\'s phone number'},
-          for (final f in fields) if (f.type != 'phone' && !f.managerOnly) f.id: _schema(f),
-        }, const ['phone'], auto: true));
-        out.add(AppTool('cancel_my_${t.id}', 'Cancels one of the caller\'s own $what in $app, after they confirmed which one. Only works for their phone number.', {
+          'name': {'type': 'string', 'description': 'The name it is booked under, as the caller said it'},
+          for (final f in fields) if (f.type != 'phone' && f.type != 'email' && !f.managerOnly && f.id != 'name' && f.id != t.labelField) f.id: _schema(f),
+        }, const ['phone', 'name'], auto: true));
+        out.add(AppTool('cancel_my_${t.id}', 'Cancels one of the caller\'s own $what in $app, after they confirmed which one. Only works for their phone number and the name it is under.', {
           'id': {'type': 'integer', 'description': 'Its id, from find_my_${t.id} (leave out if they have only one)'},
           'phone': {'type': 'string', 'description': 'The caller\'s phone number'},
-        }, const ['phone'], auto: true));
+          'name': {'type': 'string', 'description': 'The name it is booked under, as the caller said it'},
+        }, const ['phone', 'name'], auto: true));
       }
       if (add && !t.single) {
         out.add(AppTool('add_${t.id}', manager ? 'Adds a record to the $what of $app.$about' : 'Adds a new record to the $what of $app (e.g. a customer order or booking).$about',
@@ -425,7 +482,13 @@ class AppServer {
     final t = spec.table(name.substring(change ? 10 : cancel ? 10 : 8))!;
     final phoneF = t.fields.firstWhere((f) => f.type == 'phone');
     final phone = '${args['phone'] ?? ''}';
-    if (phone.replaceAll(RegExp(r'\D'), '').length < 6) throw AppDataError('Ask for their phone number first.');
+    if (phone.replaceAll(RegExp(r'\D'), '').length < 9) throw AppDataError('Ask for their phone number first.');
+    // Two things, as a receptionist would check: the number they booked with (the number they are
+    // calling from) and the name it is under. Without both, nothing about it is said or changed.
+    final named = '${args['name'] ?? ''}'.trim();
+    if (named.isEmpty || _placeholder.hasMatch(named)) {
+      throw AppDataError('First ask the caller for the name the ${t.title.toLowerCase()} is under, then call this again with it (name). Say nothing about any booking until then.');
+    }
     final what = t.title.toLowerCase();
     final shape = BookingShape.of(spec, t);
     final today = DateTime.now().toIso8601String().substring(0, 10);
@@ -433,21 +496,27 @@ class AppServer {
       for (final r in await data.list(t.id, manager: true))
         if (samePhone(r[phoneF.id], phone) && !(shape?.cancelled(r) ?? false) && (shape == null || '${r[shape.dateField.id] ?? ''}'.compareTo(today) >= 0)) r,
     ];
+    final label = t.labelField;
+    final onNumber = mine.length;
+    mine.removeWhere((r) => !sameName(r[label], named));
+    if (mine.isEmpty && onNumber > 0) {
+      // On this number but under another name: maybe theirs (a partner's phone), maybe not — so no details.
+      throw AppDataError('There is a ${t.title.toLowerCase()} on this number but not under the name "$named". For privacy, give no details of it: '
+          'ask the caller for the exact name it was booked under. If they don\'t know it, they can\'t change or cancel it by phone.');
+    }
     if (!cancel) {
-      if (mine.isEmpty) return 'No $what found for the phone number $phone. Tell the caller you can\'t find one under this number (they may have used another number).';
-      final named = '${args['name'] ?? ''}'.trim().toLowerCase();
-      final label = t.labelField;
-      return 'Found ${mine.length} for $phone${named.isEmpty || mine.any((r) => '${r[label]}'.toLowerCase().contains(named.split(' ').first)) ? '' : ' (under a different name — check with the caller)'}:\n'
+      if (mine.isEmpty) return 'No $what found for the phone number $phone under the name $named. Tell the caller you can\'t find one (they may have used another number or name).';
+      return 'Found ${mine.length} for $named on $phone:\n'
           '${await data.describe(t.id, [for (final r in mine) {for (final e in r.entries) if (e.key != 'created_at' && e.key != 'via') e.key: e.value}])}';
     }
     // Which one: the id given if it's theirs; else, when they have just one, that one.
     final id = (args['id'] as num?)?.toInt() ?? int.tryParse('${args['id'] ?? ''}');
     var r = id == null ? null : await data.get(t.id, id, manager: true);
-    if (r != null && !samePhone(r[phoneF.id], phone)) {
-      throw AppDataError('That $what is under a different phone number, so it can\'t be ${change ? 'changed' : 'cancelled'} from this number. Tell the caller to call from the number they booked with.');
+    if (r != null && (!samePhone(r[phoneF.id], phone) || !sameName(r[label], named))) {
+      throw AppDataError('That $what is not under this phone number and name, so it can\'t be ${change ? 'changed' : 'cancelled'} from this number. Tell the caller to call from the number they booked with. Give no details of it.');
     }
     if (r == null || !mine.any((m) => m['id'] == r!['id'])) {
-      if (mine.isEmpty) throw AppDataError('No $what found for the phone number $phone, so there is nothing to ${change ? 'change' : 'cancel'}. Tell the caller.');
+      if (mine.isEmpty) throw AppDataError('No $what found for the phone number $phone under the name $named, so there is nothing to ${change ? 'change' : 'cancel'}. Tell the caller.');
       if (mine.length > 1) {
         throw AppDataError('They have ${mine.length}: ask which one, then call again with its id.\n${await data.describe(t.id, mine)}');
       }
@@ -455,7 +524,9 @@ class AppServer {
     }
     final rid = r['id'] as int;
     if (change) {
-      await data.change(t.id, rid, {for (final e in args.entries) if (e.key != 'id' && e.key != 'phone' && e.value != null && '${e.value}'.isNotEmpty) e.key: e.value});
+      // Never who it belongs to: not its phone number (whatever the field is called) or the name it is under.
+      final fixed = {'id', 'phone', 'name', phoneF.id, label, for (final f in t.fields) if (f.type == 'phone' || f.type == 'email') f.id};
+      await data.change(t.id, rid, {for (final e in args.entries) if (!fixed.contains(e.key) && e.value != null && '${e.value}'.isNotEmpty) e.key: e.value});
       return 'Done. Changed (the old details are replaced):\n${await data.describe(t.id, [(await data.get(t.id, rid, manager: true))!])}';
     }
     final status = shape?.statusField ?? t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
@@ -629,10 +700,9 @@ class AppServer {
 bool samePhone(Object? a, Object? b) {
   String d(Object? x) => '${x ?? ''}'.replaceAll(RegExp(r'\D'), '');
   final x = d(a), y = d(b);
-  if (x.length < 6 || y.length < 6) return false;
-  final n = x.length < y.length ? x.length : y.length;
-  final k = n < 9 ? n : 9;
-  return x.substring(x.length - k) == y.substring(y.length - k);
+  // A whole number (9+ digits): "123456" must not match everyone whose number ends that way.
+  if (x.length < 9 || y.length < 9) return false;
+  return x.substring(x.length - 9) == y.substring(y.length - 9);
 }
 
 class AppTool {
@@ -651,4 +721,34 @@ class AppTool {
         'inputSchema': {'type': 'object', 'properties': properties, if (required.isNotEmpty) 'required': required},
         'annotations': {'readOnlyHint': readOnly, if (auto) 'localailineAutoApprove': true},
       };
+}
+
+/// Two secrets the same, taking the same time whatever they are (no clues from timing).
+bool sameSecret(String a, String b) {
+  final x = utf8.encode(a), y = utf8.encode(b);
+  var diff = x.length ^ y.length;
+  for (var i = 0; i < x.length; i++) {
+    diff |= x[i] ^ (i < y.length ? y[i] : 0);
+  }
+  return diff == 0;
+}
+
+/// The same person's name, allowing for how it was heard or spelt ("Tariq" / "Tarek", "Jon" / "John"):
+/// a first name or surname of at least three letters in both, within a letter or two.
+bool sameName(Object? a, Object? b) {
+  List<String> parts(Object? x) => plain('$x').split(RegExp(r'[^a-z]+')).where((w) => w.length >= 3).toList();
+  int dist(String p, String q) {
+    var prev = List<int>.generate(q.length + 1, (i) => i);
+    for (var i = 1; i <= p.length; i++) {
+      final cur = [i, ...List<int>.filled(q.length, 0)];
+      for (var j = 1; j <= q.length; j++) {
+        cur[j] = [prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (p[i - 1] == q[j - 1] ? 0 : 1)].reduce((m, n) => m < n ? m : n);
+      }
+      prev = cur;
+    }
+    return prev[q.length];
+  }
+
+  final x = parts(a), y = parts(b);
+  return x.any((p) => y.any((q) => p == q || dist(p, q) <= (p.length >= 5 ? 2 : 1)));
 }

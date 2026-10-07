@@ -1173,7 +1173,9 @@ async def entrypoint(ctx: JobContext) -> None:
         if stt_.recorder:
             try:
                 folder = Path(os.environ.get("LL_RECORDINGS_DIR") or (VOICES_DIR.parent.parent / "recordings"))
-                recording = stt_.recorder.save(folder / f"{time.strftime('%Y-%m-%d_%H-%M-%S')}_{ctx.room.name[-24:]}.wav")
+                # (The room name carries the caller's number as their phone network sent it: only safe characters in a file name.)
+                safe = re.sub(r"[^A-Za-z0-9_+-]", "", ctx.room.name)[-24:] or "call"
+                recording = stt_.recorder.save(folder / f"{time.strftime('%Y-%m-%d_%H-%M-%S')}_{safe}.wav")
             except Exception as e:  # noqa: BLE001
                 log.warning("could not save the recording: %s", e)
         transcript = []

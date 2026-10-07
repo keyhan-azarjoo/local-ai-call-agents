@@ -261,6 +261,8 @@ class AppData {
         if (!f.managerOnly && f.type != 'link' && f.type != 'longtext' && clean[f.id] != null && (f.required || const {'phone', 'email', 'date', 'time', 'datetime', 'links', 'number'}.contains(f.type))) f.id,
     ];
     if (keys.length < 2) return null;
+    // Someone's own only: where there is a phone number, it must be the same one.
+    if (t.fields.any((f) => f.type == 'phone') && !t.fields.any((f) => f.type == 'phone' && keys.contains(f.id))) return null;
     final rows = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND created_at > ?', whereArgs: [appId, t.id, since]);
     for (final r in rows) {
       final d = (jsonDecode(r['data'] as String) as Map).cast<String, Object?>();
@@ -503,11 +505,9 @@ class AppData {
     final rows = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND created_at > ?', whereArgs: [appId, t.id, from], orderBy: 'id DESC');
     for (final r in rows) {
       final d = (jsonDecode(r['data'] as String) as Map).cast<String, Object?>();
-      // The same number, or (a caller who gave another number part-way) the same name within a few minutes.
-      final sameName = name != null && name.trim().length > 2 && plain('${d[t.labelField] ?? ''}').trim() == plain(name).trim() &&
-          (r['created_at'] as int) > DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
       final samePhone = last9(phone).length >= 9 && last9(d[phoneF.id]) == last9(phone);
-      if (d['_via'] != 'phone' || (!samePhone && !sameName)) continue;
+      // Only ever their own (same number): the same name alone could be someone else's booking.
+      if (d['_via'] != 'phone' || !samePhone) continue;
       final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
       if (status != null && RegExp(r'cancel', caseSensitive: false).hasMatch('${d[status.id] ?? ''}')) continue;
       // Another day is another booking — unless it was saved minutes ago (they changed the day in this call).

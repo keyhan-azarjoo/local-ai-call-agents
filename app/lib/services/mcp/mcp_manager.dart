@@ -138,7 +138,11 @@ class McpManager extends ChangeNotifier {
         return attempt({});
       case McpAuthMode.token:
         final h = s.secret;
-        return attempt({if ((h['header'] ?? '').toString().isNotEmpty) h['header'] as String: (h['value'] ?? '') as String});
+        return attempt({
+          if ((h['header'] ?? '').toString().isNotEmpty) h['header'] as String: (h['value'] ?? '') as String,
+          // Several headers (e.g. a built app's tool key and the manager PIN).
+          if (h['headers'] is Map) for (final e in (h['headers'] as Map).entries) '${e.key}': '${e.value}',
+        });
       case McpAuthMode.auto:
         var auth = McpAuthState.fromJson(s.secret);
         if (auth.hasToken && auth.expired) {

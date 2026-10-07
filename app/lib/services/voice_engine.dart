@@ -152,11 +152,20 @@ class VoiceEngine extends ChangeNotifier {
     _log('Phone calling installed.');
   }
 
+  /// Only this user can read it (it holds the engine's secret keys).
+  static void _private(String path) {
+    if (!Platform.isWindows) Process.runSync('chmod', ['600', path]);
+  }
+
   String _secret() {
     final f = File(p.join(dataDir, 'voice-engine.secret'));
-    if (f.existsSync()) return f.readAsStringSync().trim();
+    if (f.existsSync()) {
+      _private(f.path);
+      return f.readAsStringSync().trim();
+    }
     final s = base64Url.encode(List<int>.generate(32, (_) => Random.secure().nextInt(256))).replaceAll('=', '');
     f.writeAsStringSync(s);
+    _private(f.path);
     return s;
   }
 
@@ -399,6 +408,7 @@ class VoiceEngine extends ChangeNotifier {
       final cfg = File(p.join(dataDir, 'livekit.yaml'))
         ..writeAsStringSync('port: $livekitPort\nbind_addresses: ["0.0.0.0"]\nrtc:\n  tcp_port: 7881\n  node_ip: ${lanIp ?? '127.0.0.1'}\n'
             '${withRedis ? 'redis:\n  address: 127.0.0.1:$redisPort\n' : ''}keys:\n  $apiKey: $apiSecret\n');
+      _private(cfg.path);
       await _spawn(EnginePart.livekit, (await which('livekit-server'))!, ['--config', cfg.path], healthy: () => _ok('http://127.0.0.1:$livekitPort'));
     }
     if (withRedis && sipBin != null && state[EnginePart.sip] != PartState.running) {
@@ -413,6 +423,7 @@ class VoiceEngine extends ChangeNotifier {
         ..writeAsStringSync('api_key: $apiKey\napi_secret: $apiSecret\nws_url: $livekitUrl\nredis:\n  address: 127.0.0.1:$redisPort\n'
             'sip_port: 5080\nrtp_port: 52000-52500\nuse_external_ip: true\n${tls}logging:\n  level: info\n');
       sipTls = tls.isNotEmpty;
+      _private(cfg.path);
       // Each call's audio port asks STUN for its outside port (home routers renumber ports).
       await _spawn(EnginePart.sip, sipBin, ['--config', cfg.path], env: {'LIVEKIT_SIP_MEDIA_STUN': 'global.stun.twilio.com:3478'}, healthy: () async => log.any((l) => l.contains('[sip]') && l.contains('sip signaling listening')));
     }

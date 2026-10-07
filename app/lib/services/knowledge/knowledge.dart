@@ -39,6 +39,60 @@ class KnowledgeService extends ChangeNotifier {
   KnowledgeService(this.db, {this.ollama = 'http://127.0.0.1:11434', http.Client? client}) : _c = client ?? http.Client();
   final Db db;
   final String ollama;
+
+  /// Where embeddings are made: a small Ollama of their own (see [startEmbedServer]) when it runs,
+  /// so searching never waits behind the phone calls' answers (the shared one could wedge: the
+  /// embedding model waited for memory the busy chat model never gave up).
+  String? embedBase;
+  String get _embedUrl => embedBase ?? ollama;
+  Process? _embedServer;
+  static const embedPort = 11435;
+
+  /// Starts that Ollama (same models folder, one model, one request at a time) and uses it.
+  Future<void> startEmbedServer(String? ollamaBinary) async {
+    _embedBinary = ollamaBinary;
+    final url = 'http://127.0.0.1:$embedPort';
+    Future<bool> up() async {
+      try {
+        return (await _c.get(Uri.parse('$url/api/version')).timeout(const Duration(seconds: 2))).statusCode == 200;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    if (!await up()) {
+      if (ollamaBinary == null) return;
+      _embedServer?.kill();
+      _embedServer = await Process.start(ollamaBinary, ['serve'], environment: {
+        'OLLAMA_HOST': '127.0.0.1:$embedPort',
+        'OLLAMA_NUM_PARALLEL': '1',
+        'OLLAMA_MAX_LOADED_MODELS': '1',
+        'OLLAMA_KEEP_ALIVE': '60m',
+      });
+      _embedServer!.stdout.drain<void>();
+      _embedServer!.stderr.drain<void>();
+      for (var i = 0; i < 20 && !await up(); i++) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    }
+    if (await up()) embedBase = url;
+  }
+
+  /// Stuck anyway: start it again (it serves nothing else, so no call notices).
+  Future<void> _restartEmbedServer() async {
+    if (_embedServer == null) return;
+    _embedServer!.kill();
+    _embedServer = null;
+    embedBase = null;
+    await startEmbedServer(_embedBinary);
+  }
+
+  String? _embedBinary;
+
+  void stopEmbedServer() {
+    _embedServer?.kill();
+    _embedServer = null;
+  }
   final http.Client _c;
 
   /// Small, fast, multilingual embedding model.
@@ -336,6 +390,7 @@ class KnowledgeService extends ChangeNotifier {
       return await _embedNow(texts);
     } on TimeoutException {
       _embedDownUntil = DateTime.now().add(const Duration(minutes: 1));
+      unawaited(_restartEmbedServer());
       rethrow;
     }
   }
@@ -346,10 +401,10 @@ class KnowledgeService extends ChangeNotifier {
       final batch = texts.sublist(i, math.min(i + 32, texts.length));
       // A stuck embedding model must never hold up a call: give up and answer without it.
       final limit = Duration(seconds: 12 + batch.length ~/ 2);
-      var r = await _c.post(Uri.parse('$ollama/api/embed'),
+      var r = await _c.post(Uri.parse('$_embedUrl/api/embed'),
           body: jsonEncode({'model': embedModel, 'input': batch, 'keep_alive': '30m', 'truncate': true})).timeout(limit);
       if (r.statusCode == 404 && await ensureModel()) {
-        r = await _c.post(Uri.parse('$ollama/api/embed'), body: jsonEncode({'model': embedModel, 'input': batch, 'keep_alive': '30m', 'truncate': true})).timeout(limit);
+        r = await _c.post(Uri.parse('$_embedUrl/api/embed'), body: jsonEncode({'model': embedModel, 'input': batch, 'keep_alive': '30m', 'truncate': true})).timeout(limit);
       }
       if (r.statusCode != 200) throw Exception('Embedding failed (${r.statusCode}): ${r.body}');
       for (final v in (jsonDecode(r.body) as Map)['embeddings'] as List) {

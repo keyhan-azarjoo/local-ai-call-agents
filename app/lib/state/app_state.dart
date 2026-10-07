@@ -1702,7 +1702,11 @@ class AppState extends ChangeNotifier {
       final passed = RegExp(r'\[(voice|connect):([^\]]*)\]').firstMatch(text);
       final before = text.split('[hangup]').first;
       final hangup = text.contains('[hangup]') && farewell.hasMatch(before.length > 90 ? before.substring(before.length - 90) : before) && !before.trim().endsWith('?');
-      text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
+      text = text
+          .replaceAllMapped(RegExp(r'\s*\[voice:[^\]|]*\|?([^\]]*)\]\s*'), (m) => ' ⏸ (on hold) ${m[1]!.isEmpty ? 'teammate' : m[1]}: ')
+          .replaceAll(RegExp(r'\s*\[connect:[^\]]*\]\s*'), ' ')
+          .replaceAll('[hangup]', '')
+          .trim();
       turns.add({'role': 'assistant', 'content': text});
       if (passed != null) onLine?.call('note', passed.group(1) == 'connect' ? 'Passing the call to a person' : 'Passed to another agent', const {});
       times.add({'at': hms(asked), 'ms': ms, 'first_ms': firstMs ?? ms});
@@ -2884,7 +2888,8 @@ class AppState extends ChangeNotifier {
       } else if (target != null && flow != null && target['id'] != flow.agent['id'] && !gone) {
         _onCall[room] = (agentId: target['id'] as int, brief: passTo!.brief, from: '${flow.agent['name']}');
         await log('Call passed from ${flow.agent['name']} to ${target['name']}');
-        chunk({'content': ' [voice:${target['voice'] ?? 'default'}] '});
+        // The voice engine plays a moment of hold music here, then the teammate speaks in their own voice.
+        chunk({'content': ' [voice:${target['voice'] ?? 'default'}|${target['name']}] '});
         flow = await _callAgent(room, mode);
         access = flow == null ? null : await accessOf(flow.agent);
         var said = '';

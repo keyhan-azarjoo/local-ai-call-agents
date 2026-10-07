@@ -261,8 +261,18 @@ String _s(Object? ms) => ms is num ? '${(ms / 1000).toStringAsFixed(1)} s' : '�
 bool _slow(Map? t) => t != null && (((t['first_ms'] as num?) ?? 0) > 5000 || ((t['ms'] as num?) ?? 0) > 25000);
 
 Widget _bubble(BuildContext ctx, String line, {Map? time}) {
-  final ai = line.startsWith('AI:');
+  // A hand-over in one AI turn: the first agent, the hold music, then the teammate in their own voice.
+  final hold = RegExp(r'\s*⏸ \(on hold\) ([^:]+): ').firstMatch(line);
+  if (line.startsWith('AI:') && hold != null) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (line.substring(3, hold.start).trim().isNotEmpty) _bubble(ctx, line.substring(0, hold.start), time: time),
+      Padding(padding: const EdgeInsets.only(bottom: 8), child: Center(child: Pill('♪ on hold, passed to ${hold[1]}', tone: Tone.blue))),
+      _bubble(ctx, 'AI (${hold[1]}): ${line.substring(hold.end)}'),
+    ]);
+  }
+  final ai = line.startsWith('AI');
   final text = line.substring(line.indexOf(':') + 1).trim();
+  final who = RegExp(r'^AI \(([^)]+)\)').firstMatch(line)?.group(1);
   final when = [
     if (time?['at'] != null) '${time!['at']}',
     if (time?['ms'] != null) 'answered in ${_s(time!['ms'])} · first words after ${_s(time['first_ms'])}',
@@ -277,7 +287,7 @@ Widget _bubble(BuildContext ctx, String line, {Map? time}) {
           decoration: BoxDecoration(color: ai ? ctx.c.amberSoft : ctx.c.blueSoft, borderRadius: BorderRadius.circular(LL.r)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(ai ? 'AI' : 'Caller', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: ai ? ctx.c.amberInk : ctx.c.blueInk)),
+              Text(ai ? (who ?? 'AI') : 'Caller', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: ai ? ctx.c.amberInk : ctx.c.blueInk)),
               if (when.isNotEmpty) ...[
                 const SizedBox(width: 8),
                 Flexible(

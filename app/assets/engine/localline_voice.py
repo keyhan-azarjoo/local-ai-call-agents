@@ -691,6 +691,34 @@ def clauses(text: str) -> list[str]:
     return [p for p in out if p.strip()]
 
 
+def hold_music(stt_=None, seconds: float | None = None):  # noqa: ANN001, ANN201
+    """A few seconds of soft hold music (a gentle arpeggio, made here: no files needed), as frames."""
+    sr = 24000
+    seconds = seconds or random.uniform(2.0, 4.0)
+    notes = [261.63, 329.63, 392.00, 493.88, 523.25, 392.00, 329.63, 293.66]  # C E G B C G E D
+    step = 0.32
+    n = int(sr * seconds)
+    t = np.arange(n) / sr
+    out = np.zeros(n, np.float32)
+    for i in range(int(seconds / step) + 1):
+        f = notes[i % len(notes)]
+        start = int(i * step * sr)
+        if start >= n:
+            break
+        length = min(n - start, int(sr * 1.1))
+        tt = t[:length]
+        env = np.exp(-3.2 * tt) * np.minimum(1.0, tt / 0.01)  # soft pluck: quick rise, slow fade
+        out[start : start + length] += (np.sin(2 * np.pi * f * tt) + 0.3 * np.sin(2 * np.pi * 2 * f * tt)) * env * 0.12
+    fade = int(sr * 0.25)
+    out[-fade:] *= np.linspace(1.0, 0.0, fade)
+    pcm = (np.clip(out, -1, 1) * 32767).astype(np.int16)
+    if stt_ is not None:
+        stt_.record_agent_audio(pcm, sr)
+    for i in range(0, n, 2400):
+        chunk = pcm[i : i + 2400]
+        yield rtc.AudioFrame(data=chunk.tobytes(), sample_rate=sr, num_channels=1, samples_per_channel=len(chunk))
+
+
 # Kokoro's speaking speed: a touch quicker than its default sounds more like someone on the phone.
 SPEED = float(os.environ.get("LL_TTS_SPEED", "1.05"))
 
@@ -827,7 +855,7 @@ class Ava(Agent):
     # Set when the call is being passed to a real person (agent id).
     connect_requested: str | None = None
 
-    def _strip_hangup(self, t: str) -> str:
+    def _strip_hangup(self, t: str, switch_voice: bool = False) -> str:
         if "[hangup]" in t.lower():
             # Only a real goodbye ends the call (the model sometimes adds the marker too early): the
             # goodbye must be at the end ("Hi, thanks for calling! … Would you like to order?" is not one),
@@ -841,9 +869,10 @@ class Ava(Agent):
             t = _CONNECT.sub(" ", t)
         m = _VOICE.search(t)
         if m:
-            # The call was passed to a teammate: their voice from here on.
-            v = m.group(1).strip()
-            self.session.tts.voice_override = None if v in ("", "default", "null") else v
+            # The call was passed to a teammate: their voice from here on ("[voice:kokoro:am_michael|Sam]").
+            if switch_voice:
+                v = m.group(1).split("|")[0].strip()
+                self.session.tts.voice_override = None if v in ("", "default", "null") else v
             t = _VOICE.sub(" ", t)
         return t
 
@@ -902,6 +931,21 @@ class Ava(Agent):
                         else:
                             buf += t
                         continue
+                # Passed to a teammate: the words before it in this voice, a moment of hold music,
+                # then the teammate picks up in their own voice.
+                hand = _VOICE.search(piece) if piece else None
+                if hand:
+                    buf = piece[hand.end() :] + buf
+                    before = self._strip_hangup(piece[: hand.start()])
+                    if before.strip():
+                        spoke = True
+                        async with tts_.synthesize(before.strip()) as stream:
+                            async for ev in stream:
+                                yield ev.frame
+                    for frame in hold_music(self.session.tts._stt if hasattr(self.session.tts, "_stt") else None):  # noqa: SLF001
+                        yield frame
+                    self._strip_hangup(piece[hand.start() : hand.end()], switch_voice=True)
+                    continue
                 piece = self._strip_hangup(piece) if piece else piece
                 if piece and piece.strip():
                     spoke = True

@@ -771,6 +771,42 @@ def long_and_languages(base):
     return out
 
 
+# ---------------- departments: sales and customer service, reached by a real hand-over ----------------
+DEPTS = {
+    'restaurant': ('Paolo', 'a private party for 20 people next month and whether you do catering', 'Anna', 'your delivery last night arrived cold and an hour late'),
+    'barber': ('Leon', 'a gift voucher for your brother and the monthly membership', 'Kim', 'your skin fade last week came out uneven'),
+    'salon': ('Bianca', 'bridal hair for your wedding in June and a trial', 'Tessa', 'your colour last Saturday came out far too orange'),
+    'clinic': ('Victor', 'Invisalign and whether you can pay monthly', 'Hope', 'you were charged twice for your last check-up'),
+    'hotel': ('Felix', 'booking the whole house for a wedding weekend', 'Maeve', 'your room had no hot water last night'),
+    'garage': ('Derek', 'a service plan for your two company vans', 'Paula', 'the squeak came back two days after your brake job'),
+    'gym': ('Bruno', 'a family membership for you and your partner', 'Wren', 'you were charged after you cancelled your membership'),
+    'shop': ('Gus', 'a weekly order for your café and Christmas hampers', 'Nell', 'half of your delivery yesterday was missing'),
+    'tutoring': ('Cyrus', 'one-to-one tutoring for two children and any discount', 'Opal', 'your son\'s tutor has missed two lessons'),
+    'events': ('Jules', 'hiring the venue for a company party of 80', 'Penny', 'the show you had tickets for was cancelled and you want a refund'),
+    'realestate': ('Rafael', 'a valuation because you want to sell your flat', 'Iris', 'the boiler in the flat you rent has broken'),
+}
+
+
+def departments():
+    out = []
+    for app, (sales, topic, care, problem) in DEPTS.items():
+        for rnd in range(2):
+            c = person('step_by_step')
+            out.append(S.make(app, 'journey_departments', 'journey', [], {}, caller=c, setup='solo') | {'steps': [
+                call(f'Ask about {topic}. You want to talk to whoever handles that; listen to what they say, ask one follow-up, then end the call.',
+                     [f'Your name: {c["name"]}', 'Phone: the number you are calling from'], {'new_max': 0, 'passed_to': sales}, caller=c, max_turns=12)]})
+            c = person('chatty')
+            out.append(S.make(app, 'journey_departments', 'journey', [], {}, caller=c, setup='solo') | {'steps': [
+                call(f'Complain: {problem}. You are upset but polite. You want it sorted; accept what they offer, give your name and number when asked, then end the call.',
+                     [f'Your name: {c["name"]}', 'Phone: the number you are calling from'], {'passed_to': care}, caller=c, max_turns=12)]})
+            c = person('terse')
+            who = sales if rnd == 0 else care
+            out.append(S.make(app, 'journey_departments', 'journey', [], {}, caller=c, setup='solo') | {'steps': [
+                call(f'Ask to speak to {who} by name. When you are through, say you were just checking they can call you back tomorrow, then end the call.',
+                     [f'Your name: {c["name"]}', 'Phone: the number you are calling from'], {'new_max': 0, 'passed_to': who}, caller=c, max_turns=8)]})
+    return out
+
+
 def main():
     out = []
     out += restaurant()
@@ -786,7 +822,7 @@ def main():
         c['id'] = f'challenge-{c["app"]}-{c["intent"].replace("challenge_", "")}-{c["n"]}'
     (Path(__file__).parents[2] / 'assets' / 'scenarios' / 'challenges.json').write_text(json.dumps(ch, indent=1, ensure_ascii=False))
     print(len(ch), 'challenges', Counter(c['app'] for c in ch))
-    js = journeys()
+    js = journeys() + departments()
     for i, s in enumerate(js):
         s['n'] = 1001 + i
         s['id'] = f'journey-{s["intent"].replace("journey_", "")}-{s["n"]}'

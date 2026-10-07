@@ -195,7 +195,11 @@ class ScenarioRunner {
     String fill(String t) => t.replaceAll('{app}', app.name);
     Future<int> agent(String name, String role, Map<String, Object?> row) async {
       final had = (await s.db.all('agents', where: 'name = ? AND role = ?', args: [name, role])).firstOrNull;
-      if (had != null) return had['id'] as int;
+      if (had != null) {
+        // Made before they had their own voice: give it now.
+        if (had['voice'] == null && row['voice'] != null) await s.db.update('agents', had['id'] as int, {'voice': row['voice']});
+        return had['id'] as int;
+      }
       final id = await s.db.insert('agents', {'name': name, 'role': role, 'language': 'English', 'enabled': 1, ...row});
       await s.log('Added $name ($role) to the call flow');
       return id;
@@ -212,6 +216,7 @@ class ScenarioRunner {
       'instructions': 'You are ${b.receptionist}. ${fill(b.instructions)}',
       'handles': 'handoff',
       'transfer_when': '',
+      'voice': b.voice,
     });
     final team = <int>[], people = <int>[];
     for (final r in b.team) {
@@ -220,6 +225,7 @@ class ScenarioRunner {
         'instructions': r.person ? '' : 'You are ${r.name} at ${app.name}. ${r.instructions}',
         'handles': r.person ? 'human' : 'handoff',
         'transfer_when': r.when,
+        'voice': r.voice,
       });
       (r.person ? people : team).add(id);
     }
@@ -474,7 +480,12 @@ class ScenarioRunner {
       // The voice engine hangs up only on a goodbye (see _FAREWELL in localline_voice.py).
       final before = text.split('[hangup]').first;
       if (text.contains('[hangup]') && _farewell.hasMatch(before.length > 90 ? before.substring(before.length - 90) : before) && !before.trim().endsWith('?')) hungUp = true;
-      text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
+      // A hand-over: hold music, then the teammate in their own voice (shown as such).
+      text = text
+          .replaceAllMapped(RegExp(r'\s*\[voice:[^\]|]*\|?([^\]]*)\]\s*'), (m) => ' ⏸ (on hold) ${m[1]!.isEmpty ? 'teammate' : m[1]}: ')
+          .replaceAll(RegExp(r'\s*\[connect:[^\]]*\]\s*'), ' ')
+          .replaceAll('[hangup]', '')
+          .trim();
       turns.add({'role': 'assistant', 'content': text});
       // Where the time went inside the app (its own log of this turn).
       Map<String, Object?>? stages;
@@ -806,6 +817,9 @@ class ScenarioRunner {
     }
     if (ex['passed_to'] != null) {
       final who = '${ex['passed_to']}'.toLowerCase();
+      // A real hand-over: hold music, then they speak in their own voice (not the first agent carrying on).
+      final person = (await s.db.all('agents', where: 'lower(name) = ?', args: [who])).firstOrNull?['handles'] == 'human';
+      if (!person && !aiText.toLowerCase().contains('(on hold) $who')) f.add('no real hand-over to ${ex['passed_to']} (hold music, then their own voice)');
       if (!audit.any((a) => a.toLowerCase().contains('to $who')) && !RegExp('\\b$who\\b', caseSensitive: false).hasMatch(ai.skip(1).join(' '))) {
         f.add('was not passed to ${ex['passed_to']} (passed: ${passedTo.join(', ')}; audit: ${audit.where((a) => a.contains('passed')).join('; ')})');
       }

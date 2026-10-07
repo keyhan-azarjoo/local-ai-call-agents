@@ -443,7 +443,7 @@
    "Time: six pm",
    "People: 4",
    "You do not give a phone number unless asked; then say the number you are calling from is fine.",
-   "Special request: a table by the window"
+   "Special request: a table by the window if possible"
   ],
   "wrong": null,
   "seed": [],
@@ -712,7 +712,7 @@
    "Time: 9pm",
    "People: 2",
    "Your phone number: 07715 101 574",
-   "Special request: a table by the window"
+   "Special request: a table by the window if possible"
   ],
   "wrong": null,
   "seed": [],
@@ -751,7 +751,7 @@
    "Time: quarter to eight pm",
    "People: 2",
    "Your phone number: 07726 805 339",
-   "Special request: a table by the window"
+   "Special request: a table by the window if possible"
   ],
   "wrong": null,
   "seed": [],
@@ -1325,7 +1325,7 @@
    "Time: 7pm",
    "People: 2",
    "Your phone number: 07703 430 242",
-   "Special request: a table by the window"
+   "Special request: a table by the window if possible"
   ],
   "wrong": null,
   "seed": [],
@@ -1555,7 +1555,7 @@
    "Time: ten past seven pm",
    "People: 2",
    "Your phone number: 07704 254 713",
-   "Special request: a table by the window"
+   "Special request: a table by the window if possible"
   ],
   "wrong": null,
   "seed": [],

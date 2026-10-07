@@ -516,7 +516,8 @@ class AppServer {
         final time = parseTime('${args['time'] ?? ''}') ?? (throw AppDataError('Give the time as HH:MM, 24-hour (7pm = 19:00).'));
         final guests = (args['guests'] as num?)?.toInt() ?? int.tryParse('${args['guests'] ?? ''}') ?? 0;
         final a = await data.availability(b, date, time, guests: guests);
-        String show(Map<String, Object?> r) => '${r[b.resources.labelField] ?? r['id']}${b.seatsField != null ? ' (${r[b.seatsField!.id]} seats)' : ''}';
+        final area = b.resources.fields.where((f) => f.type == 'choice').firstOrNull;
+        String show(Map<String, Object?> r) => '${r[b.resources.labelField] ?? r['id']}${b.seatsField != null ? ' (${r[b.seatsField!.id]} seats${area != null && r[area.id] != null ? ', ${r[area.id]}' : ''})' : ''}';
         final what = b.resources.title.toLowerCase();
         final on = withDay(date);
         if (a.free.isEmpty) {

@@ -173,7 +173,10 @@ class OrderQuote {
   static final _price = RegExp(r'[£\$€]\s?(\d+(?:\.[\s   ]?\d{1,2})?)');
   static final _postcode = RegExp(r'\b([A-Z]{1,2}\d{1,2}[A-Z]?)(?:\s*\d[A-Z]{2})?\b');
 
-  static bool worthChecking(String question) => _orderish.hasMatch(question);
+  static bool worthChecking(String question) =>
+      _orderish.hasMatch(question) &&
+      (RegExp(r'\b(order\w*|deliver\w*|collect\w*|takeaway)\b', caseSensitive: false).hasMatch(question) ||
+          !RegExp(r'\b(table|book\w*|reserv\w*|people|guests?)\b', caseSensitive: false).hasMatch(question));
 
   /// First price on a line ("Fish & chips … £16.00 …" → 16.0).
   static double? priceOf(String line) => double.tryParse((_price.firstMatch(line)?.group(1) ?? '').replaceAll(RegExp(r'\s'), ''));

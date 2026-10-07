@@ -612,7 +612,9 @@ class AppData {
         return parseDate('$s') ?? (throw AppDataError('${f.label}: give the date as YYYY-MM-DD, not "$s".'));
       case 'datetime':
         final m = RegExp(r'^(.*?)[ T,]+(\S+(\s*[ap]\.?m\.?)?)$', caseSensitive: false).firstMatch('$s'.trim());
-        final d = parseDate(m?.group(1) ?? '$s'), t = m == null ? null : parseTime(m.group(2)!);
+        // "tomorrow at 5pm", "Saturday 2026-10-10 17:00": the day without "at" or its name.
+        final day = (m?.group(1) ?? '$s').replaceFirst(RegExp(r'\s+(at|@)$', caseSensitive: false), '').replaceFirst(RegExp(r'^[a-z]+day\s+(?=\d{4}-)', caseSensitive: false), '');
+        final d = parseDate(day), t = m == null ? null : parseTime(m.group(2)!);
         if (d == null || t == null) throw AppDataError('${f.label}: give it as YYYY-MM-DD HH:MM, not "$s".');
         return '$d $t';
       case 'email':

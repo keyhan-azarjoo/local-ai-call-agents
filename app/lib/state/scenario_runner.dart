@@ -310,24 +310,35 @@ class ScenarioRunner {
 
     final shape = BookingShape.of(d.spec, t);
     if (shape != null && want['date'] != null && want['time'] is String) {
-      final date = '${resolve(want['date'], numbers)}';
       final at = parseTime('${want['time']}');
       if (at == null) return;
       int m(String hhmm) => int.parse(hhmm.substring(0, 2)) * 60 + int.parse(hhmm.substring(3, 5));
-      for (final h in await d.busy(shape, date)) {
-        if (h.from < m(at) + d.bookingMinutes && m(at) < h.to && test(h.row)) await cancel(h.row);
+      for (final date in _bothWeeks(want['date'], numbers)) {
+        for (final h in await d.busy(shape, date)) {
+          if (h.from < m(at) + d.bookingMinutes && m(at) < h.to && test(h.row)) await cancel(h.row);
+        }
       }
       return;
     }
     final stay = AppData.stayOf(t);
     if (stay != null && want[stay.from.id] != null) {
-      final from = '${resolve(want[stay.from.id], numbers)}';
-      final to = want[stay.to.id] != null ? '${resolve(want[stay.to.id], numbers)}' : from;
-      for (final r in await d.list(table, manager: true)) {
-        final a = '${r[stay.from.id] ?? ''}', b = '${r[stay.to.id] ?? ''}';
-        if (a.isNotEmpty && b.isNotEmpty && from.compareTo(b) < 0 && (to == from ? from : to).compareTo(a) >= 0 && test(r) && '${r[status.id]}' != off) await cancel(r);
+      final froms = _bothWeeks(want[stay.from.id], numbers), tos = want[stay.to.id] == null ? froms : _bothWeeks(want[stay.to.id], numbers);
+      for (final (i, from) in froms.indexed) {
+        final to = tos[i < tos.length ? i : 0];
+        for (final r in await d.list(table, manager: true)) {
+          final a = '${r[stay.from.id] ?? ''}', b = '${r[stay.to.id] ?? ''}';
+          if (a.isNotEmpty && b.isNotEmpty && from.compareTo(b) < 0 && (to == from ? from : to).compareTo(a) >= 0 && test(r) && '${r[status.id]}' != off) await cancel(r);
+        }
       }
     }
+  }
+
+  /// A day as the check accepts it: "Thursday" is this one or next week's.
+  List<String> _bothWeeks(Object? v, Map<String, String> numbers) {
+    final one = '${resolve(v, numbers)}';
+    if (v is! Map || v['weekday'] == null) return [one];
+    final d = DateTime.parse(one);
+    return [one, ymd(DateTime(d.year, d.month, d.day + 7))];
   }
 
   // ---------------- dates ----------------
@@ -416,7 +427,7 @@ class ScenarioRunner {
       ended = said.contains('[END]');
       said = said.replaceAll('[END]', '').trim();
       // Asked something but only said goodbye: a real caller would answer.
-      if (said.isEmpty && extra > 0) said = 'Yes, please.';
+      if (said.isEmpty && (extra > 0 || (i > 0 && turns.last['content']!.trim().endsWith('?') && extra++ < 2))) said = 'Yes, please.';
       if (said.isEmpty) break;
       turns.add({'role': 'user', 'content': said});
       times.add({'at': hms(DateTime.now())});
@@ -486,7 +497,7 @@ class ScenarioRunner {
         'How you talk: ${c['style_text'] ?? 'Natural and brief.'}\n'
         'Rules: speak like a real phone caller, ONE or TWO short sentences, no lists, no stage directions. Answer the question the assistant just asked. '
         'A fixed timetable time for your course or class is fine. If asked to confirm details that are right, say yes. If the assistant suggests or reads back a day, time, number of people, item or detail that is NOT in your facts, '
-        'say no and give the right one from your facts — never accept a wrong suggestion (except: when a fact says flexible, or your goal says to take another option, and they say yours is not free, say yes to the first other option they offer). A calendar date the assistant adds (like "Saturday 2026-10-10") is fine when the weekday '
+        'say no and give the right one from your facts — never accept a wrong suggestion (except: when a fact says flexible, or your goal says to take another option, and they say yours is not free, say yes to the first other option they offer). ${RegExp(r'^(find|cancel)').hasMatch('${sc['intent']}') ? 'You are asking about a booking you already have: the day, time, room or people they find for it are the answer, not a suggestion — accept them. ' : ''}A calendar date the assistant adds (like "Saturday 2026-10-10") is fine when the weekday '
         'matches yours: never argue about date numbers, and never say date numbers yourself (no "10 October", no "the 10th"): say the day only as your facts do. '
         'Never say the same sentence twice in a row; if asked for a time or detail you have no fact for, say any time is fine / not needed. '
         'If asked something not in your facts (e.g. allergies, special requests, email) say no / not needed. '
@@ -498,6 +509,12 @@ class ScenarioRunner {
       for (final t in turns) {'role': t['role'] == 'user' ? 'assistant' : 'user', 'content': t['content']},
       if (turns.last['role'] == 'user') {'role': 'user', 'content': '(continue)'},
     ];
+    // Their time isn't free and it was flexible: take the other time offered (small caller models dig in).
+    final lastAi = turns.last['role'] == 'assistant' ? turns.last['content']! : '';
+    if ((c['facts'] as List? ?? []).any((f) => '$f'.contains('(flexible)')) &&
+        RegExp(r"\b(isn.t|not) (free|available)\b|nothing is free|already (booked|taken)", caseSensitive: false).hasMatch(lastAi) && RegExp(r'\d').hasMatch(lastAi)) {
+      convo.add({'role': 'user', 'content': '(Your time is not free and it is flexible: say yes to the other time they just offered.)'});
+    }
     if (i == 0 && caller['name'] != null) {
       convo.add({'role': 'user', 'content': '(You are ${caller['name']}. Say your opening line now.)'});
     }
@@ -722,8 +739,11 @@ class ScenarioRunner {
         f.addAll(miss.map((m) => 'active booking: $m'));
       }
     }
+    // "2pm" / "2:00 PM" is the record's 14:00.
+    final said24 = aiText.replaceAll('£', '').replaceAllMapped(RegExp(r'\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\b\.?', caseSensitive: false),
+        (m) => '${(int.parse(m[1]!) % 12 + (m[3]!.toLowerCase() == 'p' ? 12 : 0)).toString().padLeft(2, '0')}:${m[2] ?? '00'}');
     for (final want in (ex['reply_mentions'] as List? ?? [])) {
-      if (!RegExp('$want', caseSensitive: false).hasMatch(aiText.replaceAll('£', ''))) f.add('the assistant never said /$want/');
+      if (!RegExp('$want', caseSensitive: false).hasMatch(said24) && !RegExp('$want', caseSensitive: false).hasMatch(aiText.replaceAll('£', ''))) f.add('the assistant never said /$want/');
     }
     for (final no in (ex['not_mention'] as List? ?? [])) {
       if (aiText.toLowerCase().contains('$no'.toLowerCase())) f.add('privacy: the assistant mentioned "$no"');
@@ -745,10 +765,12 @@ class ScenarioRunner {
     if (ai.isNotEmpty && ai.every((t) => t.trim().isEmpty)) f.add('the assistant said nothing');
     final repeats = <String>{};
     for (var i = 1; i < ai.length; i++) {
-      if (ai[i].length > 30 && ai[i] == ai[i - 1]) repeats.add(ai[i]);
+      // (Without the rotating "one moment" openers, which hide a repeat.)
+      String core(String t) => t.replaceFirst(RegExp(r"^\s*(?:(?:Sure, let me sort that out|Okay, on it|Right, let me do that|Hmm, let me see|Let me check that for you|Okay, one sec, let me look|One moment, let me check that)\.\s*)+"), '');
+      if (core(ai[i]).length > 30 && core(ai[i]) == core(ai[i - 1])) repeats.add(ai[i]);
     }
     if (repeats.isNotEmpty) f.add('repeated itself word for word: "${repeats.first}"');
-    if (RegExp(r'\[(transfer|voice|connect):|CALL_TASK|<tool_call>|\{"name"\s*:', caseSensitive: false).hasMatch(aiText)) f.add('spoke markup aloud');
+    if (RegExp(r'\[(transfer|voice|connect):|CALL_TASK|<tool_call>|\{"name"\s*:|\[(add|check|find|cancel|change)_', caseSensitive: false).hasMatch(aiText)) f.add('spoke markup aloud');
     return f;
   }
 

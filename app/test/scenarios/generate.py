@@ -129,7 +129,7 @@ def restaurant():
         dsay, d = day(closed)
         tsay, t = R.choice(TIMES)
         g = R.choice([2, 2, 2, 3, 4, 4, 5, 6])
-        req = R.choice([None, None, None, 'a high chair', 'it is a birthday', 'a table by the window', 'wheelchair access'])
+        req = R.choice([None, None, None, 'a high chair', 'it is a birthday', 'a table by the window if possible', 'wheelchair access'])
         wrong = None
         if style == 'corrects_self':
             wsay, _ = R.choice([x for x in TIMES if x[1] != t])

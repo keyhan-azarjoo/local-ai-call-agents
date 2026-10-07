@@ -712,8 +712,11 @@ class Ava(Agent):
 
     def _strip_hangup(self, t: str) -> str:
         if "[hangup]" in t.lower():
-            # Only a real goodbye ends the call (the model sometimes adds the marker too early).
-            self.hangup_requested = bool(_FAREWELL.search(t))
+            # Only a real goodbye ends the call (the model sometimes adds the marker too early): the
+            # goodbye must be at the end ("Hi, thanks for calling! … Would you like to order?" is not one),
+            # and never after a question.
+            before = t[: t.lower().find("[hangup]")]
+            self.hangup_requested = bool(_FAREWELL.search(before[-90:])) and "?" not in before
             t = _HANGUP.sub("", t)
         c = _CONNECT.search(t)
         if c:

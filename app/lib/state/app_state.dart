@@ -676,6 +676,7 @@ class AppState extends ChangeNotifier {
             'To cancel: confirm which booking, then call the cancel_my_ tool; '
             'to change one (new time, day, people, items), call the change_my_ tool with only what changes — never make a second booking. If nothing is found, say you can\'t find a booking under this number. '
             'Never guess or assume details of someone\'s booking (time, table, people): look them up first.' : ''}'
+        ' Opening hours, prices and what is offered: look them up with the get_/list_ tools, never guess.'
         ' Never say something is not offered, not on the menu or not available without looking it up first with the list_ tool (people say names loosely: "cut and beard" is "Cut & beard").'
         ' When you say you will check something, call the tool in that same reply — never just say "let me check".';
   }
@@ -1483,7 +1484,7 @@ class AppState extends ChangeNotifier {
     if (!llmReady) throw StateError('Set up the AI first (Settings).');
     if (host?.running != true) throw StateError('The call service isn\'t running.');
     final all = [
-      for (final f in ['scenarios.json', 'journeys.json']) ...(jsonDecode(await rootBundle.loadString('assets/scenarios/$f')) as List).cast<Map<String, dynamic>>(),
+      for (final f in ['scenarios.json', 'journeys.json', 'challenges.json']) ...(jsonDecode(await rootBundle.loadString('assets/scenarios/$f')) as List).cast<Map<String, dynamic>>(),
     ];
     final dir = Directory(p.join(p.dirname(db.path), 'test-runs'))..createSync(recursive: true);
     // Already passed in an earlier run: not again (failed ones run again, e.g. after a fix).
@@ -1596,7 +1597,8 @@ class AppState extends ChangeNotifier {
       final ms = DateTime.now().difference(asked).inMilliseconds;
       var text = body.split('\n').where((l) => l.startsWith('data: {')).map((l) => '${(jsonDecode(l.substring(6)) as Map)['choices'][0]['delta']['content'] ?? ''}').join();
       final passed = RegExp(r'\[(voice|connect):([^\]]*)\]').firstMatch(text);
-      final hangup = text.contains('[hangup]') && farewell.hasMatch(text);
+      final before = text.split('[hangup]').first;
+      final hangup = text.contains('[hangup]') && farewell.hasMatch(before.length > 90 ? before.substring(before.length - 90) : before) && !before.contains('?');
       text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
       turns.add({'role': 'assistant', 'content': text});
       if (passed != null) onLine?.call('note', passed.group(1) == 'connect' ? 'Passing the call to a person' : 'Passed to another agent', const {});
@@ -2591,6 +2593,8 @@ class AppState extends ChangeNotifier {
           }
           final cut = t.toLowerCase().indexOf('[transfer');
           if (cut >= 0) t = t.substring(0, cut);
+          // Never hang up on a question ("…thanks for calling! Would you like to order? [hangup]").
+          if (t.contains('[hangup]') && t.split('[hangup]').first.contains('?')) t = t.replaceAll('[hangup]', '');
           t = spokenText(t);
           if (!saved) t = t.split(_appDone).first.replaceFirst(_appDoneStart, ''); // copying the app's "That's all done" without saving
           // Its last answer again, word for word: held back while it's only that.

@@ -35,7 +35,7 @@ void main() {
 
   test('scenarios', () async {
     var all = [
-      for (final name in (env['SCEN_FILE'] ?? 'scenarios.json,journeys.json').split(','))
+      for (final name in (env['SCEN_FILE'] ?? 'scenarios.json,journeys.json,challenges.json').split(','))
         ...(jsonDecode(File('${Directory.current.path}/assets/scenarios/$name').readAsStringSync()) as List).cast<Map<String, dynamic>>(),
     ];
     final only = (env['SCEN_ONLY'] ?? '').split(',').where((s) => s.isNotEmpty).toSet();

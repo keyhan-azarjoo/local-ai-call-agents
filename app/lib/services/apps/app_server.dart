@@ -547,11 +547,13 @@ class AppServer {
         if (!manager) {
           // The stylist, doctor or barber the caller asked for (else the first free one is given).
           args = await _keepNamed(t, args, heard);
-          // Saved already in this call (the caller corrected something, or the AI saved twice): change that one.
+          // Saved already in this call (the caller corrected something, or the AI saved twice): change that one —
+          // unless they asked for two ("also a table on Saturday", "both").
+          final two = heard.any((h) => RegExp(r'\b(also|both|another|second|as well|two (tables|bookings|appointments|orders))\b', caseSensitive: false).hasMatch(h));
           final shape = BookingShape.of(spec, t);
           final prev = await data.recentByPhone(t, '${args[t.fields.where((f) => f.type == 'phone').firstOrNull?.id] ?? ''}',
               date: shape == null ? null : parseDate('${args[shape.dateField.id] ?? ''}'), name: '${args[t.labelField] ?? ''}');
-          if (prev != null) {
+          if (prev != null && !two) {
             await data.change(t.id, prev, args);
             return 'Done. Updated the one saved earlier in this call (not a second one):\n${await data.describe(t.id, [(await data.get(t.id, prev, manager: false))!])}';
           }

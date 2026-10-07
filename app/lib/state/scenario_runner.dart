@@ -495,7 +495,7 @@ class ScenarioRunner {
     return utf8.decodeStream(rs);
   }
 
-  static final _farewell = RegExp(r'\b(bye|goodbye|good-bye|take care|have a (great|good|nice|lovely)|see you|thanks for calling|thank you for calling)\b', caseSensitive: false);
+  static final _farewell = RegExp(r'\b(bye|goodbye|good-bye|take care|have a (great|good|nice|lovely)|see you|thanks for calling|thank you for calling)\b|adi[oó]s|au revoir|auf wiedersehen|tsch[uü]ss|arrivederci|ciao|خداحافظ|مع السلامة|ho[sş][cç]a kal|do widzenia', caseSensitive: false);
 
   /// The simulated caller's next line.
   Future<String?> callerSays(Map<String, dynamic> c, List<Map<String, String>> turns, Map<String, dynamic> sc, int i) async {
@@ -661,6 +661,9 @@ class ScenarioRunner {
           break;
         }
       }
+      // The caller said goodbye: the assistant says goodbye too and ends the call.
+      final lastCaller = r.turns.lastWhere((t) => t['role'] == 'user', orElse: () => {'content': ''})['content']!;
+      if (AppState.callerDone(lastCaller) && !r.hungUp) f.add('did not say goodbye and hang up when the caller finished');
       failures.addAll(f.map((x) => steps.length > 1 ? 'call ${si + 1}: $x' : x));
       calls.add({
         'from': who,

@@ -1746,6 +1746,18 @@ class AppState extends ChangeNotifier {
     return wanted && !isBooking;
   }
 
+  /// The caller is finished: a goodbye, or "no, that's all, thanks" (not a question, not a new request).
+  static bool callerDone(String said) {
+    final s = callerWords(said).trim();
+    if (s.contains('?') || s.length > 160) return false;
+    final bye = RegExp(r"\b(bye|goodbye|good-bye|cheers|see you|take care|have a (good|nice|great|lovely) (day|one|evening|night|weekend)|that.?s (all|everything|it)( for (now|today))?|nothing else|no,? that.?s fine)\b|adi[oó]s|au revoir|auf wiedersehen|tsch[uü]ss|arrivederci|ciao|خداحافظ|مع السلامة|ho[sş][cç]a ?kal|g[oö]r[uü][sş][uü]r[uü]z|do widzenia|na razie", caseSensitive: false);
+    final more = RegExp(r"\b(and also|also|one more|another|can i|could i|i.?d like|i want|book|order|change|cancel|but)\b", caseSensitive: false);
+    return bye.hasMatch(s) && !more.hasMatch(s.replaceAll(RegExp(r"that.?s all", caseSensitive: false), ''));
+  }
+
+  static const _bye = {'en': 'Thanks for calling — goodbye!', 'es': '¡Gracias por llamar, adiós!', 'fr': 'Merci de votre appel, au revoir !', 'de': 'Danke für Ihren Anruf, auf Wiedersehen!',
+    'it': 'Grazie per la chiamata, arrivederci!', 'fa': 'ممنون از تماستون، خداحافظ!', 'ar': 'شكراً لاتصالك، مع السلامة!', 'tr': 'Aradığınız için teşekkürler, hoşça kalın!', 'pl': 'Dziękuję za telefon, do widzenia!'};
+
   /// The caller is asking about a booking or order they already have.
   static final _aboutMine = RegExp(r"\b(my (booking|reservation|appointment|order|stay|room|table|class|lesson|visit)|i (have |had |made |'ve )?(booked|ordered|reserved)|booked with|cancel|reschedul|when is my|what time is my)\b", caseSensitive: false);
 
@@ -2767,6 +2779,12 @@ class AppState extends ChangeNotifier {
             sent += line;
           }
         }
+      }
+      // They're done ("no, that's all, thanks, bye"): say goodbye and end the call, so neither side is left waiting.
+      if (mode != 'owner' && passTo == null && !gone && callerDone(question) && !sent.contains('[hangup]')) {
+        final bye = RegExp(r'\b(bye|goodbye|take care|have a (great|good|nice|lovely)|see you|thanks for calling)\b|adi[oó]s|au revoir|auf wiedersehen|arrivederci|خداحافظ|مع السلامة|ho[sş][cç]a kal|do widzenia', caseSensitive: false).hasMatch(sent) ? '' : ' ${_bye[lang] ?? _bye['en']!}';
+        chunk({'content': '$bye [hangup]'});
+        sent = '$sent$bye';
       }
       // The call goes to a teammate: they pick up straight away, in their own voice.
       mark('safety_net');

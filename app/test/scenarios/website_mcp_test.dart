@@ -333,6 +333,15 @@ void main() {
     expect(r.error, false, reason: r.text);
   });
 
+  test('the caller is done: goodbye and hang up', () {
+    for (final s in ['No, that\'s all, thanks. Bye!', 'Great, thank you, goodbye.', 'Perfect, cheers!', 'Gracias, adiós.', 'Merci, au revoir', 'Nothing else, have a good day']) {
+      expect(AppState.callerDone(s), true, reason: s);
+    }
+    for (final s in ['Bye the way, can I also order a pizza?', 'That\'s all correct, but can I change the time?', 'Is that all?', 'Yes please book it', 'I\'d like to order, then bye']) {
+      expect(AppState.callerDone(s), false, reason: s);
+    }
+  });
+
   test('the day a caller means', () {
     final wed = DateTime(2026, 10, 7); // a Wednesday
     expect(spokenDates('a table for two tomorrow at 7', now: wed), {'2026-10-08'});

@@ -693,7 +693,7 @@ class AppLLM(openai.LLM):
 
 
 _HANGUP = _re.compile(r"\s*\[hangup\]\s*", _re.IGNORECASE)
-_FAREWELL = _re.compile(r"\b(bye|goodbye|good-bye|take care|have a (great|good|nice|lovely)|see you|thanks for calling|thank you for calling)\b|خداحافظ|با تشکر از تماس|وداعا|adiós|au revoir|tschüss|auf wiedersehen|ciao", _re.IGNORECASE)
+_FAREWELL = _re.compile(r"\b(bye|goodbye|good-bye|take care|have a (great|good|nice|lovely)|see you|thanks for calling|thank you for calling)\b|خداحافظ|با تشکر از تماس|وداعا|adiós|au revoir|tschüss|auf wiedersehen|ciao|arrivederci|ho[sş][cç]a kal|do widzenia|مع السلامة", _re.IGNORECASE)
 _CONNECT = _re.compile(r"\s*\[connect:([^\]]*)\]\s*", _re.IGNORECASE)
 _VOICE = _re.compile(r"\s*\[voice:([^\]]*)\]\s*", _re.IGNORECASE)
 _SENTENCE_END = _re.compile(r"[.!?؟。…](?=\s)")

@@ -5,11 +5,12 @@ import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
 
-/// The calls going on right now: how many lines are busy, and who is speaking on each.
+/// The calls going on right now: how many lines are busy, who is speaking on each, and what is
+/// being said, word by word as it is said. Finished conversations stay below for a while.
 class LiveCallsPanel extends StatelessWidget {
   const LiveCallsPanel({super.key, this.always = false});
 
-  /// Show it even with no calls ("No calls right now").
+  /// Show it even with no calls ("No calls right now"), with the recent conversations.
   final bool always;
 
   @override
@@ -23,7 +24,7 @@ class LiveCallsPanel extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(top: 16),
       child: Panel(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
             Icon(Icons.call, size: 18, color: calls.isEmpty ? context.c.muted : context.c.greenInk),
             const SizedBox(width: 10),
@@ -39,18 +40,124 @@ class LiveCallsPanel extends StatelessWidget {
             ],
           ]),
           for (final e in calls) ...[
-            const SizedBox(height: 8),
-            Row(children: [
-              const SizedBox(width: 28),
-              Expanded(child: Muted(e.value.number.isEmpty ? e.key : e.value.number, mono: true, size: 12.5)),
-              Muted(switch ((e.value.agent, e.value.caller)) {
+            const SizedBox(height: 12),
+            _LiveCall(
+              number: e.value.number.isEmpty ? e.key : e.value.number,
+              state: switch ((e.value.agent, e.value.caller)) {
                 (_, 'speaking') => 'caller is speaking',
                 ('speaking', _) => 'AI is speaking',
                 ('thinking', _) => 'AI is thinking',
                 _ => 'listening',
-              }, size: 12.5),
-            ]),
+              },
+              test: s.scenarioRuns.isNotEmpty, // (tests never place or take real calls)
+              lines: s.liveText[e.key] ?? const [],
+            ),
           ],
+          if (always && s.recentLive.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            const Text('Recent conversations', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
+            const SizedBox(height: 4),
+            for (final r in s.recentLive) _RecentCall(r.number.isEmpty ? r.room : r.number, r.ended, r.lines),
+          ],
+        ]),
+      ),
+    );
+  }
+}
+
+/// One call on the line: its conversation so far, newest at the bottom.
+class _LiveCall extends StatelessWidget {
+  const _LiveCall({required this.number, required this.state, required this.test, required this.lines});
+  final String number, state;
+  final bool test;
+  final List<LiveLine> lines;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(border: Border.all(color: context.c.line), borderRadius: BorderRadius.circular(LL.rSm)),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Muted(number, mono: true, size: 12.5),
+            if (test) ...[const SizedBox(width: 8), const Pill('test call', tone: Tone.neutral)],
+            const Spacer(),
+            Muted(state, size: 12.5),
+          ]),
+          const SizedBox(height: 8),
+          if (lines.isEmpty)
+            const Muted('Waiting for the first words…', size: 12.5)
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 300),
+              // Reversed: it stays scrolled to the newest words as they arrive.
+              child: ListView(
+                reverse: true,
+                shrinkWrap: true,
+                children: [for (final l in lines.reversed) LiveBubble(l)],
+              ),
+            ),
+        ]),
+      );
+}
+
+/// A finished conversation, opened to read it.
+class _RecentCall extends StatelessWidget {
+  const _RecentCall(this.number, this.ended, this.lines);
+  final String number;
+  final DateTime ended;
+  final List<LiveLine> lines;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = lines.where((l) => l.who == 'caller').firstOrNull?.text ?? '';
+    final t = '${ended.hour.toString().padLeft(2, '0')}:${ended.minute.toString().padLeft(2, '0')}';
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
+        tilePadding: EdgeInsets.zero,
+        dense: true,
+        title: Row(children: [
+          Muted(number, mono: true, size: 12.5),
+          const SizedBox(width: 10),
+          Expanded(child: Text(first, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+          Muted('ended $t · ${lines.where((l) => l.who != 'note').length} lines', size: 12),
+        ]),
+        children: [for (final l in lines) LiveBubble(l)],
+      ),
+    );
+  }
+}
+
+/// One line as it is being said: the caller on the left, the AI on the right, notes (hold music,
+/// call ended) in the middle. Unfinished words are shown as still coming.
+class LiveBubble extends StatelessWidget {
+  const LiveBubble(this.line, {super.key});
+  final LiveLine line;
+
+  @override
+  Widget build(BuildContext context) {
+    final at = '${line.at.hour.toString().padLeft(2, '0')}:${line.at.minute.toString().padLeft(2, '0')}:${line.at.second.toString().padLeft(2, '0')}';
+    if (line.who == 'note') {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Center(child: Muted('${line.text}  ·  $at', size: 12)),
+      );
+    }
+    final caller = line.who == 'caller';
+    return Align(
+      alignment: caller ? Alignment.centerLeft : Alignment.centerRight,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 560),
+        margin: const EdgeInsets.symmetric(vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(color: caller ? context.c.blueSoft : context.c.greenSoft, borderRadius: BorderRadius.circular(LL.rSm)),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Muted('${caller ? 'Caller' : (line.name?.isNotEmpty == true ? line.name! : 'AI')} · $at${line.done ? '' : caller ? ' · hearing…' : ' · speaking…'}', size: 11),
+          const SizedBox(height: 2),
+          Text(
+            line.done ? line.text : '${line.text} ▍',
+            style: TextStyle(fontSize: 13.5, fontStyle: caller && !line.done ? FontStyle.italic : FontStyle.normal, color: caller && !line.done ? context.c.muted : context.c.ink),
+          ),
         ]),
       ),
     );

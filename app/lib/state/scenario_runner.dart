@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
@@ -501,6 +502,8 @@ class ScenarioRunner {
     final cfg = jsonDecode(await _get('http://127.0.0.1:$port/api/voice-config?room=${Uri.encodeQueryComponent(room)}&mode=caller&lang=${sc['lang'] ?? 'en'}&token=$key')) as Map;
     final greeting = '${cfg['greeting']}';
     final turns = <Map<String, String>>[{'role': 'assistant', 'content': greeting}];
+    // On the live calls view, as on a real call: the greeting, then each side's words as they come.
+    s.liveText[room] = [LiveLine('ai', greeting, done: true)];
     // When each line was said, and for the AI how long it took: first words and the whole answer.
     final times = <Map<String, Object?>>[{'at': hms(DateTime.now())}];
     void live() => showLive({'turns': [for (final t in turns) '${t['role'] == 'user' ? 'CALLER' : 'AI'}: ${t['content']}'], 'times': times});
@@ -520,7 +523,15 @@ class ScenarioRunner {
       // Spoken and heard, as on a phone: the caller's words in a real voice, through the app's hearing
       // (Whisper); the AI gets what was heard, mis-hearings and all.
       final heardAt = DateTime.now();
+      // The caller's words appear while they speak (at a speaking pace), then as heard.
+      final words = said.split(RegExp(r'\s+'));
+      var shown = 0;
+      final typing = Timer.periodic(const Duration(milliseconds: 260), (t) {
+        if (++shown >= words.length) t.cancel();
+        s.liveCaller(room, words.take(shown).join(' '));
+      });
       final ear = await _speak(said, _callerVoice(sc), '${sc['lang'] ?? 'en'}');
+      typing.cancel();
       final heard = '${ear?['heard'] ?? ''}'.trim().isEmpty ? said : '${ear!['heard']}'.replaceAll(RegExp(r'\s*\n\s*'), ' ').trim();
       turns.add({'role': 'user', 'content': heard});
       times.add({

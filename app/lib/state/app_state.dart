@@ -1115,6 +1115,7 @@ class AppState extends ChangeNotifier {
     final room = '${b['room'] ?? ''}';
     _activeCalls.remove(room);
     liveCalls.remove(room);
+    liveEnded(room);
     _onCall.remove(room);
     _lastCheck.remove('${b['number'] ?? ''}');
     _savedOn.remove(room);
@@ -1527,14 +1528,102 @@ class AppState extends ChangeNotifier {
   final liveCalls = <String, ({String agent, String caller, String number, String name, DateTime at})>{};
   Timer? _liveTick;
 
+  /// What is being said on each call right now, as it is said: the caller's words while they speak
+  /// (corrected when hearing settles), the AI's words as it writes them. Ended calls move to
+  /// [recentLive] (the last few), so a finished conversation can still be read there.
+  final liveText = <String, List<LiveLine>>{};
+  final recentLive = <({String room, String number, DateTime ended, List<LiveLine> lines})>[];
+
+  /// The caller's words so far ([done]: hearing has settled on them).
+  void liveCaller(String room, String text, {bool done = false}) {
+    text = text.trim();
+    if (room.isEmpty || text.isEmpty) return;
+    final lines = liveText.putIfAbsent(room, () => []);
+    final last = lines.lastOrNull;
+    if (last != null && last.who == 'caller' && !last.done) {
+      last
+        ..text = text
+        ..done = done;
+    } else if (!(done && last != null && last.who == 'caller' && last.text == text)) {
+      lines.add(LiveLine('caller', text, done: done));
+    }
+    _liveState(room, caller: done ? 'listening' : 'speaking');
+  }
+
+  /// What the AI was given as the caller's turn: replaces the pieces heard while they spoke
+  /// (one turn can be several pieces), so the view shows exactly what it answered.
+  void liveCallerTurn(String room, String text) {
+    text = text.trim();
+    if (room.isEmpty || text.isEmpty) return;
+    final lines = liveText.putIfAbsent(room, () => []);
+    while (lines.isNotEmpty && lines.last.who == 'caller') {
+      lines.removeLast();
+    }
+    lines.add(LiveLine('caller', text, done: true));
+    _liveState(room, caller: 'listening');
+  }
+
+  /// More of the AI's answer (tags for the voice engine are not shown; a hand-over is).
+  final _liveWho = <String, String>{};
+
+  void liveAi(String room, String delta, {String? name}) {
+    if (room.isEmpty) return;
+    final lines = liveText.putIfAbsent(room, () => []);
+    for (final m in RegExp(r'\[voice:[^|\]]*\|([^\]]+)\]').allMatches(delta)) {
+      _liveWho[room] = m.group(1)!.trim();
+      lines.lastOrNull?.done = true;
+      lines.add(LiveLine('note', '♪ on hold — passed to ${m.group(1)}', done: true));
+    }
+    if (RegExp(r'\[connect:\d+\]').hasMatch(delta)) lines.add(LiveLine('note', '♪ on hold — connecting a person', done: true));
+    final hangup = delta.contains('[hangup]');
+    final text = delta.replaceAll(RegExp(r'\[(voice|connect|transfer)[^\]]*\]|\[hangup\]'), '');
+    final last = lines.lastOrNull;
+    if (text.trim().isNotEmpty || (last?.who == 'ai' && !last!.done && text.isNotEmpty)) {
+      if (last != null && last.who == 'ai' && !last.done) {
+        last.text += text;
+      } else {
+        lines.add(LiveLine('ai', text.trimLeft(), name: name ?? _liveWho[room]));
+      }
+    }
+    if (hangup) {
+      lines.lastOrNull?.done = true;
+      lines.add(LiveLine('note', 'Call ended', done: true));
+    }
+    _liveState(room, agent: 'speaking');
+  }
+
+  /// The AI has finished this answer.
+  void liveAiDone(String room) {
+    final last = liveText[room]?.lastOrNull;
+    if (last != null && last.who == 'ai') last.done = true;
+    _liveState(room);
+  }
+
+  /// The call is over: keep its conversation with the recent ones.
+  void liveEnded(String room) {
+    _liveWho.remove(room);
+    final lines = liveText.remove(room);
+    if (lines == null || lines.isEmpty) return;
+    for (final l in lines) {
+      l.done = true;
+    }
+    recentLive.insert(0, (room: room, number: RegExp(r'_(\+?\d{6,})_').firstMatch(room)?.group(1) ?? '', ended: DateTime.now(), lines: lines));
+    if (recentLive.length > 12) recentLive.removeLast();
+    notifyListeners();
+  }
+
   void _liveState(String room, {String? agent, String? caller, String? number}) {
     if (room.isEmpty) return;
     final old = liveCalls[room];
     final n = number?.isNotEmpty == true ? number! : old?.number ?? RegExp(r'_(\+?\d{6,})_').firstMatch(room)?.group(1) ?? '';
     liveCalls[room] = (agent: agent ?? old?.agent ?? 'listening', caller: caller ?? old?.caller ?? 'listening', number: n, name: old?.name ?? '', at: DateTime.now());
     // Calls that went quiet without saying they ended (e.g. test calls) drop off after two minutes.
-    liveCalls.removeWhere((_, v) => DateTime.now().difference(v.at) > const Duration(minutes: 2));
-    _liveTick ??= Timer(const Duration(milliseconds: 300), () {
+    for (final r in [for (final e in liveCalls.entries) if (DateTime.now().difference(e.value.at) > const Duration(minutes: 2)) e.key]) {
+      liveCalls.remove(r);
+      liveEnded(r);
+    }
+    // Words appear as they come, a few times a second (not on every word: that's a lot of redrawing).
+    _liveTick ??= Timer(const Duration(milliseconds: 120), () {
       _liveTick = null;
       notifyListeners();
     });
@@ -1931,6 +2020,12 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
     return agent['handles'] == 'incoming' ? {'message'} : const {};
   }
+
+  /// "Use the number I'm calling from" / "I'm calling from this phone number": their phone is this call's number.
+  static bool ownNumber(String said) => _ownNumber.hasMatch(said);
+  static final _ownNumber = RegExp(
+      r"\b(number|one) (i.?m|i am) (calling|ringing|phoning) (from|on)\b|\b(calling|ringing|phoning) (you )?(from|on) (this|the same|my) (phone |mobile |cell )?(number|phone|line|mobile)\b|\b(this|the same|same) (phone |mobile )?number\b|\bthe number (you|it) (can )?see\b",
+      caseSensitive: false);
 
   /// The caller is correcting what was said or saved ("No, my number is…", "with Priya, not Marcus").
   static final _correcting = RegExp(r"^\W*(no|nope|wrong)\b|\b(not (right|correct)|isn.t (right|correct)|is wrong|instead|i meant|should be)\b", caseSensitive: false);
@@ -2691,6 +2786,12 @@ class AppState extends ChangeNotifier {
       _liveState('${b['room'] ?? ''}', agent: '${b['agent'] ?? ''}', caller: '${b['caller'] ?? ''}', number: '${b['number'] ?? ''}');
       return json(200, {'ok': true});
     }
+    if (path == '/api/call-text') {
+      // The voice engine: the caller's words while they speak (final: hearing has settled).
+      final b = jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>;
+      liveCaller('${b['room'] ?? ''}', '${b['text'] ?? ''}', done: b['final'] == true);
+      return json(200, {'ok': true});
+    }
     if (path == '/api/call-ended') {
       unawaited(_callEnded(jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>));
       return json(200, {'ok': true});
@@ -2734,7 +2835,7 @@ class AppState extends ChangeNotifier {
     final lastSaid = convo.lastWhere((m) => m.role == 'assistant', orElse: () => ChatMessage('assistant', '')).content.trim();
     // "The number I'm calling from is fine": that is their phone (small models keep asking for it).
     final own = callerNumber != null &&
-            convo.any((m) => m.role == 'user' && RegExp(r"\b(number|one) (i.?m|i am) (calling|ringing|phoning) (from|on)\b|\b(this|same) number\b", caseSensitive: false).hasMatch(callerWords(m.content)))
+            convo.any((m) => m.role == 'user' && _ownNumber.hasMatch(callerWords(m.content)))
         ? ' Their phone number is the one they are calling from ($callerNumber): never ask for it again.'
         : '';
     final number = callerNumber == null ? '' : ' The number of the person on this call is $callerNumber (use it only if they don\'t say another number).';
@@ -2749,7 +2850,15 @@ class AppState extends ChangeNotifier {
             : m.role == 'assistant' ? ChatMessage('assistant', m.content.replaceFirst(_fillerStart, '')) : m,
     ];
     // Live: this call's assistant is working on an answer (the voice engine also says when it speaks).
-    if (room.isNotEmpty && mode != 'owner') _liveState(room, agent: 'thinking', caller: 'listening', number: callerNumber);
+    if (room.isNotEmpty && mode != 'owner') {
+      if (flow != null) _liveWho[room] = '${flow.agent['name']}';
+      // The greeting (said by the voice engine, not written here) and the words the AI was given.
+      if (!liveText.containsKey(room) && convo.firstOrNull?.role == 'assistant') {
+        liveText[room] = [LiveLine('ai', spokenText(convo.first.content).trim(), name: _liveWho[room], done: true)];
+      }
+      liveCallerTurn(room, callerWords(convo.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content));
+      _liveState(room, agent: 'thinking', caller: 'listening', number: callerNumber);
+    }
     ({String name, String brief})? passTo;
     var saved = false, usedTool = false, refused = false, asking = false;
     // Where the time of this turn went (kept in voice-turns.jsonl): ms per stage.
@@ -2817,7 +2926,7 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    void chunk(Map<String, Object?> delta, {String? finish}) => write(
+    void send(Map<String, Object?> delta, {String? finish}) => write(
       'data: ${jsonEncode({
         'id': id,
         'object': 'chat.completion.chunk',
@@ -2828,6 +2937,11 @@ class AppState extends ChangeNotifier {
         ],
       })}\n\n',
     );
+    void chunk(Map<String, Object?> delta, {String? finish}) {
+      if (mode != 'owner' && delta['content'] is String) liveAi(room, delta['content'] as String);
+      send(delta, finish: finish);
+    }
+
     chunk({'role': 'assistant', 'content': ''});
     // Keep the stream alive while tools run (SSE comments are ignored by clients).
     final ping = Timer.periodic(const Duration(seconds: 2), (_) => write(': working\n\n'));
@@ -3158,6 +3272,7 @@ class AppState extends ChangeNotifier {
     slow.cancel();
     mark('hand_over');
     _logVoiceTurn(mode, lang, question, '${ack == null ? '' : '[${(ackAt ?? 0)} ms] $ack'}$sent', t0, gone && !capped, stages: stages, room: room);
+    if (room.isNotEmpty) liveAiDone(room);
     if (room.isNotEmpty && liveCalls[room]?.agent == 'thinking') _liveState(room, agent: 'listening');
     chunk({}, finish: 'stop');
     write('data: [DONE]\n\n');
@@ -3407,4 +3522,15 @@ class AgentAccess {
       return null;
     }
   }
+}
+
+/// One line of a live conversation: who ('caller', 'ai' or 'note'), the words so far, and whether
+/// they are finished (the caller's words can still change until hearing settles on them).
+class LiveLine {
+  LiveLine(this.who, this.text, {this.name, this.done = false}) : at = DateTime.now();
+  final String who;
+  String text;
+  final String? name;
+  bool done;
+  final DateTime at;
 }

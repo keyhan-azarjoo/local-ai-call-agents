@@ -59,4 +59,11 @@ void main() {
     expect(AppState.askedForTeammate('I want a fade with Jay on Friday', team), isNull);
     expect(AppState.askedForTeammate('Can I speak to someone about a refund', team), isNull);
   });
+
+  test('their number is the one they are calling from', () {
+    for (final s in ["My name is Hugo and I'm calling from this phone number.", 'Use the number I\'m calling from', 'same number', 'you can use the number you see', "I'm ringing from my mobile"]) {
+      expect(AppState.ownNumber(s), isTrue, reason: s);
+    }
+    expect(AppState.ownNumber('My number is 07700 900123'), isFalse);
+  });
 }

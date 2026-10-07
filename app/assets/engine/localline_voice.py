@@ -1227,6 +1227,31 @@ async def entrypoint(ctx: JobContext) -> None:
     session.on("agent_state_changed", lambda *_: asyncio.create_task(send_state()))
     session.on("user_state_changed", lambda *_: asyncio.create_task(send_state()))
 
+    # The caller's words for the app's live view while they speak (interim), then as finally heard.
+    last_words = {"text": "", "at": 0.0}
+
+    async def send_words(text: str, final: bool) -> None:
+        base = os.environ.get("LL_APP_URL")
+        if not base or not text.strip():
+            return
+        try:
+            async with aiohttp.ClientSession() as h:
+                await h.post(f"{base}/api/call-text", json={"room": ctx.room.name, "text": text, "final": final},
+                             headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=3))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def on_words(ev) -> None:  # noqa: ANN001
+        text = getattr(ev, "transcript", "") or ""
+        final = bool(getattr(ev, "is_final", False))
+        # Interim words change many times a second: send the new ones at most ~5 times a second.
+        if not final and (text == last_words["text"] or time.time() - last_words["at"] < 0.2):
+            return
+        last_words.update(text=text, at=time.time())
+        asyncio.create_task(send_words(text, final))
+
+    session.on("user_input_transcribed", on_words)
+
     async def connect_person() -> None:
         """Hold music while a person is rung into this call; brief them, then step out."""
         hold = background.play(AudioConfig(BuiltinAudioClip.HOLD_MUSIC, volume=0.5), loop=True)

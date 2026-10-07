@@ -26,6 +26,18 @@ class VoiceEngine extends ChangeNotifier {
   static const livekitPort = 7880;
   static const whisperPort = 8910;
   static const accuratePort = 8912;
+
+  /// Calls at the same time this computer is set up for. Each stage is sized for it: the voice
+  /// worker keeps that many call processes ready (each speaks with its own voice model), and
+  /// hearing runs on a pool of whisper servers, since one server hears one request at a time.
+  int lines = 3;
+  static const hearingPoolPort = 8930;
+  static int hearingServers(int lines) => lines <= 1 ? 1 : ((lines + 1) ~/ 2).clamp(2, 5);
+  final _hearingPool = <Process>[];
+  List<String> get hearingUrls => [
+        'http://127.0.0.1:$whisperPort',
+        for (var i = 1; i < hearingServers(lines); i++) 'http://127.0.0.1:${hearingPoolPort + i}',
+      ];
   static const apiKey = 'localailine';
 
   /// A private secret for this computer (LiveKit's dev keys are public).
@@ -317,7 +329,7 @@ class VoiceEngine extends ChangeNotifier {
   }
 
   File get _pidFile => File(p.join(dataDir, 'voice-engine.pids'));
-  void _savePids() => _pidFile.writeAsStringSync(_procs.values.map((e) => e.pid).join(' '));
+  void _savePids() => _pidFile.writeAsStringSync([..._procs.values, ..._hearingPool].map((e) => e.pid).join(' '));
 
   /// Stops engine processes left behind by an earlier run of the app (e.g. after a crash).
   void _killStale() {
@@ -335,6 +347,7 @@ class VoiceEngine extends ChangeNotifier {
         script,
         'whisper-server .*--port $whisperPort',
         'whisper-server .*--port $accuratePort',
+        'whisper-server .*--port 89[34][0-9]',
         'livekit-server --config ${p.join(dataDir, 'livekit.yaml')}',
         'redis-server .*:$redisPort',
         p.join(dataDir, 'bin', 'livekit-sip'),
@@ -411,6 +424,7 @@ class VoiceEngine extends ChangeNotifier {
         healthy: () => _ok('http://127.0.0.1:$whisperPort'),
       );
     }
+    await _startHearingPool();
     if (state[EnginePart.accurate] != PartState.running) {
       try {
         if (accurateModelPath() == null) await _downloadAccurate();
@@ -443,6 +457,8 @@ class VoiceEngine extends ChangeNotifier {
           'LL_LLM_BASE': '$appUrl/v1',
           'LL_LLM_KEY': appKey,
           'LL_WHISPER_URL': 'http://127.0.0.1:$whisperPort',
+          'LL_WHISPER_URLS': hearingUrls.join(','),
+          'LL_LINES': '$lines',
           if (state[EnginePart.accurate] == PartState.running) 'LL_WHISPER_ACCURATE_URL': 'http://127.0.0.1:$accuratePort',
           'LL_VOICES_DIR': p.join(dataDir, 'models', 'tts'),
           'LL_KOKORO_DIR': kokoroDir,
@@ -453,7 +469,36 @@ class VoiceEngine extends ChangeNotifier {
     }
   }
 
+  /// The extra hearing servers (the first is the main whisper part). Their own small processes:
+  /// if one fails, calls use the others.
+  Future<void> _startHearingPool() async {
+    final want = hearingServers(lines) - 1;
+    while (_hearingPool.length > want) {
+      _hearingPool.removeLast().kill();
+    }
+    final model = await whisperModel();
+    if (model == null || state[EnginePart.whisper] != PartState.running) return;
+    for (var i = _hearingPool.length + 1; i <= want; i++) {
+      final port = hearingPoolPort + i;
+      final pr = await Process.start((await which('whisper-server'))!,
+          ['-m', model, '--host', '127.0.0.1', '--port', '$port', '-l', 'auto', '-t', '${max(2, Platform.numberOfProcessors ~/ (2 * (want + 1)))}'],
+          workingDirectory: dataDir);
+      pr.stdout.drain<void>();
+      pr.stderr.drain<void>();
+      _hearingPool.add(pr);
+      for (var t = 0; t < 40 && !await _ok('http://127.0.0.1:$port'); t++) {
+        await Future.delayed(const Duration(milliseconds: 250));
+      }
+      _log('[whisper] extra hearing server on port $port');
+    }
+    _savePids();
+  }
+
   Future<void> stop() async {
+    for (final pr in _hearingPool) {
+      pr.kill();
+    }
+    _hearingPool.clear();
     for (final e in [EnginePart.agent, EnginePart.accurate, EnginePart.whisper, EnginePart.bridge, EnginePart.sip, EnginePart.livekit, EnginePart.redis]) {
       _procs.remove(e)?.kill();
       state[e] = PartState.stopped;

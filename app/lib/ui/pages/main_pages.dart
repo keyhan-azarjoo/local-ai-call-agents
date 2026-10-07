@@ -237,6 +237,20 @@ class _CallsPageState extends State<CallsPage> {
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               SwitchRow('Record calls', value: s.recordCalls, onChanged: s.setRecordCalls),
               const Muted('Both sides of each phone call, kept on this computer. Callers hear “This call may be recorded.” at the start.', size: 12.5),
+              const SizedBox(height: 12),
+              Row(children: [
+                const Expanded(child: Text('Calls at the same time', style: TextStyle(fontSize: 13.5))),
+                SizedBox(
+                  width: 120,
+                  child: Dropdown<int>(
+                    value: s.lines,
+                    items: {for (var n = 1; n <= AppState.maxLines; n++) n: '$n'},
+                    onChanged: s.setLines,
+                  ),
+                ),
+              ]),
+              const Muted('Each call is heard, answered and spoken at the same time as the others, not one after another. '
+                  'Set it to what this computer can take; more calls are still answered, just more slowly.', size: 12.5),
             ]),
           );
         }),

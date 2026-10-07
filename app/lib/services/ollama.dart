@@ -76,6 +76,40 @@ class Ollama {
     }
   }
 
+  /// How Ollama should run for [lines] calls at once: that many answers worked on together (one
+  /// spare for test callers, warm-ups and the manager's chat), with its working memory stored at
+  /// 8 bits so each costs half as much (the full one pushed an 18 GB Mac into swap).
+  static Map<String, String> serveEnv(int lines) => {
+        'OLLAMA_NUM_PARALLEL': '${lines + 1}',
+        'OLLAMA_FLASH_ATTENTION': '1',
+        'OLLAMA_KV_CACHE_TYPE': 'q8_0',
+      };
+
+  /// Makes Ollama run for [lines] calls at once. On a Mac, Ollama's app reads these from launchd;
+  /// it's restarted only if they changed and [restartIfChanged] (calls in progress would drop).
+  Future<bool> applyLines(int lines, {bool restartIfChanged = true}) async {
+    if (!Platform.isMacOS) return false;  // `start` passes them to an `ollama serve` it starts
+    var changed = false;
+    for (final e in serveEnv(lines).entries) {
+      final now = (await Process.run('launchctl', ['getenv', e.key])).stdout.toString().trim();
+      if (now != e.value) {
+        await Process.run('launchctl', ['setenv', e.key, e.value]);
+        changed = true;
+      }
+    }
+    if (!changed || !restartIfChanged || await version() == null) return changed;
+    // Quit the app too: otherwise it starts its server again with the old settings.
+    await Process.run('pkill', ['-x', 'Ollama']);
+    await Process.run('pkill', ['-f', 'Ollama.app/Contents/Resources/ollama serve']);
+    for (var i = 0; i < 20 && await version() != null; i++) {
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    await start();
+    return true;
+  }
+
+  int lines = 2;
+
   /// Starts `ollama serve` in the background if it is installed but not running.
   Future<bool> start() async {
     if (await version() != null) return true;
@@ -84,7 +118,7 @@ class Ollama {
     } else {
       final bin = findBinary();
       if (bin == null) return false;
-      await Process.start(bin, ['serve'], mode: ProcessStartMode.detached);
+      await Process.start(bin, ['serve'], mode: ProcessStartMode.detached, environment: serveEnv(lines));
     }
     for (var i = 0; i < 20; i++) {
       await Future.delayed(const Duration(milliseconds: 500));

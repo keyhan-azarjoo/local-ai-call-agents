@@ -34,18 +34,11 @@ _spec = importlib.util.spec_from_file_location("localline_voice", HERE / "locall
 v = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(v)  # type: ignore[union-attr]
 
-WHISPER = os.environ.get("LL_WHISPER_URL", "http://127.0.0.1:8910").rstrip("/") + "/inference"
-_kokoro = None
-_lock = asyncio.Lock()
+_turn = 0
 
 
 def kokoro():  # noqa: ANN201
-    global _kokoro  # noqa: PLW0603
-    if _kokoro is None:
-        from kokoro_onnx import Kokoro  # noqa: PLC0415
-
-        _kokoro = Kokoro(str(v.KOKORO_DIR / "kokoro-v1.0.onnx"), str(v.KOKORO_DIR / "voices-v1.0.bin"))
-    return _kokoro
+    return v.load_kokoro()
 
 
 def pieces(text: str) -> list[str]:
@@ -76,44 +69,49 @@ def wav16k(pcm: np.ndarray, sr: int) -> bytes:
 
 
 async def roundtrip(req: web.Request) -> web.Response:
+    global _turn  # noqa: PLW0603
     j = await req.json()
     text = v.speakable(v.EMOJI.sub("", str(j.get("text", ""))).replace("*", "")).strip()
     voice = str(j.get("voice") or "af_heart").replace("kokoro:", "")
     lang = str(j.get("lang") or "en")
     if not text:
         return web.json_response({"error": "nothing to say"}, status=400)
-    async with _lock:  # one at a time: Kokoro and Whisper each run one job well
-        loop = asyncio.get_running_loop()
-        k = await loop.run_in_executor(None, kokoro)
-        code = v.KOKORO_LANG.get(voice[0], "en-us")
-        t0 = time.perf_counter()
-        first_ms = None
-        audio: list[np.ndarray] = []
-        for p in pieces(text):
-            samples, _ = await loop.run_in_executor(None, lambda p=p: k.create(p, voice=voice, speed=v.SPEED, lang=code))
-            pcm = v.smooth((np.clip(samples, -1, 1) * 32767).astype(np.int16), 24000)
-            if first_ms is None:
-                first_ms = int((time.perf_counter() - t0) * 1000)  # the caller starts hearing it here
-            audio.append(pcm)
-        tts_ms = int((time.perf_counter() - t0) * 1000)
-        pcm = np.concatenate(audio) if audio else np.zeros(0, np.int16)
-        out = {"first_ms": first_ms, "tts_ms": tts_ms, "audio_s": round(len(pcm) / 24000, 2)}
-        if j.get("stt", True) and len(pcm):
-            t1 = time.perf_counter()
-            form = aiohttp.FormData()
-            form.add_field("file", wav16k(pcm, 24000), filename="a.wav", content_type="audio/wav")
-            form.add_field("response_format", "json")
-            form.add_field("language", lang if lang != "auto" else "auto")
-            form.add_field("temperature", "0")
-            async with aiohttp.ClientSession() as h, h.post(WHISPER, data=form, timeout=aiohttp.ClientTimeout(total=30)) as r:
-                heard = (await r.json(content_type=None)).get("text", "")
-            heard = v._NOT_SPEECH.sub("", heard).strip()  # noqa: SLF001
-            out.update(stt_ms=int((time.perf_counter() - t1) * 1000), heard=heard, match=round(difflib.SequenceMatcher(None, norm(text), norm(heard)).ratio(), 2))
+    # No lock: several test calls speak and hear at the same time, as real calls do.
+    started = time.time()
+    loop = asyncio.get_running_loop()
+    k = await loop.run_in_executor(None, kokoro)
+    code = v.KOKORO_LANG.get(voice[0], "en-us")
+    t0 = time.perf_counter()
+    first_ms = None
+    audio: list[np.ndarray] = []
+    for p in pieces(text):
+        samples, _ = await loop.run_in_executor(None, lambda p=p: k.create(p, voice=voice, speed=v.SPEED, lang=code))
+        pcm = v.smooth((np.clip(samples, -1, 1) * 32767).astype(np.int16), 24000)
+        if first_ms is None:
+            first_ms = int((time.perf_counter() - t0) * 1000)  # the caller starts hearing it here
+        audio.append(pcm)
+    tts_ms = int((time.perf_counter() - t0) * 1000)
+    pcm = np.concatenate(audio) if audio else np.zeros(0, np.int16)
+    out = {"first_ms": first_ms, "tts_ms": tts_ms, "audio_s": round(len(pcm) / 24000, 2)}
+    if j.get("stt", True) and len(pcm):
+        t1 = time.perf_counter()
+        form = aiohttp.FormData()
+        form.add_field("file", wav16k(pcm, 24000), filename="a.wav", content_type="audio/wav")
+        form.add_field("response_format", "json")
+        form.add_field("language", lang if lang != "auto" else "auto")
+        form.add_field("temperature", "0")
+        _turn += 1  # several calls at once: each turn is heard by the next server in the pool
+        url = v.HEARING[_turn % len(v.HEARING)] + "/inference"
+        async with aiohttp.ClientSession() as h, h.post(url, data=form, timeout=aiohttp.ClientTimeout(total=30)) as r:
+            heard = (await r.json(content_type=None)).get("text", "")
+        heard = v._NOT_SPEECH.sub("", heard).strip()  # noqa: SLF001
+        out.update(stt_ms=int((time.perf_counter() - t1) * 1000), heard=heard, match=round(difflib.SequenceMatcher(None, norm(text), norm(heard)).ratio(), 2))
+    out.update(started=round(started, 3), ended=round(time.time(), 3))  # to see calls overlap
     return web.json_response(out)
 
 
 async def health(_req: web.Request) -> web.Response:
-    return web.json_response({"ok": True})
+    return web.json_response({"ok": True, "parallel": True, "hearing": v.HEARING})
 
 
 def main() -> None:

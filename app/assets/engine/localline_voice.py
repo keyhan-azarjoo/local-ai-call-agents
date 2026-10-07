@@ -25,6 +25,7 @@ import json
 import logging
 import os
 import random
+import threading
 import time
 import urllib.request
 import wave
@@ -54,6 +55,12 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 log = logging.getLogger("localline.voice")
 
 WHISPER_URL = os.environ.get("LL_WHISPER_URL", "http://127.0.0.1:8910")
+# Hearing for several calls at once: a whisper server hears one request at a time, so the app
+# runs a pool of them and each request goes to the next one (another if one is down).
+HEARING = [u.strip().rstrip("/") for u in os.environ.get("LL_WHISPER_URLS", "").split(",") if u.strip()] or [WHISPER_URL.rstrip("/")]
+_next_hearing = random.randrange(len(HEARING))
+# Calls at the same time this computer is set up for (the app's setting).
+LINES = max(1, int(os.environ.get("LL_LINES", "3") or 3))
 # A larger hearing model for the final words in languages the fast one hears poorly (Persian, Arabic, …).
 WHISPER_ACCURATE_URL = os.environ.get("LL_WHISPER_ACCURATE_URL", "")
 EASY_LANGS = {"en", "es", "fr", "de", "it", "pt", "nl"}
@@ -344,15 +351,28 @@ class WhisperStreamingSTT(stt.STT):
         return text, self.detected_language
 
     async def _whisper(self, pcm: np.ndarray, sr: int, language: str) -> dict:
-        form = aiohttp.FormData()
-        if self.vocabulary and language in ("en", "auto") and self.detected_language == "en":
-            form.add_field("prompt", self.vocabulary)
-        form.add_field("file", wav_bytes(pcm, sr), filename="a.wav", content_type="audio/wav")
-        form.add_field("response_format", "verbose_json")
-        form.add_field("language", language)
-        form.add_field("temperature", "0")
-        async with self.http().post(self._url, data=form, timeout=aiohttp.ClientTimeout(total=15)) as r:
-            return await r.json(content_type=None)
+        def form() -> aiohttp.FormData:  # a fresh one per try (a sent form can't be sent again)
+            f = aiohttp.FormData()
+            if self.vocabulary and language in ("en", "auto") and self.detected_language == "en":
+                f.add_field("prompt", self.vocabulary)
+            f.add_field("file", audio, filename="a.wav", content_type="audio/wav")
+            f.add_field("response_format", "verbose_json")
+            f.add_field("language", language)
+            f.add_field("temperature", "0")
+            return f
+
+        global _next_hearing  # noqa: PLW0603
+        audio = wav_bytes(pcm, sr)
+        urls = HEARING if self._url == WHISPER_URL.rstrip("/") + "/inference" else [self._url[: -len("/inference")]]
+        start, _next_hearing = _next_hearing, _next_hearing + 1
+        for i in range(len(urls)):
+            try:
+                async with self.http().post(urls[(start + i) % len(urls)] + "/inference", data=form(), timeout=aiohttp.ClientTimeout(total=15)) as r:
+                    return await r.json(content_type=None)
+            except aiohttp.ClientConnectionError:
+                if i == len(urls) - 1:
+                    raise
+        return {}
 
     async def _recognize_impl(self, buffer, *, language: NotGivenOr[str] = NOT_GIVEN, conn_options: APIConnectOptions):
         frame = rtc.combine_audio_frames(buffer)
@@ -561,11 +581,7 @@ class PiperTTS(tts.TTS):
         return choice[7:] if choice else KOKORO_DEFAULT.get(lang)
 
     def kokoro(self):
-        if not hasattr(self, "_kokoro"):
-            from kokoro_onnx import Kokoro  # noqa: PLC0415
-
-            self._kokoro = Kokoro(str(KOKORO_DIR / "kokoro-v1.0.onnx"), str(KOKORO_DIR / "voices-v1.0.bin"))
-        return self._kokoro
+        return load_kokoro()
 
     def synthesize(self, text: str, *, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS):
         if self.kokoro_voice(self.current_language()):
@@ -1284,13 +1300,44 @@ async def entrypoint(ctx: JobContext) -> None:
         session.say(greeting, allow_interruptions=True)
 
 
+_kokoro_model = None
+_kokoro_lock = threading.Lock()
+
+
+def load_kokoro():  # noqa: ANN201
+    """The natural voice, once per process. Its voices are read into memory up front: they live in a
+    zip file that can't be read from two threads at once (two sentences being spoken together)."""
+    global _kokoro_model  # noqa: PLW0603
+    with _kokoro_lock:
+        if _kokoro_model is None:
+            from kokoro_onnx import Kokoro  # noqa: PLC0415
+
+            k = Kokoro(str(KOKORO_DIR / "kokoro-v1.0.onnx"), str(KOKORO_DIR / "voices-v1.0.bin"))
+            k.voices = {name: k.voices[name] for name in k.voices.files} if hasattr(k.voices, "files") else k.voices
+            _kokoro_model = k
+        return _kokoro_model
+
+
 def prewarm(proc) -> None:  # noqa: ANN001
-    # Load models and heavy imports once per worker process (not per call).
+    # Load models once per call process, before the call: each call has its own process, so calls
+    # hear and speak at the same time, and the first words don't wait for a voice to load.
     proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.35)
     import piper  # noqa: F401, PLC0415
-    import kokoro_onnx  # noqa: F401, PLC0415
+
+    if KOKORO_DIR.joinpath("kokoro-v1.0.onnx").exists():
+        load_kokoro()
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, prewarm_fnc=prewarm, agent_name=""))
+    cli.run_app(
+        WorkerOptions(
+            entrypoint_fnc=entrypoint,
+            prewarm_fnc=prewarm,
+            agent_name="",
+            # A ready process per line, so several callers are answered at once.
+            num_idle_processes=LINES,
+            # Never turn a caller away because the processor is busy (the app limits the lines).
+            load_threshold=1.0,
+        )
+    )

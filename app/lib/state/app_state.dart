@@ -1288,6 +1288,8 @@ class AppState extends ChangeNotifier {
     themeMode = await db.setting('ui.theme') == 'dark' ? ThemeMode.dark : ThemeMode.light;
     answering = await db.setting('calls.answering') != '0';
     recordCalls = await db.setting('calls.record') == '1';
+    lines = int.tryParse(await db.setting('calls.lines') ?? '') ?? await defaultLines();
+    ollama.lines = lines;
     llmModel = await db.setting('llm.model');
     sttModel = await db.setting('stt.model') ?? sttModel;
     ttsVoice = await db.setting('tts.voice') ?? ttsVoice;
@@ -1450,7 +1452,11 @@ class AppState extends ChangeNotifier {
     for (final r in await db.all('settings', where: "key LIKE 'voice.voice.%'", orderBy: 'key')) {
       voiceChoice['${r['key']}'.substring(12)] = '${r['value']}';
     }
-    voice = VoiceEngine(dataDir: p.dirname(db.path), appUrl: 'http://127.0.0.1:$port', appKey: host!.engineKey)..addListener(notifyListeners);
+    voice = VoiceEngine(dataDir: p.dirname(db.path), appUrl: 'http://127.0.0.1:$port', appKey: host!.engineKey)
+      ..lines = lines
+      ..addListener(notifyListeners);
+    // Ollama set up for that many calls at once (restarted only if its settings were different).
+    unawaited(ollama.applyLines(lines, restartIfChanged: liveCalls.isEmpty));
     phone = Phone(voice!);
     // Lines that answer calls here need the voice engine running from the start.
     unawaited(() async {
@@ -1525,6 +1531,44 @@ class AppState extends ChangeNotifier {
       _liveTick = null;
       notifyListeners();
     });
+  }
+
+  /// Calls at the same time this computer is set up for: the AI model works on that many answers
+  /// together, hearing has a pool of servers for them, and the voice keeps a ready process per
+  /// call. More calls are still answered, just more slowly. A stronger computer can take more.
+  int lines = 2;
+  static const maxLines = 10;
+
+  /// A sensible start from this computer's memory (the AI model and each call's voice need room).
+  static Future<int> defaultLines() async {
+    try {
+      final r = Platform.isMacOS ? await Process.run('sysctl', ['-n', 'hw.memsize']) : null;
+      final gb = (int.tryParse('${r?.stdout}'.trim()) ?? 0) / (1 << 30);
+      if (gb == 0) return 2;
+      return gb <= 8 ? 1 : gb <= 18 ? 2 : gb <= 24 ? 3 : gb <= 32 ? 4 : gb <= 48 ? 6 : gb <= 64 ? 8 : maxLines;
+    } catch (_) {
+      return 2;
+    }
+  }
+
+  Future<void> setLines(int n) async {
+    lines = n.clamp(1, maxLines);
+    await db.setSetting('calls.lines', '$lines');
+    ollama.lines = lines;
+    await log('Set up for $lines call${lines == 1 ? '' : 's'} at the same time');
+    notifyListeners();
+    // Calls in progress keep going: the engine and Ollama pick it up when nobody is on the line.
+    if (liveCalls.isEmpty && scenarioRuns.isEmpty) {
+      await ollama.applyLines(lines);
+      final v = voice;
+      if (v != null && v.lines != lines) {
+        v.lines = lines;
+        if (v.ready) {
+          await v.stop();
+          await v.start();
+        }
+      }
+    }
   }
 
   /// Recording calls (both sides, kept on this computer). Callers are told at the start.
@@ -1677,14 +1721,22 @@ class AppState extends ChangeNotifier {
       }
     }
 
-    if (await up()) return url;
     final v = voice;
+    if (await up()) {
+      // An older lab spoke one line at a time; this one speaks for several calls at once.
+      final h = await http.get(Uri.parse('$url/health')).timeout(const Duration(seconds: 1));
+      if ('${(jsonDecode(h.body) as Map)['parallel']}' == 'true') return url;
+      await Process.run('pkill', ['-f', 'speech_lab.py --port 8920']);
+      await Future.delayed(const Duration(seconds: 1));
+    }
     if (v == null || !File(v.python).existsSync()) return null;
     try {
       final script = File(p.join(v.engineDir, 'speech_lab.py'))..writeAsStringSync(await rootBundle.loadString('assets/engine/speech_lab.py'));
       File(p.join(v.engineDir, 'localline_voice.py')).writeAsStringSync(await rootBundle.loadString('assets/engine/localline_voice.py'));
       await Process.start(v.python, [script.path, '--port', '8920'],
-          workingDirectory: v.engineDir, environment: {'LL_KOKORO_DIR': v.kokoroDir, 'LL_WHISPER_URL': 'http://127.0.0.1:${VoiceEngine.whisperPort}'}, mode: ProcessStartMode.detached);
+          workingDirectory: v.engineDir,
+          environment: {'LL_KOKORO_DIR': v.kokoroDir, 'LL_WHISPER_URL': 'http://127.0.0.1:${VoiceEngine.whisperPort}', 'LL_WHISPER_URLS': v.hearingUrls.join(',')},
+          mode: ProcessStartMode.detached);
       for (var i = 0; i < 90; i++) {
         if (await up()) return url;
         await Future.delayed(const Duration(seconds: 1));

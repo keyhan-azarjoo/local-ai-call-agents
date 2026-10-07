@@ -996,6 +996,8 @@ class AppState extends ChangeNotifier {
     final line = lines.where((l) => l['id'] == task['line_id']).firstOrNull ?? lines.firstOrNull;
     if (line == null) return fail('Add a Twilio phone line first (Phone line). Other line types can’t place calls yet.');
     if (voice == null || phone == null) return fail('Calls are placed from the main computer.');
+    // While test calls run, nothing ever dials out: no real person is rung by mistake.
+    if (scenarioRuns.isNotEmpty) return fail('Not called: test calls are running, and they never place real calls.');
     try {
       await db.update('call_tasks', taskId, {'status': 'calling', 'line_id': line['id'], 'result': null});
       refresh();
@@ -2080,6 +2082,11 @@ class AppState extends ChangeNotifier {
   Future<Map<String, Object?>> _connectHuman(String room) async {
     final p = _pendingConnect.remove(room);
     if (p == null || phone == null) return {'ok': false};
+    // Test calls (line 0, or while tests run) never ring a real phone or a paired device.
+    if (room.startsWith('pstn-in-0-') || scenarioRuns.isNotEmpty) {
+      await log('Did not ring anyone: this is a test call');
+      return {'ok': false, 'why': 'test call'};
+    }
     final person = (await db.all('agents', where: 'id = ?', args: [p.agentId])).firstOrNull;
     final access = (jsonDecode('${person?['access'] ?? '{}'}') as Map?) ?? {};
     final number = '${access['number'] ?? ''}'.trim();

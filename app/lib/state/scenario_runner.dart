@@ -314,7 +314,7 @@ class ScenarioRunner {
     final ours = {for (final n in numbers.values) _digits(n)};
     bool test(Map<String, Object?> r) {
       final p = _digits('${r['phone'] ?? ''}');
-      return (p.startsWith('447700') || r['via'] == 'seed' || (p.length >= 9 && testNumbers.contains(p.substring(p.length - 9))) || testNames.contains('${r[t.labelField] ?? ''}'.trim().toLowerCase())) &&
+      return (p.startsWith('447700') || RegExp(r'^44(7700900|2079460|1614960|1214960|1134960|1314960|1174960|1154960|2890180|2920180)').hasMatch(p) || r['via'] == 'seed' || (p.length >= 9 && testNumbers.contains(p.substring(p.length - 9))) || testNames.contains('${r[t.labelField] ?? ''}'.trim().toLowerCase())) &&
           !ours.contains(p) && !_keep.contains(r['id']);
     }
     final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
@@ -359,6 +359,14 @@ class ScenarioRunner {
     // "Wednesday" said on a Wednesday: today too (the seeds fill both, see _run).
     final today = DateTime.now().weekday == (v['weekday'] as num).toInt();
     return [one, ymd(DateTime(d.year, d.month, d.day + 7)), if (today) ymd(DateTime(d.year, d.month, d.day - 7))];
+  }
+
+  /// A UK number reserved for fiction (Ofcom: 07700 900000–900999 and 1,000-number blocks in several
+  /// area codes), different for each [k] up to 10,000.
+  static String fictionNumber(int k) {
+    const blocks = ['+447700900', '+442079460', '+441614960', '+441214960', '+441134960', '+441314960', '+441174960', '+441154960', '+442890180', '+442920180'];
+    final i = k % 10000;
+    return '${blocks[i ~/ 1000]}${(i % 1000).toString().padLeft(3, '0')}';
   }
 
   // ---------------- dates ----------------
@@ -586,11 +594,24 @@ class ScenarioRunner {
     await setUpAgents(sc);
     final n = sc['n'] as int;
     // Each caller in the scenario has their own number (A = the main caller).
-    final numbers = {
-      for (final (i, k) in ['A', 'B', 'C', 'D'].indexed)
-        k: _salt == null ? '+4477009${(n * 4 + i).toString().padLeft(5, '0')}' : '+447700$_salt${((n * 4 + i) % 10000).toString().padLeft(4, '0')}',
-    };
+    // Test callers' numbers are only from the ranges Ofcom keeps for fiction (TV and drama): they
+    // belong to no one, so nothing could ever reach a real person.
+    final numbers = {for (final (i, k) in ['A', 'B', 'C', 'D'].indexed) k: fictionNumber((_salt ?? 0) * 7 + n * 4 + i)};
     numbers['CALLER'] = numbers['A']!;
+    // Fiction numbers come round again: earlier test bookings under these numbers are retired first
+    // (marked Cancelled, still shown), so "find my booking" finds this scenario's only.
+    if (!isolated) {
+      final ours = {for (final n in numbers.values) _digits(n)};
+      for (final t in data(app).spec.tables.where((t) => t.access.add && !t.single)) {
+        final phone = t.fields.where((f) => f.type == 'phone').firstOrNull;
+        final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+        final off = status?.options.where((o) => RegExp('cancel', caseSensitive: false).hasMatch(o)).firstOrNull;
+        if (phone == null || status == null || off == null) continue;
+        for (final r in await data(app).list(t.id, manager: true)) {
+          if (ours.contains(_digits('${r[phone.id] ?? ''}')) && '${r[status.id]}' != off) await data(app).update(t.id, r['id'] as int, {status.id: off});
+        }
+      }
+    }
     final failures = <String>[];
     final calls = <Map<String, Object?>>[];
 

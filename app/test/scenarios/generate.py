@@ -64,7 +64,8 @@ def pick(weighted):
 def person(style):
     first, last = R.choice(FIRST), R.choice(LAST)
     gives = style != 'no_number' and R.random() < 0.55
-    num = f'07{R.randint(700, 799)} {R.randint(100, 999)} {R.randint(100, 999)}'
+    # Ofcom's numbers for fiction (they belong to no one): 07700 900000–900999.
+    num = f'07700 900 {R.randint(0, 999):03d}'
     return {'name': f'{first} {last}', 'first': first, 'says_number': num if gives else None}
 
 
@@ -173,7 +174,7 @@ def restaurant():
         dsay, d = day(closed)
         tsay, t = R.choice(TIMES)
         seed = [{'table': 'reservations', 'values': {'name': c['name'], 'phone': '$CALLER', 'date': d, 'time': t, 'guests': 4}},
-                {'table': 'reservations', 'values': {'name': 'Someone Else', 'phone': '+447700911222', 'date': d, 'time': t, 'guests': 2}}]
+                {'table': 'reservations', 'values': {'name': 'Someone Else', 'phone': '+442079460111', 'date': d, 'time': t, 'guests': 2}}]
         kind = R.choice(['find', 'cancel', 'cancel', 'change'])
         if kind == 'find':
             out.append(S.make('restaurant', 'find_booking', 'Ask what time your table booking is (you forgot).', [f'Your name: {c["name"]}', 'You booked with the number you are calling from'],
@@ -198,7 +199,7 @@ def restaurant():
                           {'new_max': 0, 'no_false_confirm': True}, style=style, caller=c))
     for _ in range(8):  # edge: the slot is full; accept another time that is offered
         style = pick(STYLE_W); c = person(style); dsay, d = day(closed)
-        seed = [{'table': 'reservations', 'values': {'name': f'Guest {i}', 'phone': f'+4477009000{i:02d}', 'date': d, 'time': '19:00', 'guests': 2, 'table': str(i)}} for i in range(1, 8)]
+        seed = [{'table': 'reservations', 'values': {'name': f'Guest {i}', 'phone': f'+44161496{i:04d}', 'date': d, 'time': '19:00', 'guests': 2, 'table': str(i)}} for i in range(1, 8)]
         out.append(S.make('restaurant', 'full_slot', f'Book a table for 2 {dsay} at 7pm. If 7pm is full, accept the next free time they offer (or 9pm).',
                           [f'Your name: {c["name"]}', 'People: 2', f'Day: {dsay}', 'Time: 7pm (flexible)', phone_fact(c)],
                           {'table': 'reservations', 'new': 1, 'fields': {'date': d, 'guests': 2, 'time!': '19:00', **phone_expect(c)}, 'no_false_confirm': True}, seed=seed, style=style, caller=c))
@@ -226,14 +227,14 @@ def appointments(app, n, services, staff, staff_field, closed, extra_seed_fields
             out.append(S.make(app, 'book', f'Book a {svc_say} {dsay} at {tsay}' + (f' with {who}.' if who else '.'), facts,
                               {'table': 'appointments', 'new': 1, 'fields': exp}, style=style if wrong or style != 'corrects_self' else 'step_by_step', caller=c, wrong=wrong))
         elif r < 0.72:  # every one busy at that time: take another time
-            seed = [{'table': 'appointments', 'values': {'name': f'Client {k}', 'phone': f'+4477009001{k:02d}', 'service': services[0][1], staff_field: s, 'date': d, 'time': t, **(extra_seed_fields or {})}} for k, s in enumerate(staff)]
+            seed = [{'table': 'appointments', 'values': {'name': f'Client {k}', 'phone': f'+44121496{k:04d}', 'service': services[0][1], staff_field: s, 'date': d, 'time': t, **(extra_seed_fields or {})}} for k, s in enumerate(staff)]
             out.append(S.make(app, 'all_busy', f'Book a {svc_say} {dsay} at {tsay}. If nobody is free then, take the nearest other time they offer that day.',
                               [f'Your name: {c["name"]}', f'Service: {svc_say}', f'Day: {dsay}', f'Time: {tsay} (flexible)', phone_fact(c)] + (extra_facts or []),
                               {'table': 'appointments', 'new': 1, 'fields': {'date': d, 'time!': t, 'service': svc, **phone_expect(c)}, 'no_false_confirm': True}, seed=seed, style=style, caller=c))
         elif r < 0.86:  # look up / cancel my appointment
             c['says_number'] = None
             seed = [{'table': 'appointments', 'values': {'name': c['name'], 'phone': '$CALLER', 'service': svc, 'date': d, 'time': t, **(extra_seed_fields or {})}},
-                    {'table': 'appointments', 'values': {'name': 'Other Person', 'phone': '+447700922333', 'service': services[0][1], 'date': d, 'time': t, **(extra_seed_fields or {})}}]
+                    {'table': 'appointments', 'values': {'name': 'Other Person', 'phone': '+442079460222', 'service': services[0][1], 'date': d, 'time': t, **(extra_seed_fields or {})}}]
             if R.random() < 0.45:
                 out.append(S.make(app, 'find_booking', 'Ask when your appointment is (you forgot the time).', [f'Your name: {c["name"]}', 'You booked with the number you are calling from'],
                                   {'new': 0, 'reply_mentions': [t], 'not_mention': ['Other Person']}, seed=seed, style=style, caller=c))
@@ -277,14 +278,14 @@ def clinic():
                 exp['doctor'] = doc
             out.append(S.make('clinic', 'book', f'Book a {tsay_} {dsay} at {tsay}.', facts, {'table': 'appointments', 'new': 1, 'fields': exp}, style=style if style != 'corrects_self' else 'step_by_step', caller=c))
         elif r < 0.70:
-            seed = [{'table': 'appointments', 'values': {'name': f'Patient {k}', 'phone': f'+4477009002{k:02d}', 'treatment': 'Check-up & clean', 'doctor': s_, 'date': d, 'time': t}} for k, s_ in enumerate(['Dr Hannah Reid', 'Dr Omar Khalil', 'Leah Grant'])]
+            seed = [{'table': 'appointments', 'values': {'name': f'Patient {k}', 'phone': f'+44113496{k:04d}', 'treatment': 'Check-up & clean', 'doctor': s_, 'date': d, 'time': t}} for k, s_ in enumerate(['Dr Hannah Reid', 'Dr Omar Khalil', 'Leah Grant'])]
             out.append(S.make('clinic', 'all_busy', f'Book a check-up {dsay} at {tsay}. If nobody is free then, take the nearest other time that day.',
                               [f'Your name: {c["name"]}', 'You want: a check-up and clean', f'Day: {dsay}', f'Time: {tsay} (flexible)', phone_fact(c)],
                               {'table': 'appointments', 'new': 1, 'fields': {'date': d, 'time!': t, **phone_expect(c)}, 'no_false_confirm': True}, seed=seed, style=style, caller=c))
         elif r < 0.82:
             c['says_number'] = None
             seed = [{'table': 'appointments', 'values': {'name': c['name'], 'phone': '$CALLER', 'treatment': trt, 'date': d, 'time': t}},
-                    {'table': 'appointments', 'values': {'name': 'Other Patient', 'phone': '+447700933444', 'treatment': 'Check-up & clean', 'date': d, 'time': t}}]
+                    {'table': 'appointments', 'values': {'name': 'Other Patient', 'phone': '+442079460333', 'treatment': 'Check-up & clean', 'date': d, 'time': t}}]
             if R.random() < 0.5:
                 out.append(S.make('clinic', 'find_booking', 'Ask when your dental appointment is.', [f'Your name: {c["name"]}', 'You booked with the number you are calling from'],
                                   {'new': 0, 'reply_mentions': [t], 'not_mention': ['Other Patient']}, seed=seed, style=style, caller=c))
@@ -320,7 +321,7 @@ def hotel():
                               {'table': 'bookings', 'new': 1, 'fields': {'name': c['first'], 'room': room, 'check_in': d, 'check_out': {**d, 'plus': nights}, 'guests': g, **phone_expect(c)}},
                               style=style if style != 'corrects_self' else 'step_by_step', caller=c))
         elif r < 0.72:
-            seed = [{'table': 'bookings', 'values': {'name': 'Earlier Guest', 'phone': '+447700955666', 'room': room, 'check_in': d, 'check_out': {**d, 'plus': 3}, 'guests': 2}}]
+            seed = [{'table': 'bookings', 'values': {'name': 'Earlier Guest', 'phone': '+442079460444', 'room': room, 'check_in': d, 'check_out': {**d, 'plus': 3}, 'guests': 2}}]
             out.append(S.make('hotel', 'room_taken', f'Book the {room} for 2 nights from {dsay}. If it is not free, accept another room they offer for the same nights.',
                               [f'Your name: {c["name"]}', f'Check in: {dsay}', 'Nights: 2', 'Guests: 2', f'Room: {room} (flexible)', phone_fact(c)],
                               {'table': 'bookings', 'new': 1, 'fields': {'check_in': d, 'room!': room, **phone_expect(c)}, 'no_false_confirm': True}, seed=seed, style=style, caller=c))
@@ -538,7 +539,7 @@ def journeys():
         out.append(S.make('restaurant', 'journey_book_change_cancel', 'journey', [], {}, caller=c) | {'steps': steps})
     for k in range(25):  # someone else's table: a caller can only see/cancel their own
         c = person('step_by_step'); dsay, d = day(closed); tsay, t = R.choice(TIMES)
-        seed = [{'table': 'reservations', 'values': {'name': 'Victoria Stone', 'phone': '+447700977888', 'date': d, 'time': t, 'guests': 6}}]
+        seed = [{'table': 'reservations', 'values': {'name': 'Victoria Stone', 'phone': '+442079460555', 'date': d, 'time': t, 'guests': 6}}]
         steps = [call(f'Your friend Victoria Stone booked a table {dsay}. Ask what time it is and then ask to cancel it for her. If they refuse, accept and end.',
                       [f'Your name: {c["name"]}', 'Booking name: Victoria Stone', f'Day: {dsay}', 'You do not know her number'],
                       {'new': 0, 'seed_status': {'0': 'Confirmed'}, 'not_mention': [t, t.lstrip('0')] if R.random() < 2 else []}, frm='B', caller=c)]
@@ -587,9 +588,9 @@ def journeys():
     for k in range(25):  # website and phone share the same chairs / tables
         c = person('step_by_step'); dsay, d = day((7,)); tsay, t = R.choice(DAY_TIMES)
         steps = [
-            {'do': 'web', 'table': 'appointments', 'values': {'name': 'Web Customer 1', 'phone': '07700900001', 'service': 'Skin fade', 'barber': 'Tony', 'date': d, 'time': t}},
-            {'do': 'web', 'table': 'appointments', 'values': {'name': 'Web Customer 2', 'phone': '07700900002', 'service': 'Skin fade', 'barber': 'Tony', 'date': d, 'time': t}, 'status': 400},
-            {'do': 'web', 'table': 'appointments', 'values': {'name': 'Web Customer 3', 'phone': '07700900003', 'service': 'Beard trim', 'barber': 'Jay', 'date': d, 'time': t}},
+            {'do': 'web', 'table': 'appointments', 'values': {'name': 'Web Customer 1', 'phone': '07700 900 901', 'service': 'Skin fade', 'barber': 'Tony', 'date': d, 'time': t}},
+            {'do': 'web', 'table': 'appointments', 'values': {'name': 'Web Customer 2', 'phone': '07700 900 902', 'service': 'Skin fade', 'barber': 'Tony', 'date': d, 'time': t}, 'status': 400},
+            {'do': 'web', 'table': 'appointments', 'values': {'name': 'Web Customer 3', 'phone': '07700 900 903', 'service': 'Beard trim', 'barber': 'Jay', 'date': d, 'time': t}},
             call(f'Book a skin fade with Tony {dsay} at {tsay}. If Tony is busy then, accept Ali at the same time.', [f'Your name: {c["name"]}', f'Day: {dsay}', f'Time: {tsay}', 'Phone: the number you are calling from'],
                  {'table': 'appointments', 'new': 1, 'fields': {'barber': 'Ali', 'time': t, 'date': d}, 'no_false_confirm': True}, caller=c),
         ]
@@ -604,7 +605,7 @@ def journeys():
         c = person('step_by_step')
         it, said, total = items()
         kind = k % 5
-        vals = {'name': c['name'], 'phone': '07700900123', 'items': it}
+        vals = {'name': c['name'], 'phone': '07700 900 123', 'items': it}
         if kind == 0: steps = [{'do': 'web', 'table': 'orders', 'values': {**vals, 'type': 'Collection'}}]
         elif kind == 1: steps = [{'do': 'web', 'table': 'orders', 'values': {**vals, 'type': 'Delivery'}, 'status': 400}]
         elif kind == 2: steps = [{'do': 'web', 'table': 'orders', 'values': {**vals, 'type': 'Delivery', 'address': '4 Mill Lane', 'postcode': 'E1 6AN'}}]

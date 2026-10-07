@@ -768,7 +768,7 @@ class ScenarioRunner {
       final r = await call({...st, 'style_text': st['style_text'] ?? sc['style_text']}, numbers[who]!, '${sc['id']}-$si', {...sc, 'app': curApp});
       final audit = [for (final a in await s.db.raw.query('audit', where: 'at >= ?', whereArgs: [auditFrom])) '${a['what']}'];
       final saidDigits = _digits(r.turns.where((t) => t['role'] == 'user').map((t) => t['content']).join(' '));
-      final f = await check(curApp, ex, r.turns, before, seeded, seedTable, {...numbers, 'SAID': saidDigits, 'ID': numbers[who]!}, r.passedTo, audit);
+      final f = await check(curApp, ex, r.turns, before, seeded, seedTable, {...numbers, 'SAID': saidDigits, 'HEARD': r.turns.where((t) => t['role'] == 'user').map((t) => t['content']).join(' '), 'ID': numbers[who]!}, r.passedTo, audit);
       // How fast it answered.
       final ai = [for (final t in r.times) if (t['ms'] != null) t];
       for (final t in ai) {
@@ -806,7 +806,9 @@ class ScenarioRunner {
         'saved': f.isEmpty ? null : await _newRows(curApp, tables, before),
       });
     }
-    return {'pass': failures.isEmpty, 'failures': failures, 'calls': calls};
+    final notes = [...heardAs];
+    heardAs.clear();
+    return {'pass': failures.isEmpty, 'failures': failures, 'calls': calls, if (notes.isNotEmpty) 'speech_notes': notes};
   }
 
   Future<Map<String, Object?>> _newRows(String app, Set<String> tables, Map<String, Set<int>> before) async => {
@@ -951,6 +953,9 @@ class ScenarioRunner {
       r.entries.where((e) => e.value != null && !{'id', 'created_at', 'via', '_via'}.contains(e.key)).map((e) => '${e.key}=${e.value}').join(', ');
 
   /// Which expected values the record doesn't have.
+  /// Names the hearing got wrong (the AI saved what it heard): shown with the result, not a failure.
+  final heardAs = <String>[];
+
   Future<List<String>> matchRow(String app, String table, Map<String, dynamic> row, Map<String, dynamic> want, Map<String, String> numbers) async {
     final t = data(app).spec.table(table)!;
     final miss = <String>[];
@@ -1007,6 +1012,12 @@ class ScenarioRunner {
         // Names, addresses, plates: what was said is in what was saved.
         String norm(Object? x) => '$x'.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
         ok = got != null && (norm(got).contains(norm(w)) || (key == 'name' && norm(got).startsWith(norm(w).substring(0, norm(w).length.clamp(0, 4)))));
+        // Spoken calls: the name as it was heard ("Siobhan" heard as "Shavorn") is what it could save.
+        final first = '$got'.trim().split(RegExp(r'\s+')).first;
+        if (!ok && key == 'name' && first.length > 1 && norm(numbers['HEARD']).contains(norm(first))) {
+          ok = true;
+          heardAs.add('"$w" was heard as "$first"');
+        }
       }
       if (negate) ok = !ok && got != null;
       if (!ok) miss.add('$key: ${negate ? 'must not be' : 'expected'} "$w", website has "$shown"');

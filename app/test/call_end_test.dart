@@ -47,4 +47,16 @@ void main() {
     expect(AppState.askedAnythingElse('¿Hay algo más en lo que pueda ayudarle?'), isTrue);
     expect(AppState.askedAnythingElse(booked), isFalse);
   });
+
+  test('asking for a teammate by name, even misheard', () {
+    const team = ['Mia', 'Rex', 'Jay', 'Leon', 'Kim'];
+    for (final s in ['Could I speak to Mia, please?', 'Can I speak to me a', 'Sure, I\'d like to talk to Mayor please', 'speak to? Me out.', 'I\'m asking for Rex']) {
+      expect(AppState.askedForTeammate(s, team), isNotNull, reason: s);
+    }
+    expect(AppState.askedForTeammate('Can I speak to Mia', team), 'Mia');
+    expect(AppState.askedForTeammate('Can I speak to the manager?', team), isNull);
+    expect(AppState.askedForTeammate('Could I talk to Mark please', team), isNull);
+    expect(AppState.askedForTeammate('I want a fade with Jay on Friday', team), isNull);
+    expect(AppState.askedForTeammate('Can I speak to someone about a refund', team), isNull);
+  });
 }

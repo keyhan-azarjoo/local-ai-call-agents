@@ -638,7 +638,7 @@ class AppState extends ChangeNotifier {
   static bool promisesCheck(String reply) => _promisedCheck.hasMatch(reply);
 
   /// Promised to book / cancel / order (an action, not just a look).
-  static final _promisedAction = RegExp(r"\b(let me|i[’']?ll|i will|i[’']?m going to|going to)\s+(just\s+|now\s+|go ahead and\s+)?(book|reserve|cancel|place|save|put|make|enrol+|sign (you|them|him|her) up|register)\b", caseSensitive: false);
+  static final _promisedAction = RegExp(r"\b(let me|i[’']?ll|i will|i[’']?m going to|going to)\s+(just\s+|now\s+|go ahead and\s+)?(book|reserve|cancel|place|save|put|make|enrol+|sign (you|them|him|her) up|register|change|move|update|reschedule|switch)\b", caseSensitive: false);
   static bool promisesAction(String reply) => _promisedAction.hasMatch(reply);
 
   /// The turn isn't finished: it promised a look and looked at nothing, or an action that wasn't done.
@@ -742,7 +742,14 @@ class AppState extends ChangeNotifier {
         if (k['enabled'] == 0 || (access?.skills != null && !access!.skills!.contains(k['id']))) k['source_id'] as int,
     };
     // An agent limited to some connected systems only sees those systems' data snapshots.
-    final allowedSnapshots = access?.tools == null ? null : {for (final m in await db.all('mcp_servers', orderBy: 'id')) if (access!.tools!.contains(m['id'])) 'MCP: ${m['name']}'};
+    // The business apps it answers for are always in (their price lists, opening times): without them
+    // an agent with no other tools makes prices up.
+    final allowedSnapshots = access?.tools == null
+        ? null
+        : {
+            for (final m in await db.all('mcp_servers', orderBy: 'id')) if (access!.tools!.contains(m['id'])) 'MCP: ${m['name']}',
+            for (final t in await builtAppTools(scopes)) 'MCP: ${t.serverName}',
+          };
     final users = messages.where((m) => m.role == 'user').toList();
     // Past conversations only when the question is about the past; data questions use live tools.
     final recall = users.isNotEmpty && RegExp(r'\b(before|earlier|last time|previous|remember|we (talked|discussed|said|found)|you (said|told))\b', caseSensitive: false).hasMatch(users.last.content);
@@ -2014,9 +2021,13 @@ class AppState extends ChangeNotifier {
     if (convo.length < 2 || convo.last.role != 'user' || convo[convo.length - 2].role != 'assistant' || !llmReady) return null;
     final yes = convo.last.content.trim();
     // "Yes." — or a corrected name or number, then yes: "No, the number is 07712 284 221. Yes, that's correct."
-    final notYes = RegExp(r"\b(no|not|but|change|instead|wait|actually|cancel)\b", caseSensitive: false);
+    // ("Yes, please change it to 12:30" is a yes to changing it.)
+    final notYes = RegExp(r"\b(no|not|but|instead|wait|actually|cancel)\b", caseSensitive: false);
     final parts = yes.split(RegExp(r'(?<=[.!?])\s+'));
     final agreed = parts.where(_yes.hasMatch).toList();
+    final offer0 = convo[convo.length - 2].content.trim();
+    // "I'll cancel that for you now." — "Thank you.": agreeing to what it said it would do.
+    if (agreed.isEmpty && _promisedAction.hasMatch(offer0) && !offer0.endsWith('?') && thanksOnly(yes)) agreed.add(yes);
     if (agreed.isEmpty || yes.length > 160 || agreed.any(notYes.hasMatch) ||
         parts.any((s) => !_yes.hasMatch(s) && notYes.hasMatch(s) && !RegExp(r'\b(number|phone|name)\b', caseSensitive: false).hasMatch(s))) {
       return null;
@@ -2035,6 +2046,13 @@ class AppState extends ChangeNotifier {
       if (callerNumber == null) return null;
       final cancels = tools.where((t) => t.tool.name.startsWith('cancel_my_')).toList();
       return cancels.where((t) => RegExp(r'order', caseSensitive: false).hasMatch(t.tool.name) == RegExp(r'\border', caseSensitive: false).hasMatch(said)).firstOrNull ?? cancels.firstOrNull;
+    }
+    // "Shall I move it to 12:30?" — "Yes please": change their own booking (found by their number).
+    if (RegExp(r'\b(chang|mov|updat|reschedul|switch)', caseSensitive: false).hasMatch(offer) && !RegExp(r'\b(book|reserve) (a|you|it) (new|another)', caseSensitive: false).hasMatch(offer)) {
+      if (callerNumber == null) return null;
+      final changes = tools.where((t) => t.tool.name.startsWith('change_my_')).toList();
+      final change = changes.where((t) => RegExp(r'order', caseSensitive: false).hasMatch(t.tool.name) == RegExp(r'\border', caseSensitive: false).hasMatch(said)).firstOrNull ?? changes.firstOrNull;
+      if (change != null) return change;
     }
     if (!_askedForNew(convo)) return null;
     return RegExp(r'\border', caseSensitive: false).hasMatch(said) && !RegExp(r'\b(table for|book a table|reservation)\b', caseSensitive: false).hasMatch(said)
@@ -2273,9 +2291,17 @@ class AppState extends ChangeNotifier {
 
   /// A teammate whose "pass the call here when…" clearly matches what the caller just said.
   Future<({String name, String brief})?> _routeByMeaning(({Map<String, Object?> agent, String team, String brief, List<Map<String, Object?>> others})? flow, String question, List<ChatMessage> convo) async {
+    if (flow == null) return null;
+    // "Can I speak to Mia?" — or what hearing made of it ("me a", "Mayor", "me out"): asking for a
+    // teammate by name, even after "Sure, …".
+    final asked = askedForTeammate(callerWords(question), [for (final a in flow.others) '${a['name']}']);
+    if (asked != null) {
+      final said = [for (final m in convo) if (m.role == 'user') m.content].reversed.take(3).toList().reversed.join(' ');
+      return (name: asked, brief: 'The caller asked for $asked: "$said"');
+    }
     // "Yes, Table 5 please": an answer to this agent's question, not a new request for a teammate.
-    if (convo.length > 2 && _yes.hasMatch(question)) return null;
-    if (flow == null || question.trim().split(RegExp(r'\s+')).length < 3) return null;
+    if (convo.length > 2 && _yes.hasMatch(question) && question.trim().split(RegExp(r'\s+')).length <= 6) return null;
+    if (question.trim().split(RegExp(r'\s+')).length < 3) return null;
     final cands = {for (final a in flow.others) if ('${a['transfer_when'] ?? ''}'.trim().isNotEmpty) '${a['id']}': '${a['transfer_when']}'.trim()};
     if (cands.isEmpty) return null;
     try {
@@ -2291,6 +2317,23 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// The teammate the caller asks to speak to by name, matched by sound too: hearing often gets
+  /// short names wrong ("Mia" → "me a", "Mayor", "me"). Only a clear ask ("speak/talk to …", "ask for …").
+  static String? askedForTeammate(String said, List<String> names) {
+    final m = RegExp(r"\b(?:speak|talk)\s+(?:to|with)\??\s+([a-z' ]{1,14}?)\s*(?:[,.?!]|\s+please|\s+if\b|\s+about\b|$)|\bask(?:ing)? for\s+([a-z']+)", caseSensitive: false).firstMatch(said);
+    if (m == null) return null;
+    final heard = (m.group(1) ?? m.group(2))!.toLowerCase().replaceAll(RegExp(r'^(the|a|an|someone|somebody)\s+'), '');
+    if (RegExp(r'^(you|someone|somebody|anyone|a person|a human|the manager|manager|owner|the owner)$').hasMatch(heard.trim())) return null;
+    String key(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z]'), '').replaceAll(RegExp(r'[aeiouy]+'), 'a');
+    final h = key(heard);
+    if (h.isEmpty) return null;
+    for (final n in names) {
+      if (heard.trim() == n.toLowerCase()) return n;
+    }
+    final close = [for (final n in names) if (key(n).isNotEmpty && h[0] == key(n)[0] && (h == key(n) || (h.startsWith(key(n)) && h.length <= key(n).length + 1) || key(n).startsWith(h))) n];
+    return close.length == 1 ? close.first : null; // two names that sound alike: let the model ask
+  }
+
   // Small models sometimes leave the closing bracket off: the tag then runs to the end of the reply.
   static final _transfer = RegExp(r'\[transfer:\s*([^|\]\n]+?)\s*(?:\|([^\]]*))?(?:\]|$)', caseSensitive: false);
 
@@ -2300,13 +2343,13 @@ class AppState extends ChangeNotifier {
     return id == null ? null : (await db.all('call_tasks', where: 'id = ?', args: [id])).firstOrNull;
   }
 
-  /// A call turn's system prompt: the same text on every turn, the warm-up and the hand-over, so it stays cached.
+  /// A call turn's system prompt: the same text on every turn, the warm-up and the hand-over, so it stays cached
+  /// (across calls too: the caller's number goes with their words, see [agentReply]).
   Future<String> _callSystem(String mode, String lang, ({Map<String, Object?> agent, String team, String brief, List<Map<String, Object?>> others})? flow, Set<String> scopes,
           String? callerNumber) async =>
       '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(await _uncovered(abilitiesOf(flow?.agent), scopes, number: callerNumber))}'
       '${await builtAppRules(abilitiesOf(flow?.agent), scopes, call: mode != 'owner', number: callerNumber)}'
-      '${calendar()}'
-      '${callerNumber == null ? '' : ' The number of the person on this call is $callerNumber (use it only if they don\'t say another number).'}';
+      '${calendar()}';
 
   Future<String> _voiceSystem(String mode, [String lang = '', Map<String, Object?>? onCall]) async {
     final agent = onCall ?? (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
@@ -2694,14 +2737,15 @@ class AppState extends ChangeNotifier {
             convo.any((m) => m.role == 'user' && RegExp(r"\b(number|one) (i.?m|i am) (calling|ringing|phoning) (from|on)\b|\b(this|same) number\b", caseSensitive: false).hasMatch(callerWords(m.content)))
         ? ' Their phone number is the one they are calling from ($callerNumber): never ask for it again.'
         : '';
+    final number = callerNumber == null ? '' : ' The number of the person on this call is $callerNumber (use it only if they don\'t say another number).';
     // A stay said earlier ("four nights from tomorrow"): its dates every turn.
     final stay = [for (final m in convo.reversed) if (m.role == 'user') stayNote(callerWords(m.content))].firstWhere((s) => s.isNotEmpty, orElse: () => '');
     final messages = [
       ChatMessage('system', await _callSystem(mode, lang, flow, scopes, callerNumber)),
       // What changes every turn goes with the caller's words, so the long system prompt stays cached.
       for (final (i, m) in convo.indexed)
-        i == convo.length - 1 && m.role == 'user' && '${noRepeat(lastSaid)}${dayNote(m.content)}$stay$own'.isNotEmpty
-            ? ChatMessage('user', '${m.content}\n\n(System note:${noRepeat(lastSaid)}${dayNote(m.content)}$stay$own)')
+        i == convo.length - 1 && m.role == 'user' && '$number${noRepeat(lastSaid)}${dayNote(m.content)}$stay$own'.isNotEmpty
+            ? ChatMessage('user', '${m.content}\n\n(System note:$number${noRepeat(lastSaid)}${dayNote(m.content)}$stay$own)')
             : m.role == 'assistant' ? ChatMessage('assistant', m.content.replaceFirst(_fillerStart, '')) : m,
     ];
     // Live: this call's assistant is working on an answer (the voice engine also says when it speaks).
@@ -2845,14 +2889,26 @@ class AppState extends ChangeNotifier {
       // model with their words (small models ask for the number, or guess the details, instead).
       if (routed == null && yesTool == null && mode != 'owner' && callerNumber != null && !gone &&
           convo.any((m) => m.role == 'user' && _aboutMine.hasMatch(callerWords(m.content))) && !_askedForNew(convo)) {
-        final finds = (await builtAppTools(scopes, number: callerNumber)).where((t) => t.tool.name.startsWith('find_my_')).toList();
+        final mine = await builtAppTools(scopes, number: callerNumber);
+        final finds = mine.where((t) => t.tool.name.startsWith('find_my_')).toList();
         final order = RegExp(r'\border', caseSensitive: false).hasMatch(convo.where((m) => m.role == 'user').map((m) => m.content).join(' '));
         final find = finds.where((t) => t.tool.name.contains('order') == order).firstOrNull ?? finds.firstOrNull;
+        // Read it back only if that's all they asked: to change or cancel it, do it (it's found by their number).
+        String act(ToolBinding f) {
+          final kind = f.tool.name.substring('find_my_'.length);
+          final change = mine.where((t) => t.tool.name == 'change_my_$kind').firstOrNull?.fnName;
+          final cancel = mine.where((t) => t.tool.name == 'cancel_my_$kind').firstOrNull?.fnName;
+          return [
+            if (change != null) 'If they want to change it, call $change now with only what changes (once they have said what they want).',
+            if (cancel != null) 'If they want to cancel it, call $cancel once they confirm.',
+            'Otherwise tell them what it says.',
+          ].join(' ');
+        }
         if (find != null) {
           try {
             final r = await mcp.call(find.serverId, find.tool.name, {'phone': callerNumber});
             final last = messages.removeLast();
-            messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: ${find.fnName} for the number they are calling from, already looked up (never ask for their number): ${r.text.trim()} Tell them what it says.)'));
+            messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: ${find.fnName} for the number they are calling from, already looked up (never ask for their number): ${r.text.trim()} ${act(find)})'));
           } catch (_) {}
         }
       }
@@ -2946,7 +3002,8 @@ class AppState extends ChangeNotifier {
       // Promised the save after looking it up (or wrote a tool's name instead of calling it): the save below does it in one short call.
       final saveNext = mode != 'owner' && !saved && !refused && (usedTool || _fakeTool.hasMatch(full)) && promisesAction(full) && !_waitsForCaller.hasMatch(spokenText(full).trim());
       if (routed == null && passTo == null && !gone && !saveNext && yesTool == null && !stillMissing &&
-          (stuck || unfinished(full, usedTool: usedTool, acted: saved || (_savedOn.contains(room) && !fixing))) && (live || multilingual is! LocalTarget)) {
+          // (Stuck repeating itself: asking again mostly got the same answer and cost 5–20 s; the short line below is said instead.)
+          !stuck && unfinished(full, usedTool: usedTool, acted: saved || (_savedOn.contains(room) && !fixing)) && (live || multilingual is! LocalTarget)) {
         var more = '';
         var skip = -1;
         await agentReply(
@@ -3062,7 +3119,7 @@ class AppState extends ChangeNotifier {
             ChatMessage('system', await _callSystem(mode, lang, flow!, scopes, callerNumber)),
             ...convo,
             ChatMessage('assistant', spokenText(full.split('[transfer').first).trim()),
-            ChatMessage('user', '(You have just taken over the call. Greet the caller in one short sentence as ${target['name']}, show you know what they need from the brief, and carry on: if the brief already has what you need, use your tools now in this same reply (check, or save once they have agreed) — never just say you will check.)'),
+            ChatMessage('user', '(You have just taken over the call.$number Greet the caller in one short sentence as ${target['name']}, show you know what they need from the brief, and carry on: if the brief already has what you need, use your tools now in this same reply (check, or save once they have agreed) — never just say you will check.)'),
           ],
           scopes: scopes,
           access: access,

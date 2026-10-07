@@ -334,12 +334,15 @@ void main() {
   });
 
   test('the caller is done: goodbye and hang up', () {
-    for (final s in ['No, that\'s all, thanks. Bye!', 'Great, thank you, goodbye.', 'Perfect, cheers!', 'Gracias, adiós.', 'Merci, au revoir', 'Nothing else, have a good day']) {
+    for (final s in ['No, that\'s all, thanks. Bye!', 'Great, thank you, goodbye.', 'Gracias, adiós.', 'Merci, au revoir', 'Nothing else, have a good day']) {
       expect(AppState.callerDone(s), true, reason: s);
     }
     for (final s in ['Bye the way, can I also order a pizza?', 'That\'s all correct, but can I change the time?', 'Is that all?', 'Yes please book it', 'I\'d like to order, then bye']) {
       expect(AppState.callerDone(s), false, reason: s);
     }
+    // Just thanks: asked "anything else?" first; a thanks after that ends it.
+    expect(AppState.callerDone('Perfect, cheers!'), false);
+    expect(AppState.callerDone('Perfect, cheers!', asked: 'Is there anything else I can help you with?'), true);
   });
 
   test('the day a caller means', () {

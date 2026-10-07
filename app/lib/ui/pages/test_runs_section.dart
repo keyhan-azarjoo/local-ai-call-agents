@@ -275,8 +275,12 @@ Widget _bubble(BuildContext ctx, String line, {Map? time}) {
   final who = RegExp(r'^AI \(([^)]+)\)').firstMatch(line)?.group(1);
   final when = [
     if (time?['at'] != null) '${time!['at']}',
+    if (time?['stt_ms'] != null) 'heard in ${_s(time!['stt_ms'])} (${((time['heard_match'] as num? ?? 0) * 100).round()}% right)',
     if (time?['ms'] != null) 'answered in ${_s(time!['ms'])} · first words after ${_s(time['first_ms'])}',
+    if (time?['to_answer_ms'] != null) 'caller waited ${_s(time!['to_answer_ms'])} for the answer',
+    if (time?['ai_match'] != null) 'voice ready in ${_s(time!['voice_first_ms'])}, ${((time['ai_match'] as num) * 100).round()}% clear',
   ].join(' · ');
+  final saidInstead = time?['said'] != null && '${time!['said']}'.trim() != text ? '${time['said']}' : null;
   return Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Row(mainAxisAlignment: ai ? MainAxisAlignment.start : MainAxisAlignment.end, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -298,6 +302,7 @@ Widget _bubble(BuildContext ctx, String line, {Map? time}) {
             ]),
             const SizedBox(height: 2),
             SelectableText(text),
+            if (saidInstead != null) Muted('(they said: $saidInstead)', size: 11.5),
           ]),
         ),
       ),

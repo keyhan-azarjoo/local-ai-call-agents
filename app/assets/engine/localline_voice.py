@@ -691,6 +691,25 @@ def clauses(text: str) -> list[str]:
     return [p for p in out if p.strip()]
 
 
+# The app's own quick "let me check" lines: they don't count as the answer having started.
+_FILLER = _re.compile(r"^(sure, let me sort that out|okay, on it|right, let me do that|hmm, let me see|let me check that for you|okay, one sec, let me look|one moment, let me check that)\.?$", _re.IGNORECASE)
+
+
+def _early_piece(buf: str) -> int | None:
+    """Where the answer's first words can be spoken already (the model is still writing the rest):
+    at the first comma/colon after 3+ words, or after 6 words when 9 have come in. None = wait."""
+    words = buf.split()
+    if len(words) < 4:
+        return None
+    m = _re.search(r"[,;:—–]\s", buf)
+    if m and len(buf[: m.end()].split()) >= 3 and not _FILLER.match(buf[: m.end()].strip().rstrip(",;:—–").strip() + "."):
+        return m.end()
+    if len(words) >= 9:
+        six = _re.match(r"\s*(?:\S+\s+){6}", buf)
+        return six.end() if six else None
+    return None
+
+
 def hold_music(stt_=None, seconds: float | None = None):  # noqa: ANN001, ANN201
     """A few seconds of soft hold music (a gentle arpeggio, made here: no files needed), as frames."""
     sr = 24000
@@ -892,13 +911,17 @@ class Ava(Agent):
 
         reader = asyncio.create_task(read())
         buf, ended = "", False
+        said_enough = False
         try:
             while not ended or buf.strip():
                 piece = None
                 m = None
                 for m in _SENTENCE_END.finditer(buf):
                     pass
-                if m is not None:  # one or more whole sentences: say them now
+                early = None if said_enough else _early_piece(buf)
+                if early:  # the answer's first words: start speaking now, the rest follows in whole sentences
+                    piece, buf = buf[:early], buf[early:]
+                elif m is not None:  # one or more whole sentences: say them now
                     piece, buf = buf[: m.end()], buf[m.end() :]
                 elif ended:
                     piece, buf = buf, ""
@@ -947,6 +970,8 @@ class Ava(Agent):
                     self._strip_hangup(piece[hand.start() : hand.end()], switch_voice=True)
                     continue
                 piece = self._strip_hangup(piece) if piece else piece
+                if piece and len(piece.split()) >= 5 and not _FILLER.match(piece.strip()):
+                    said_enough = True  # past the first words: whole sentences from here
                 if piece and piece.strip():
                     spoke = True
                     async with tts_.synthesize(piece.strip()) as stream:

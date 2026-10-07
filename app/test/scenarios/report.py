@@ -71,6 +71,21 @@ if par:
             print(f'| {label} | {len(rs)} | {sum(bool(r["pass"]) for r in rs)} | {sp[0]:.1f} s | {sp[1]:.1f} s |')
     print()
 
+# Speech: the callers' words through the hearing, and the AI's through its voice.
+def vals(key):
+    return sorted(t[key] for r in rows for c in r.get('calls', []) for t in (c.get('times') or []) if isinstance(t.get(key), (int, float)))
+def med(xs):
+    return xs[len(xs) // 2] if xs else None
+stt, hm, vf, am, ta = vals('stt_ms'), vals('heard_match'), vals('voice_first_ms'), vals('ai_match'), vals('to_answer_ms')
+if stt or vf:
+    print('### Speech (spoken and heard, as on a phone)\n\n| | median | 90% |\n|---|---:|---:|')
+    if stt: print(f'| hearing the caller (Whisper) | {med(stt)/1000:.2f} s | {stt[int(len(stt)*.9)]/1000:.2f} s |')
+    if hm: print(f'| caller heard right | {med(hm)*100:.0f}% | worst 10%: {hm[int(len(hm)*.1)]*100:.0f}% |')
+    if vf: print(f'| voice ready (first words) | {med(vf)/1000:.2f} s | {vf[int(len(vf)*.9)]/1000:.2f} s |')
+    if am: print(f'| AI\'s words heard back clearly | {med(am)*100:.0f}% | worst 10%: {am[int(len(am)*.1)]*100:.0f}% |')
+    if ta: print(f'| caller waits for the answer\'s first words | {med(ta)/1000:.1f} s | {ta[int(len(ta)*.9)]/1000:.1f} s |')
+    print()
+
 table('app', 'app')
 table('intent', 'intent')
 table('agent set-up', 'setup')

@@ -369,6 +369,63 @@ class ScenarioRunner {
     return '${blocks[i ~/ 1000]}${(i % 1000).toString().padLeft(3, '0')}';
   }
 
+  // ---------------- speech: the real voice and the real hearing ----------------
+
+  /// The speech lab (see speech_lab.py): null = text only.
+  String? speechLab;
+
+  static const _kokoroLangs = {'en', 'es', 'fr', 'it', 'pt', 'hi', 'ja', 'zh'};
+
+  /// Speaks [text] in [voice] and hears it back; null when speech isn't available (or the language has no voice).
+  Future<Map<String, dynamic>?> _speak(String text, String? voice, String lang) async {
+    if (speechLab == null || text.trim().isEmpty || !_kokoroLangs.contains(lang) || voice == null) return null;
+    try {
+      final rq = await http.postUrl(Uri.parse('$speechLab/roundtrip'));
+      rq.headers.contentType = ContentType.json;
+      rq.write(jsonEncode({'text': text, 'voice': voice.replaceFirst('kokoro:', ''), 'lang': lang}));
+      final rs = await rq.close().timeout(const Duration(seconds: 60));
+      return (jsonDecode(await utf8.decodeStream(rs)) as Map).cast<String, dynamic>();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// A voice for the caller (varied; in their language when Kokoro has one).
+  static String _callerVoice(Map<String, dynamic> sc) {
+    const byLang = {
+      'en': ['am_adam', 'bf_alice', 'am_eric', 'af_sarah', 'bm_lewis', 'af_nicole', 'am_liam', 'bf_lily'],
+      'es': ['ef_dora', 'em_alex'], 'fr': ['ff_siwis'], 'it': ['if_sara', 'im_nicola'], 'pt': ['pf_dora', 'pm_alex'],
+      'hi': ['hf_alpha', 'hm_omega'], 'ja': ['jf_alpha'], 'zh': ['zf_xiaobei'],
+    };
+    final l = byLang['${sc['lang'] ?? 'en'}'] ?? byLang['en']!;
+    return l[(sc['n'] as int? ?? 0) % l.length];
+  }
+
+  /// The voice of whoever spoke last in [text]: the teammate after a hand-over, else the receptionist.
+  Future<String?> _agentVoice(Map<String, dynamic> sc, String text) async {
+    final teammate = RegExp(r'\(on hold\) ([^:]+):').allMatches(text).lastOrNull?.group(1);
+    final row = teammate != null
+        ? (await s.db.all('agents', where: 'name = ?', args: [teammate])).firstOrNull
+        : (receptionistOf[sc['app']] == null ? null : (await s.db.all('agents', where: 'id = ?', args: [receptionistOf[sc['app']]])).firstOrNull);
+    final v = '${row?['voice'] ?? ''}';
+    return v.startsWith('kokoro:') ? v : 'af_heart';
+  }
+
+  static final _fillerOpen = RegExp(r"^\s*(?:(?:Sure, let me sort that out|Okay, on it|Right, let me do that|Hmm, let me see|Let me check that for you|Okay, one sec, let me look|One moment, let me check that)\.\s*)+");
+
+  /// The answer itself (not a "one moment") has its first words ready: a clause of 3+ words or 6 words.
+  static bool _answerStarted(String sse) {
+    final text = sse.split('\n').where((l) => l.startsWith('data: {')).map((l) {
+      try {
+        return '${(jsonDecode(l.substring(6)) as Map)['choices'][0]['delta']['content'] ?? ''}';
+      } catch (_) {
+        return '';
+      }
+    }).join().replaceFirst(_fillerOpen, '');
+    final words = text.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+    return words >= 6 || (words >= 3 && RegExp(r'[,.!?;:]\s*$').hasMatch(text.trim()));
+  }
+
   // ---------------- dates ----------------
 
   static String ymd(DateTime d) => d.toIso8601String().substring(0, 10);
@@ -460,8 +517,16 @@ class ScenarioRunner {
       final wanted = RegExp(r"\?\s*$|\b(please (provide|give|tell|confirm)|(can|could|may) i (have|take|get)|i.?ll need|let me (check|confirm))\b", caseSensitive: false).hasMatch(turns.last['content']!);
       if (said.isEmpty && (extra > 0 || (i > 0 && wanted && extra++ < 2))) said = 'Yes, please.';
       if (said.isEmpty) break;
-      turns.add({'role': 'user', 'content': said});
-      times.add({'at': hms(DateTime.now())});
+      // Spoken and heard, as on a phone: the caller's words in a real voice, through the app's hearing
+      // (Whisper); the AI gets what was heard, mis-hearings and all.
+      final heardAt = DateTime.now();
+      final ear = await _speak(said, _callerVoice(sc), '${sc['lang'] ?? 'en'}');
+      final heard = '${ear?['heard'] ?? ''}'.trim().isEmpty ? said : '${ear!['heard']}'.replaceAll(RegExp(r'\s*\n\s*'), ' ').trim();
+      turns.add({'role': 'user', 'content': heard});
+      times.add({
+        'at': hms(heardAt),
+        if (ear != null) ...{'said': said, 'speak_ms': ear['tts_ms'], 'stt_ms': ear['stt_ms'], 'heard_match': ear['match']},
+      });
       live();
       final rq = await http.postUrl(Uri.parse('http://127.0.0.1:$port/v1/chat/completions?token=$key'));
       rq.headers.contentType = ContentType.json;
@@ -469,11 +534,13 @@ class ScenarioRunner {
       final asked = DateTime.now();
       final rs = await rq.close();
       final buf = StringBuffer();
-      int? firstMs;
+      int? firstMs, answerMs;
       await for (final chunk in rs.transform(utf8.decoder)) {
         buf.write(chunk);
         // The first words the caller hears (a "one moment" counts: it breaks the silence).
         if (firstMs == null && RegExp(r'"content":"[^"\\\s]').hasMatch(chunk)) firstMs = DateTime.now().difference(asked).inMilliseconds;
+        // When the real answer (past any "one moment") has its first words ready to speak.
+        if (answerMs == null && _answerStarted(buf.toString())) answerMs = DateTime.now().difference(asked).inMilliseconds;
       }
       final body = buf.toString();
       final ms = DateTime.now().difference(asked).inMilliseconds;
@@ -502,7 +569,14 @@ class ScenarioRunner {
         final last = log.readAsLinesSync().reversed.map((l) => jsonDecode(l) as Map).firstWhere((e) => e['room'] == room, orElse: () => {});
         stages = (last['stages'] as Map?)?.cast<String, Object?>();
       } catch (_) {}
-      times.add({'at': hms(asked), 'ms': ms, 'first_ms': firstMs ?? ms, 'stages': ?stages});
+      // Its words in its own voice (the teammate's after a hand-over), heard back: clear, and how soon.
+      final mouth = text.isEmpty ? null : await _speak(text.split('⏸').last.replaceFirst(RegExp(r'^\s*\(on hold\) [^:]+:\s*'), ''), await _agentVoice(sc, text), '${sc['lang'] ?? 'en'}');
+      times.add({
+        'at': hms(asked), 'ms': ms, 'first_ms': firstMs ?? ms, 'answer_ms': answerMs ?? ms, 'stages': ?stages,
+        if (mouth != null) ...{'voice_first_ms': mouth['first_ms'], 'ai_match': mouth['match'], 'ai_heard': mouth['heard']},
+        // From the caller stopping to hearing the answer's first words: hearing + the answer's first words + the voice.
+        if (mouth != null && ear != null) 'to_answer_ms': (ear['stt_ms'] as num? ?? 0).toInt() + (answerMs ?? ms) + (mouth['first_ms'] as num? ?? 0).toInt(),
+      });
       live();
       if (hungUp || passedTo.any((p) => p.startsWith('person#'))) break;
       // The caller said goodbye, but the assistant just asked something: they'd answer it.
@@ -707,6 +781,9 @@ class ScenarioRunner {
       // The caller said goodbye: the assistant says goodbye too and ends the call.
       final lastCaller = r.turns.lastWhere((t) => t['role'] == 'user', orElse: () => {'content': ''})['content']!;
       if (AppState.callerDone(lastCaller) && !r.hungUp) f.add('did not say goodbye and hang up when the caller finished');
+      // Spoken in its voice and heard back: the words must come through (prices, times, names).
+      final unclear = r.times.where((t) => t['ai_match'] is num && (t['ai_match'] as num) < 0.5).firstOrNull;
+      if (unclear != null) f.add('speech: the AI\'s words came out unclear (heard "${unclear['ai_heard']}")');
       failures.addAll(f.map((x) => steps.length > 1 ? 'call ${si + 1}: $x' : x));
       calls.add({
         'from': who,

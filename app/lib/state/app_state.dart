@@ -1589,8 +1589,13 @@ class AppState extends ChangeNotifier {
             ..testNumbers = numbers
             ..testNames = names,
       ]);
+    // The real voice and hearing for the test callers and the AI (text only if it can't start).
+    final lab = await speechLab();
+    for (final r in scenarioRuns) {
+      r.speechLab = lab;
+    }
     scenarioRun = scenarioRuns.first;
-    await log('Started ${list.length} test scenarios${workers > 1 ? ', $workers calls at the same time' : ''}');
+    await log('Started ${list.length} test scenarios${lab == null ? ' (text only: no voice)' : ' (spoken and heard)'}${workers > 1 ? ', $workers calls at the same time' : ''}');
     var passed = 0, n = 0;
     notifyListeners();
     Future<void> work(int w) async {
@@ -1634,6 +1639,35 @@ class AppState extends ChangeNotifier {
       await log('Test scenarios finished: $passed of $n passed');
       notifyListeners();
     }
+  }
+
+  /// The speech lab for test calls (the real voice and the real hearing, timed): started on demand.
+  Future<String?> speechLab() async {
+    const url = 'http://127.0.0.1:8920';
+    Future<bool> up() async {
+      try {
+        return (await http.get(Uri.parse('$url/health')).timeout(const Duration(seconds: 1))).statusCode == 200;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    if (await up()) return url;
+    final v = voice;
+    if (v == null || !File(v.python).existsSync()) return null;
+    try {
+      final script = File(p.join(v.engineDir, 'speech_lab.py'))..writeAsStringSync(await rootBundle.loadString('assets/engine/speech_lab.py'));
+      File(p.join(v.engineDir, 'localline_voice.py')).writeAsStringSync(await rootBundle.loadString('assets/engine/localline_voice.py'));
+      await Process.start(v.python, [script.path, '--port', '8920'],
+          workingDirectory: v.engineDir, environment: {'LL_KOKORO_DIR': v.kokoroDir, 'LL_WHISPER_URL': 'http://127.0.0.1:${VoiceEngine.whisperPort}'}, mode: ProcessStartMode.detached);
+      for (var i = 0; i < 90; i++) {
+        if (await up()) return url;
+        await Future.delayed(const Duration(seconds: 1));
+      }
+    } catch (e) {
+      await log('Speech lab could not start: $e');
+    }
+    return null;
   }
 
   void stopScenarios() {

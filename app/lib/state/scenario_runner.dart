@@ -22,6 +22,11 @@ class ScenarioRunner {
   final void Function(String line)? onLog;
   final appIds = <String, int>{};
 
+  /// Tool calls by app name, to the runner testing that app (runners can run side by side).
+  static final _listeners = <String, void Function(String tool, Map<String, dynamic> args, String result, bool error)>{};
+  static void _dispatch(String app, String tool, Map<String, dynamic> args, String result, bool error) => _listeners[app]?.call(tool, args, result, error);
+  String? _myApp;
+
   /// Set to stop: the current call ends at the next turn.
   bool stopRequested = false;
   final specs = <String, AppSpec>{};
@@ -419,6 +424,8 @@ class ScenarioRunner {
     // On the business's own line: its receptionist answers.
     final rec = isolated ? null : receptionistOf[sc['app']];
     if (rec != null) s.roomAgent[room] = rec;
+    // This call is for this business only (other calls may be going on at the same time for others).
+    if (appIds[sc['app']] != null) s.callApp[number] = appIds[sc['app']]!;
     final port = s.host!.port, key = s.host!.engineKey;
     final cfg = jsonDecode(await _get('http://127.0.0.1:$port/api/voice-config?room=${Uri.encodeQueryComponent(room)}&mode=caller&lang=${sc['lang'] ?? 'en'}&token=$key')) as Map;
     final greeting = '${cfg['greeting']}';
@@ -487,6 +494,7 @@ class ScenarioRunner {
     end.headers.contentType = ContentType.json;
     end.write(jsonEncode({'room': room, 'transcript': [], 'answered': true, 'number': number}));
     await (await end.close()).drain<void>();
+    s.callApp.remove(number);
     return (turns: turns, times: times, passedTo: passedTo, hungUp: hungUp);
   }
 
@@ -555,7 +563,8 @@ class ScenarioRunner {
       return await _run(sc);
     } finally {
       if (!isolated) await undo();
-      AppServer.onToolCall = null;
+      if (_myApp != null) _listeners.remove(_myApp);
+      _myApp = null;
     }
   }
 
@@ -641,11 +650,13 @@ class ScenarioRunner {
       await _makeRoom(curApp, ex, numbers);
       final auditFrom = DateTime.now().millisecondsSinceEpoch;
       final used = <String>[];
-      AppServer.onToolCall = (app, tool, args, result, error) {
-        if (app != data(curApp).spec.name) return; // another app (e.g. a background data refresh)
+      // What the AI did in this business's app (several runners at once each hear only their own app).
+      _myApp = data(curApp).spec.name;
+      _listeners[_myApp!] = (tool, args, result, error) {
         used.add('$tool(${jsonEncode(args)}) → ${error ? 'ERROR ' : ''}${result.split('\n').first}');
         showLive({'tools': used});
       };
+      AppServer.onToolCall = _dispatch;
       final t0 = DateTime.now();
       showLive({'goal': st['goal'] ?? '', 'call': steps.take(si + 1).where((x) => (x['do'] ?? 'call') == 'call').length, 'calls': steps.where((x) => (x['do'] ?? 'call') == 'call').length, 'turns': [], 'tools': used});
       final r = await call({...st, 'style_text': st['style_text'] ?? sc['style_text']}, numbers[who]!, '${sc['id']}-$si', {...sc, 'app': curApp});

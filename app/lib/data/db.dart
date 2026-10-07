@@ -254,6 +254,8 @@ class Db {
       created_at INTEGER NOT NULL
     )
     ''',
+    // Calls can be recorded (both sides, a WAV on this computer).
+    'ALTER TABLE calls ADD COLUMN recording TEXT',
   ];
 
   // ---------- settings ----------

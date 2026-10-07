@@ -415,16 +415,21 @@ class _TestCallDialogState extends State<TestCallDialog> {
 }
 
 
-/// What the test run is doing right now (written by the scenario runner after every turn).
-Map<String, dynamic>? readLiveTest(AppState s) {
-  final f = File('${File(s.db.path).parent.path}/test-runs/live.json');
-  try {
-    if (!f.existsSync() || DateTime.now().difference(f.lastModifiedSync()) > const Duration(minutes: 4)) return null;
-    return (jsonDecode(f.readAsStringSync()) as Map).cast<String, dynamic>();
-  } catch (_) {
-    return null;
+/// What the test run is doing right now: one per call going on (written by the runners after every turn).
+List<Map<String, dynamic>> readLiveTests(AppState s) {
+  final dir = Directory('${File(s.db.path).parent.path}/test-runs');
+  if (!dir.existsSync()) return [];
+  final out = <Map<String, dynamic>>[];
+  for (final f in dir.listSync().whereType<File>().where((f) => RegExp(r'/live(-\d+)?\.json$').hasMatch(f.path)).toList()..sort((a, b) => a.path.compareTo(b.path))) {
+    try {
+      if (DateTime.now().difference(f.lastModifiedSync()) > const Duration(minutes: 4)) continue;
+      out.add((jsonDecode(f.readAsStringSync()) as Map).cast<String, dynamic>());
+    } catch (_) {}
   }
+  return out;
 }
+
+Map<String, dynamic>? readLiveTest(AppState s) => readLiveTests(s).firstOrNull;
 
 /// The call being tested right now, line by line.
 class LiveTestPanel extends StatefulWidget {
@@ -434,7 +439,7 @@ class LiveTestPanel extends StatefulWidget {
 }
 
 class _LiveTestPanelState extends State<LiveTestPanel> {
-  Map<String, dynamic>? live;
+  List<Map<String, dynamic>> lives = [];
   Timer? _tick;
 
   @override
@@ -446,8 +451,8 @@ class _LiveTestPanelState extends State<LiveTestPanel> {
 
   void _read() {
     if (!mounted) return;
-    final l = readLiveTest(context.read<AppState>());
-    if (jsonEncode(l) != jsonEncode(live)) setState(() => live = l);
+    final l = readLiveTests(context.read<AppState>());
+    if (jsonEncode(l) != jsonEncode(lives)) setState(() => lives = l);
   }
 
   @override
@@ -457,9 +462,9 @@ class _LiveTestPanelState extends State<LiveTestPanel> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final l = live;
-    if (l == null) return const SizedBox.shrink();
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (final l in lives) _one(context, l)]);
+
+  Widget _one(BuildContext context, Map<String, dynamic> l) {
     final turns = (l['turns'] as List? ?? []).cast<Object?>();
     final tools = (l['tools'] as List? ?? []).cast<Object?>();
     return Padding(
@@ -470,7 +475,9 @@ class _LiveTestPanelState extends State<LiveTestPanel> {
           Row(children: [
             const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
             const SizedBox(width: 10),
-            Expanded(child: Text('Testing now: ${l['app']} · ${'${l['intent']}'.replaceAll('journey_', '').replaceAll('_', ' ')}', style: displayStyle(context, 18))),
+            Expanded(
+                child: Text('${(l['lines'] as num? ?? 1) > 1 ? 'Line ${l['line']} · ' : ''}Testing now: ${l['app']} · ${'${l['intent']}'.replaceAll('journey_', '').replaceAll('_', ' ')}',
+                    style: displayStyle(context, 18))),
             Pill('${l['done']} of ${l['total']} done · ${l['passed']} passed', tone: Tone.blue),
           ]),
           const SizedBox(height: 4),
@@ -535,7 +542,8 @@ class _TestRunBannerState extends State<TestRunBanner> {
           const SizedBox(width: 14),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Test calls running: ${l['done']} of ${l['total']} done, ${l['passed']} passed', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+              Text('Test calls running${(l['lines'] as num? ?? 1) > 1 ? ' (${l['lines']} at the same time)' : ''}: ${l['done']} of ${l['total']} done, ${l['passed']} passed',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
               const SizedBox(height: 2),
               Muted('Now: ${l['app']} · ${'${l['intent']}'.replaceAll('journey_', '').replaceAll('_', ' ')}${last == null ? '' : ' — $last'}', size: 12.5),
             ]),
@@ -559,6 +567,7 @@ class _RunScenariosDialog extends StatefulWidget {
 class _RunScenariosDialogState extends State<_RunScenariosDialog> {
   ScenarioPick pick = ScenarioPick.quick;
   String app = 'barber';
+  int parallel = 1;
 
   @override
   Widget build(BuildContext context) => AlertDialog(
@@ -597,6 +606,12 @@ class _RunScenariosDialogState extends State<_RunScenariosDialog> {
                 padding: const EdgeInsets.only(left: 16, top: 4),
                 child: Dropdown<String>(value: app, items: {for (final t in appTemplates) t.id: t.name}, onChanged: (v) => setState(() => app = v)),
               ),
+            const SizedBox(height: 12),
+            Row(children: [
+              const Expanded(child: Text('Calls at the same time', style: TextStyle(fontWeight: FontWeight.w600))),
+              Segmented<int>(value: parallel, options: const {1: 'One', 2: 'Two', 3: 'Three', 4: 'Four'}, onChanged: (v) => setState(() => parallel = v)),
+            ]),
+            const Muted('Several callers at once (each for a different business), to check the lines stay fast together.', size: 12.5),
           ]),
         ),
         actions: [
@@ -604,7 +619,7 @@ class _RunScenariosDialogState extends State<_RunScenariosDialog> {
           Btn('Start', kind: BtnKind.primary, onPressed: () {
             final s = context.read<AppState>();
             Navigator.pop(context);
-            s.runScenarios(pick, app: app).catchError((Object e) => s.toast('$e'));
+            s.runScenarios(pick, app: app, parallel: parallel).catchError((Object e) => s.toast('$e'));
           }),
         ],
       );

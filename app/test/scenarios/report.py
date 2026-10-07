@@ -58,6 +58,19 @@ if total:
     print(f'| whole answer | {pct(total, .5):.1f} s | {pct(total, .9):.1f} s | {max(total) / 1000:.1f} s |')
     print(f'\n{len(total)} AI replies timed; {slow} scenarios had a reply slower than 5 s to first words or 25 s in all.\n')
 
+# Calls at the same time vs one at a time: are the lines still fast together?
+def speed(rs):
+    ms = sorted(t['ms'] for r in rs for c in r.get('calls', []) for t in (c.get('times') or []) if t.get('ms') is not None)
+    return (ms[len(ms) // 2] / 1000, ms[int(len(ms) * .9)] / 1000, len(ms)) if ms else None
+par = [r for r in rows if r.get('parallel')]
+if par:
+    print('### Calls at the same time\n\n| | runs | passed | median answer | 90% under |\n|---|---:|---:|---:|---:|')
+    for label, rs in [('one at a time', [r for r in rows if not r.get('parallel')])] + [(f'{n} at once', [r for r in par if r['parallel'] == n]) for n in sorted({r['parallel'] for r in par})]:
+        sp = speed(rs)
+        if rs and sp:
+            print(f'| {label} | {len(rs)} | {sum(bool(r["pass"]) for r in rs)} | {sp[0]:.1f} s | {sp[1]:.1f} s |')
+    print()
+
 table('app', 'app')
 table('intent', 'intent')
 table('agent set-up', 'setup')

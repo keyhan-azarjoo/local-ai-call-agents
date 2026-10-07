@@ -126,6 +126,62 @@ def wav_bytes(pcm: np.ndarray, sr: int) -> bytes:
     return buf.getvalue()
 
 
+# ----------------------------------------------------------------------------- recording
+
+
+class CallRecorder:
+    """Both sides of a call on one timeline: the caller on the left, the assistant on the right
+    (16 kHz stereo WAV). Kept as pieces and put together once, when the call ends."""
+
+    SR = 16000
+
+    def __init__(self) -> None:
+        self.t0 = time.monotonic()
+        self.pieces: dict[str, list[tuple[int, np.ndarray]]] = {"caller": [], "agent": []}
+
+    def _at(self, t: float) -> int:
+        return max(0, int((t - self.t0) * self.SR))
+
+    def _resample(self, pcm: np.ndarray, sr: int) -> np.ndarray:
+        if sr == self.SR or len(pcm) == 0:
+            return pcm.astype(np.int16)
+        x = np.arange(0, len(pcm), sr / self.SR)
+        return np.interp(x, np.arange(len(pcm)), pcm.astype(np.float32)).astype(np.int16)
+
+    def caller(self, pcm: np.ndarray, sr: int) -> None:
+        self.pieces["caller"].append((self._at(time.monotonic() - len(pcm) / sr), self._resample(pcm, sr)))
+
+    def agent(self, pcm: np.ndarray, sr: int, t: float) -> None:
+        """The assistant's speech at the time it plays (it is made faster than it plays)."""
+        self.pieces["agent"].append((self._at(t), self._resample(pcm, sr)))
+
+    def cut_agent(self) -> None:
+        """Interrupted: what was still queued was never heard."""
+        now = self._at(time.monotonic())
+        kept = []
+        for at, pcm in self.pieces["agent"]:
+            if at < now:
+                kept.append((at, pcm[: now - at]))
+        self.pieces["agent"] = kept
+
+    def save(self, path: Path) -> Path | None:
+        ends = [at + len(pcm) for side in self.pieces.values() for at, pcm in side]
+        if not ends:
+            return None
+        n = max(ends)
+        out = np.zeros((n, 2), np.int32)
+        for ch, side in enumerate(("caller", "agent")):
+            for at, pcm in self.pieces[side]:
+                out[at : at + len(pcm), ch] += pcm[: max(0, n - at)]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(2)
+            w.setsampwidth(2)
+            w.setframerate(self.SR)
+            w.writeframes(np.clip(out, -32768, 32767).astype(np.int16).tobytes())
+        return path
+
+
 # ----------------------------------------------------------------------------- hearing
 
 # Whisper's markers for non-speech ("[BLANK_AUDIO]", "[Music]", "(coughs)"): not words.
@@ -154,6 +210,8 @@ class WhisperStreamingSTT(stt.STT):
         self.agent_env: dict[int, float] = {}
         # Names to expect (from the app), given to Whisper as a hint for English.
         self.vocabulary = ""
+        # Recording this call (both sides), when the owner turned it on.
+        self.recorder: CallRecorder | None = None
         # Recognise Ava's own voice coming back (speakers in the room); off on phone calls.
         self.echo_check = True
         self.play_end = 0.0
@@ -164,6 +222,8 @@ class WhisperStreamingSTT(stt.STT):
         # Speech is made faster than it plays: put it on a playback timeline (after what's queued).
         t0 = max(time.monotonic(), self.play_end)
         self.play_end = t0 + len(pcm) / sr
+        if self.recorder:
+            self.recorder.agent(pcm, sr, t0)
         b0 = int(t0 / 0.02)
         for i in range(0, len(pcm) - n + 1, n):
             seg = pcm[i : i + n].astype(np.float32)
@@ -403,6 +463,8 @@ class _WhisperStream(stt.RecognizeStream):
                     vad_stream.flush()
                     continue
                 vad_stream.push_frame(item)
+                if self._s.recorder:
+                    self._s.recorder.caller(np.frombuffer(item.data, dtype=np.int16), item.sample_rate)
                 if speaking:
                     chunks.append(np.frombuffer(item.data, dtype=np.int16))
                     now = time.monotonic()
@@ -629,6 +691,57 @@ def clauses(text: str) -> list[str]:
     return [p for p in out if p.strip()]
 
 
+# Kokoro's speaking speed: a touch quicker than its default sounds more like someone on the phone.
+SPEED = float(os.environ.get("LL_TTS_SPEED", "1.05"))
+
+
+def sentences(text: str) -> list[str]:
+    """Whole sentences, each spoken in one go (cutting at every comma resets the intonation and sounds
+    robotic). Only the first may be shortened, so the answer starts quickly; very long ones are split
+    at a comma."""
+    out: list[str] = []
+    for s in _re_sentence.split(text):
+        s = s.strip()
+        if not s:
+            continue
+        if len(s) > 220:  # one breath at most: split at a comma near the middle
+            cut = s.rfind(", ", 0, len(s) // 2 + 60)
+            if cut > 40:
+                out += [s[: cut + 1], s[cut + 2 :]]
+                continue
+        out.append(s)
+    # The first piece: a quick start ("Okay," / "Sure,") is said on its own, the rest flows on.
+    if out:
+        m = _re_opener.match(out[0])
+        if m and len(out[0]) > len(m[0]) + 8:
+            out[:1] = [m[0].strip(), out[0][m.end() :].strip()]
+    return [p for p in out if p]
+
+
+_re_sentence = __import__("re").compile(r"(?<=[.!?؟。…])\s+")
+_re_opener = __import__("re").compile(r"^(okay|ok|sure|right|hmm|great|perfect|lovely|of course|no problem|thanks|thank you)[,!.]?\s+", __import__("re").IGNORECASE)
+
+
+def smooth(pcm: np.ndarray, sr: int) -> np.ndarray:
+    """Trims the silence Kokoro leaves around a piece (it adds up between pieces) and fades the
+    edges in and out over 6 ms, so pieces join without clicks."""
+    if len(pcm) == 0:
+        return pcm
+    loud = np.nonzero(np.abs(pcm) > 300)[0]
+    if len(loud):
+        start = max(0, loud[0] - int(sr * 0.03))
+        end = min(len(pcm), loud[-1] + int(sr * 0.06))
+        pcm = pcm[start:end]
+    n = min(len(pcm) // 2, int(sr * 0.006))
+    if n > 1:
+        f = pcm.astype(np.float32)
+        ramp = np.linspace(0.0, 1.0, n, dtype=np.float32)
+        f[:n] *= ramp
+        f[-n:] *= ramp[::-1]
+        pcm = f.astype(np.int16)
+    return pcm
+
+
 # Speech already made, by (voice, text): fillers and greetings come back instantly.
 _SPOKEN: dict[tuple[str, str], np.ndarray] = {}
 COMMON_PHRASES = ["Hmm,", "Okay,", "Sure,", "Right,", "let me see.", "Let me check that for you.", "one sec, let me look.",
@@ -656,13 +769,17 @@ class _KokoroChunked(tts.ChunkedStream):
         loop = asyncio.get_running_loop()
         k = await loop.run_in_executor(None, self._p.kokoro)
         code = KOKORO_LANG.get(voice[0], "en-us")
-        for piece in clauses(text):
+        pieces = sentences(text)
+        for i, piece in enumerate(pieces):
             pcm = _SPOKEN.get((voice, piece))
             if pcm is None:
-                samples, _ = await loop.run_in_executor(None, lambda p=piece: k.create(p, voice=voice, speed=1.0, lang=code))
-                pcm = (np.clip(samples, -1, 1) * 32767).astype(np.int16)
+                samples, _ = await loop.run_in_executor(None, lambda p=piece: k.create(p, voice=voice, speed=SPEED, lang=code))
+                pcm = smooth((np.clip(samples, -1, 1) * 32767).astype(np.int16), 24000)
                 if len(piece) < 40:
                     _SPOKEN[(voice, piece)] = pcm
+            # A natural pause after it: longer after a sentence, short after a clause.
+            gap = 0 if i == len(pieces) - 1 else int(24000 * (0.22 if piece.rstrip()[-1:] in ".!?؟。…" else 0.09))
+            pcm = np.concatenate([pcm, np.zeros(gap, np.int16)]) if gap else pcm
             if self._p._stt:
                 self._p._stt.record_agent_audio(pcm, 24000)
             output_emitter.push(pcm.tobytes())
@@ -859,6 +976,9 @@ async def entrypoint(ctx: JobContext) -> None:
     vad = silero.VAD.load(min_silence_duration=0.35)
     stt_ = WhisperStreamingSTT(vad=silero.VAD.load(min_silence_duration=0.4), language=language)
     stt_.vocabulary = cfg.get("vocabulary") or ""
+    # Recording, when the owner turned it on (phone calls only; the caller is told in the greeting).
+    if cfg.get("record") and parts[0] == "pstn":
+        stt_.recorder = CallRecorder()
     # On a phone call the far end cancels its own echo; Ava's voice isn't in the room.
     stt_.echo_check = not phone_call
     model = mode if os.environ.get("LL_APP_URL") else os.environ.get("LL_LLM_MODEL", "qwen3:4b-instruct")
@@ -923,6 +1043,8 @@ async def entrypoint(ctx: JobContext) -> None:
         stt_.agent_speaking = ev.new_state == "speaking"
         if ev.new_state != "speaking":
             stt_.play_end = min(stt_.play_end, time.monotonic())  # interrupted: nothing more queued
+            if stt_.recorder and ev.old_state == "speaking":
+                stt_.recorder.cut_agent()
         if ev.old_state == "speaking":
             stt_.agent_until = time.monotonic() + 0.8  # the last words are still in the room
     session.on("agent_state_changed", track_own_voice)
@@ -945,8 +1067,8 @@ async def entrypoint(ctx: JobContext) -> None:
         code = KOKORO_LANG.get(voice[0], "en-us")
         for p in COMMON_PHRASES:
             if (voice, p) not in _SPOKEN:
-                samples, _ = await loop.run_in_executor(None, lambda p=p: k.create(p, voice=voice, speed=1.0, lang=code))
-                _SPOKEN[(voice, p)] = (np.clip(samples, -1, 1) * 32767).astype(np.int16)
+                samples, _ = await loop.run_in_executor(None, lambda p=p: k.create(p, voice=voice, speed=SPEED, lang=code))
+                _SPOKEN[(voice, p)] = smooth((np.clip(samples, -1, 1) * 32767).astype(np.int16), 24000)
 
     asyncio.create_task(warm_phrases())
     session.on("user_state_changed", sync_sound)
@@ -962,6 +1084,13 @@ async def entrypoint(ctx: JobContext) -> None:
         base = os.environ.get("LL_APP_URL")
         if not base or not phone_call:
             return
+        recording = None
+        if stt_.recorder:
+            try:
+                folder = Path(os.environ.get("LL_RECORDINGS_DIR") or (VOICES_DIR.parent.parent / "recordings"))
+                recording = stt_.recorder.save(folder / f"{time.strftime('%Y-%m-%d_%H-%M-%S')}_{ctx.room.name[-24:]}.wav")
+            except Exception as e:  # noqa: BLE001
+                log.warning("could not save the recording: %s", e)
         transcript = []
         for item in session.history.items:
             text = getattr(item, "text_content", None)
@@ -971,7 +1100,8 @@ async def entrypoint(ctx: JobContext) -> None:
         try:
             async with aiohttp.ClientSession() as h:
                 await h.post(f"{base}/api/call-ended", json={"room": ctx.room.name, "transcript": transcript, "answered": picked_up["yes"], "number": caller_number(),
-                                                              "started_at": int(started * 1000), "duration_s": int(time.time() - started)},
+                                                              "started_at": int(started * 1000), "duration_s": int(time.time() - started),
+                                                              "recording": str(recording) if recording else None},
                              headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=10))
         except Exception as e:  # noqa: BLE001
             log.warning("could not report the call: %s", e)
@@ -996,6 +1126,21 @@ async def entrypoint(ctx: JobContext) -> None:
             asyncio.create_task(hang_up())
 
     session.on("agent_state_changed", maybe_hang_up)
+
+    # Live state for the app (how many calls, who is speaking): sent when it changes.
+    async def send_state() -> None:
+        base = os.environ.get("LL_APP_URL")
+        if not base:
+            return
+        try:
+            async with aiohttp.ClientSession() as h:
+                await h.post(f"{base}/api/call-state", json={"room": ctx.room.name, "agent": str(session.agent_state), "caller": str(session.user_state), "number": caller_number()},
+                             headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=3))
+        except Exception:  # noqa: BLE001
+            pass
+
+    session.on("agent_state_changed", lambda *_: asyncio.create_task(send_state()))
+    session.on("user_state_changed", lambda *_: asyncio.create_task(send_state()))
 
     async def connect_person() -> None:
         """Hold music while a person is rung into this call; brief them, then step out."""

@@ -446,6 +446,7 @@ class VoiceEngine extends ChangeNotifier {
           if (state[EnginePart.accurate] == PartState.running) 'LL_WHISPER_ACCURATE_URL': 'http://127.0.0.1:$accuratePort',
           'LL_VOICES_DIR': p.join(dataDir, 'models', 'tts'),
           'LL_KOKORO_DIR': kokoroDir,
+          'LL_RECORDINGS_DIR': p.join(dataDir, 'recordings'),
         },
         healthy: () async => state[EnginePart.agent] == PartState.running,
       );

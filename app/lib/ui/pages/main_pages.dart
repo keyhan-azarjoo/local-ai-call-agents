@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -13,6 +14,7 @@ import '../widgets.dart';
 import 'devices_section.dart';
 import 'engine_pages.dart';
 import 'knowledge_page.dart';
+import 'live_calls.dart';
 import 'test_runs_section.dart';
 
 /// Loads rows from the database and rebuilds whenever AppState notifies.
@@ -96,6 +98,7 @@ class HomePage extends StatelessWidget {
             _Action(Icons.mic_none_rounded, 'Talk to Ava', 'Try her as a caller, or give her instructions.', () => s.go(PageId.talk)),
             _Action(Icons.smart_toy_outlined, 'Change what Ava says', 'Greeting, instructions, voice.', () => s.editAgent(null)),
           ]),
+          const LiveCallsPanel(),
           const TestRunBanner(),
           const SizedBox(height: 16),
           Rows('calls', builder: (context, calls) => Section(
@@ -194,6 +197,8 @@ void showCall(BuildContext context, Map<String, Object?> c) {
             Align(
               alignment: Alignment.centerRight,
               child: Wrap(spacing: 8, children: [
+                if ((c['recording'] as String?)?.isNotEmpty == true && File(c['recording'] as String).existsSync())
+                  Btn('Play recording', onPressed: () => Process.run('open', [c['recording'] as String])),
                 Btn('Delete', kind: BtnKind.danger, onPressed: () async {
                   final s = ctx.read<AppState>();
                   await s.db.delete('calls', c['id'] as int);
@@ -224,6 +229,17 @@ class _CallsPageState extends State<CallsPage> {
   @override
   Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const PageHead('Calls', description: 'Every call is kept on this computer only.'),
+        const LiveCallsPanel(always: true),
+        const SizedBox(height: 12),
+        Builder(builder: (context) {
+          final s = context.watch<AppState>();
+          return Panel(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              SwitchRow('Record calls', value: s.recordCalls, onChanged: s.setRecordCalls),
+              const Muted('Both sides of each phone call, kept on this computer. Callers hear “This call may be recorded.” at the start.', size: 12.5),
+            ]),
+          );
+        }),
         const RequestsSection(),
         const SizedBox(height: 16),
         Segmented(

@@ -411,12 +411,19 @@ class AppState extends ChangeNotifier {
 
   /// While test scenarios run: the only built app the assistant uses (the one being tested).
   int? focusApp;
-  bool _outOfFocus(McpServer srv) => focusApp != null && srv.secret['app'] != null && srv.secret['app'] != focusApp;
 
-  Future<List<ToolBinding>> toolsFor(Set<String> scopes, {AgentAccess? access}) async {
+  /// Calls each answered for one business (caller number → its app): several at once, each with only its own app.
+  final callApp = <String, int>{};
+
+  bool _outOfFocus(McpServer srv, [String? number]) {
+    final only = (number == null ? null : callApp[number]) ?? focusApp;
+    return only != null && srv.secret['app'] != null && srv.secret['app'] != only;
+  }
+
+  Future<List<ToolBinding>> toolsFor(Set<String> scopes, {AgentAccess? access, String? number}) async {
     final out = <ToolBinding>[];
     for (final srv in await mcp.servers()) {
-      if (!srv.enabled || !scopes.contains(srv.scope) || _outOfFocus(srv)) continue;
+      if (!srv.enabled || !scopes.contains(srv.scope) || _outOfFocus(srv, number)) continue;
       if (access?.tools != null && !access!.tools!.contains(srv.id)) continue;
       for (final t in srv.tools) {
         out.add(ToolBinding(serverId: srv.id, serverName: srv.name, tool: t, fnName: ToolBinding.safeName(srv.name, t.name)));
@@ -426,9 +433,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// Customers' tools of the apps built in LocalAILine (bookings, orders, menus…).
-  Future<List<ToolBinding>> builtAppTools(Set<String> scopes) async => [
+  Future<List<ToolBinding>> builtAppTools(Set<String> scopes, {String? number}) async => [
         for (final srv in await mcp.servers())
-          if (srv.enabled && srv.secret['app'] != null && srv.secret['role'] == 'customers' && scopes.contains(srv.scope) && !_outOfFocus(srv))
+          if (srv.enabled && srv.secret['app'] != null && srv.secret['role'] == 'customers' && scopes.contains(srv.scope) && !_outOfFocus(srv, number))
             for (final t in srv.tools) ToolBinding(serverId: srv.id, serverName: srv.name, tool: t, fnName: ToolBinding.safeName(srv.name, t.name)),
       ];
 
@@ -443,9 +450,9 @@ class AppState extends ChangeNotifier {
       (ability == 'booking' || ability == 'order') && _appToolFor(appTools, ability) != null;
 
   /// For calls: which business this is and how its app saves bookings and orders.
-  Future<String> builtAppRules(Set<String> abilities, Set<String> scopes, {bool call = false}) async {
+  Future<String> builtAppRules(Set<String> abilities, Set<String> scopes, {bool call = false, String? number}) async {
     if (!call && !abilities.any(const {'booking', 'order'}.contains)) return '';
-    return appRulesText(await builtAppTools(scopes));
+    return appRulesText(await builtAppTools(scopes, number: number));
   }
 
   /// The AI said a booking/order is done but didn't save it (small models do that):
@@ -456,7 +463,7 @@ class AppState extends ChangeNotifier {
     // "The Loft is already booked" / "sorry, all rooms are booked": a refusal, not a save.
     if (RegExp(r"\b(sorry|already (booked|taken|reserved)|not (free|available)|isn.t (free|available)|fully booked|all\b.{0,25}\bbooked|instead|one of (those|these|them)|(another|other) (option|room|table|time|day)s?)\b", caseSensitive: false).hasMatch(reply)) return null;
     if (!(_confirmed.hasMatch(reply) || (_promisedAction.hasMatch(reply) && !stillAsking && !_waitsForCaller.hasMatch(reply.trim()))) || !llmReady || !_askedForNew(convo)) return null;
-    final tools = await builtAppTools(scopes);
+    final tools = await builtAppTools(scopes, number: callerNumber);
     final said = [for (final m in convo.reversed.take(6)) m.content, reply].join(' ');
     final tool = RegExp(r'order', caseSensitive: false).hasMatch(said)
         ? _appToolFor(tools, 'order') ?? _appToolFor(tools, 'booking')
@@ -854,8 +861,8 @@ class AppState extends ChangeNotifier {
     // Some models (e.g. the multilingual one) can't use tools well: they answer from documents and data snapshots.
     // An app built here (e.g. the restaurant's website) is where bookings and orders belong:
     // agents that take them use its tools, even if their own tool list leaves it out.
-    final appTools = useTools && (callerNumber != null || abilities.any(const {'booking', 'order'}.contains)) ? await builtAppTools(scopes) : <ToolBinding>[];
-    final own = useTools ? await toolsFor(scopes, access: access) : <ToolBinding>[];
+    final appTools = useTools && (callerNumber != null || abilities.any(const {'booking', 'order'}.contains)) ? await builtAppTools(scopes, number: callerNumber) : <ToolBinding>[];
+    final own = useTools ? await toolsFor(scopes, access: access, number: callerNumber) : <ToolBinding>[];
     // A business with its own app keeps its bookings and orders there: the main app only takes messages for the manager.
     final abilityTools = useTools ? Abilities.bindings(abilities.where((a) => appTools.isEmpty ? !_appCovers(appTools, a) : a == 'message')) : <ToolBinding>[];
     final tools = useTools
@@ -1098,6 +1105,7 @@ class AppState extends ChangeNotifier {
   Future<void> _callEnded(Map<String, dynamic> b) async {
     final room = '${b['room'] ?? ''}';
     _activeCalls.remove(room);
+    liveCalls.remove(room);
     _onCall.remove(room);
     _lastCheck.remove('${b['number'] ?? ''}');
     _savedOn.remove(room);
@@ -1130,6 +1138,7 @@ class AppState extends ChangeNotifier {
       'started_at': (b['started_at'] as num?)?.toInt() ?? DateTime.now().millisecondsSinceEpoch,
       'duration_s': (b['duration_s'] as num?)?.toInt() ?? 0,
       'outcome': answered ? 'Answered' : (pickedUp ? 'Picked up, no reply' : 'No answer'),
+      'recording': b['recording'],
       'summary': summary,
       'transcript': jsonEncode(turns),
     });
@@ -1276,6 +1285,7 @@ class AppState extends ChangeNotifier {
     advanced = await db.setting('ui.advanced') == '1';
     themeMode = await db.setting('ui.theme') == 'dark' ? ThemeMode.dark : ThemeMode.light;
     answering = await db.setting('calls.answering') != '0';
+    recordCalls = await db.setting('calls.record') == '1';
     llmModel = await db.setting('llm.model');
     sttModel = await db.setting('stt.model') ?? sttModel;
     ttsVoice = await db.setting('tts.voice') ?? ttsVoice;
@@ -1312,9 +1322,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     final autoRun = kDebugMode ? Platform.environment['LOCALAILINE_RUN_SCENARIOS'] : null;
     if (autoRun != null && !isPhone) {
-      final parts = autoRun.split(':');
+      // "all", "challenges@2" (two calls at a time), "app:barber".
+      final at = autoRun.split('@');
+      final parts = at.first.split(':');
       final pick = ScenarioPick.values.firstWhere((v) => v.name == parts.first, orElse: () => ScenarioPick.quick);
-      Timer(const Duration(seconds: 20), () => runScenarios(pick, app: parts.length > 1 ? parts[1] : null).catchError((Object e) => log('Test scenarios could not start: $e')));
+      final parallel = at.length > 1 ? int.tryParse(at[1]) ?? 1 : 1;
+      Timer(const Duration(seconds: 20),
+          () => runScenarios(pick, app: parts.length > 1 ? parts[1] : null, parallel: parallel).catchError((Object e) => log('Test scenarios could not start: $e')));
     }
     Hardware.detect().then((h) {
       hardware = h;
@@ -1492,6 +1506,38 @@ class AppState extends ChangeNotifier {
   /// The last day checked on each call (by caller number), to catch a booking saved on another day.
   final _lastCheck = <String, String>{};
 
+  // ---------- live calls: how many, and who is speaking ----------
+
+  /// Calls going on now (room → who is speaking): from the voice engine, and from each turn.
+  final liveCalls = <String, ({String agent, String caller, String number, String name, DateTime at})>{};
+  Timer? _liveTick;
+
+  void _liveState(String room, {String? agent, String? caller, String? number}) {
+    if (room.isEmpty) return;
+    final old = liveCalls[room];
+    final n = number?.isNotEmpty == true ? number! : old?.number ?? RegExp(r'_(\+?\d{6,})_').firstMatch(room)?.group(1) ?? '';
+    liveCalls[room] = (agent: agent ?? old?.agent ?? 'listening', caller: caller ?? old?.caller ?? 'listening', number: n, name: old?.name ?? '', at: DateTime.now());
+    // Calls that went quiet without saying they ended (e.g. test calls) drop off after two minutes.
+    liveCalls.removeWhere((_, v) => DateTime.now().difference(v.at) > const Duration(minutes: 2));
+    _liveTick ??= Timer(const Duration(milliseconds: 300), () {
+      _liveTick = null;
+      notifyListeners();
+    });
+  }
+
+  /// Recording calls (both sides, kept on this computer). Callers are told at the start.
+  bool recordCalls = false;
+
+  Future<void> setRecordCalls(bool on) async {
+    recordCalls = on;
+    await db.setSetting('calls.record', on ? '1' : '0');
+    await log(on ? 'Turned call recording on' : 'Turned call recording off');
+    notifyListeners();
+  }
+
+  static const _recordedNote = {'en': 'This call may be recorded.', 'es': 'Esta llamada puede ser grabada.', 'fr': 'Cet appel peut être enregistré.', 'de': 'Dieses Gespräch kann aufgezeichnet werden.',
+    'it': 'Questa chiamata potrebbe essere registrata.', 'fa': 'این تماس ممکن است ضبط شود.', 'ar': 'قد يتم تسجيل هذه المكالمة.', 'tr': 'Bu görüşme kaydedilebilir.', 'pl': 'Ta rozmowa może być nagrywana.'};
+
   /// Calls (rooms) on which a booking/order was already saved or cancelled.
   final _savedOn = <String>{};
   final _dayDoubted = <String>{};
@@ -1504,7 +1550,13 @@ class AppState extends ChangeNotifier {
 
   /// Runs test scenarios against your own apps (making any it needs, e.g. the barber shop) and your
   /// own assistant; each one is checked on that app's website. Results: Calls → Tests.
-  Future<void> runScenarios(ScenarioPick pick, {String? app}) async {
+  /// The runners going now (several at once when calls run in parallel).
+  final scenarioRuns = <ScenarioRunner>[];
+
+  /// Runs test scenarios against your own apps (making any it needs, e.g. the barber shop) and your
+  /// own assistant; each one is checked on that app's website. Results: Calls → Tests. With [parallel]
+  /// above 1, that many calls go on at the same time, each for a different business.
+  Future<void> runScenarios(ScenarioPick pick, {String? app, int parallel = 1}) async {
     if (scenarioRun != null) return;
     if (!llmReady) throw StateError('Set up the AI first (Settings).');
     if (host?.running != true) throw StateError('The call service isn\'t running.');
@@ -1520,23 +1572,36 @@ class AppState extends ChangeNotifier {
     };
     final list = [for (final sc in pickScenarios(all, pick, app: app)) if (!passedBefore.contains(sc['id'])) sc];
     final out = File(p.join(dir.path, 'app-${DateTime.now().toIso8601String().substring(0, 19).replaceAll(':', '-')}.jsonl'));
-    final r = scenarioRun = ScenarioRunner(this)
-      ..liveFile = File(p.join(dir.path, 'live.json'))
-      ..testNumbers = {for (final m in RegExp(r'\b0\d{4} ?\d{3} ?\d{3}\b').allMatches(jsonEncode(all))) m[0]!.replaceAll(' ', '').substring(2)}
-      ..testNames = {for (final s in all) if ((s['caller'] as Map?)?['name'] != null) '${(s['caller'] as Map)['name']}'.toLowerCase()};
-    await log('Started ${list.length} test scenarios');
+    // Each runner gets its own businesses (no two calls book the same chairs at once).
+    final apps = <String>{for (final sc in list) '${sc['app']}'}.toList();
+    final workers = parallel.clamp(1, apps.isEmpty ? 1 : apps.length);
+    final groups = [for (var i = 0; i < workers; i++) [for (final sc in list) if (apps.indexOf('${sc['app']}') % workers == i) sc]];
+    final numbers = {for (final m in RegExp(r'\b0\d{4} ?\d{3} ?\d{3}\b').allMatches(jsonEncode(all))) m[0]!.replaceAll(' ', '').substring(2)};
+    final names = {for (final s in all) if ((s['caller'] as Map?)?['name'] != null) '${(s['caller'] as Map)['name']}'.toLowerCase()};
+    scenarioRuns
+      ..clear()
+      ..addAll([
+        for (var i = 0; i < workers; i++)
+          ScenarioRunner(this)
+            ..liveFile = File(p.join(dir.path, workers == 1 ? 'live.json' : 'live-${i + 1}.json'))
+            ..testNumbers = numbers
+            ..testNames = names,
+      ]);
+    scenarioRun = scenarioRuns.first;
+    await log('Started ${list.length} test scenarios${workers > 1 ? ', $workers calls at the same time' : ''}');
     var passed = 0, n = 0;
     notifyListeners();
-    try {
-      for (final sc in list) {
+    Future<void> work(int w) async {
+      final r = scenarioRuns[w];
+      for (final sc in groups[w]) {
         if (r.stopRequested) break;
         n++;
-        scenarioStatus = 'Scenario $n of ${list.length}: ${sc['app']} · ${'${sc['intent']}'.replaceAll('_', ' ')}';
+        scenarioStatus = '${workers > 1 ? '$workers calls at once · ' : ''}scenario $n of ${list.length}: ${sc['app']} · ${'${sc['intent']}'.replaceAll('_', ' ')}';
         notifyListeners();
         r.live.clear();
         r.showLive({
           'id': sc['id'], 'app': sc['app'], 'intent': sc['intent'], 'setup': 'your assistant', 'style': sc['style'], 'goal': sc['goal'] ?? '',
-          'done': n - 1, 'total': list.length, 'passed': passed, 'turns': [], 'tools': [],
+          'done': n - 1, 'total': list.length, 'passed': passed, 'turns': [], 'tools': [], 'line': w + 1, 'lines': workers,
         });
         final t0 = DateTime.now();
         Map<String, Object?> res;
@@ -1545,15 +1610,23 @@ class AppState extends ChangeNotifier {
         } catch (e) {
           res = {'pass': false, 'failures': ['could not run: $e']};
         }
-        res = {'id': sc['id'], 'n': sc['n'], 'app': sc['app'], 'intent': sc['intent'], 'setup': 'your assistant', 'style': sc['style'], ...res, 'seconds': DateTime.now().difference(t0).inSeconds};
+        res = {'id': sc['id'], 'n': sc['n'], 'app': sc['app'], 'intent': sc['intent'], 'setup': 'your assistant', 'style': sc['style'], ...res,
+          'seconds': DateTime.now().difference(t0).inSeconds, if (workers > 1) 'parallel': workers};
         if (res['pass'] == true) passed++;
         out.writeAsStringSync('${jsonEncode(res)}\n', mode: FileMode.append, flush: true);
       }
+    }
+
+    try {
+      await Future.wait([for (var w = 0; w < workers; w++) work(w)]);
     } finally {
-      await r.close();
-      try {
-        File(p.join(dir.path, 'live.json')).deleteSync();
-      } catch (_) {}
+      for (final r in scenarioRuns) {
+        await r.close();
+        try {
+          r.liveFile?.deleteSync();
+        } catch (_) {}
+      }
+      scenarioRuns.clear();
       scenarioRun = null;
       scenarioStatus = 'Last run: $passed of $n passed';
       await log('Test scenarios finished: $passed of $n passed');
@@ -1562,7 +1635,9 @@ class AppState extends ChangeNotifier {
   }
 
   void stopScenarios() {
-    scenarioRun?.stopRequested = true;
+    for (final r in scenarioRuns) {
+      r.stopRequested = true;
+    }
     scenarioStatus = 'Stopping after this call…';
     notifyListeners();
   }
@@ -1805,7 +1880,7 @@ class AppState extends ChangeNotifier {
     }
     // Asked "shall I book it?", or said "I'll enrol you for that." and they said yes.
     if (!_proposal.hasMatch(offer) && !_promisedAction.hasMatch(offer)) return null;
-    final tools = await builtAppTools(scopes);
+    final tools = await builtAppTools(scopes, number: callerNumber);
     final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
     if (RegExp(r'\bcancel', caseSensitive: false).hasMatch(offer)) {
       if (callerNumber == null) return null;
@@ -1877,11 +1952,11 @@ class AppState extends ChangeNotifier {
   static final _confirmed = RegExp(r'\b(confirmed|saved|booked|placed|reserved|signed (you |them |him |her )?up|enrolled|registered|all set|passed (it )?on|i.ll (let them know|pass that on|make sure they get))\b', caseSensitive: false);
 
   /// An agent said an order/booking/message is done without saving it: read it from the call and save it.
-  Future<void> _autoSave(Set<String> abilities, List<ChatMessage> convo, String agentName) async {
+  Future<void> _autoSave(Set<String> abilities, List<ChatMessage> convo, String agentName, {String? number}) async {
     final last = convo.last.content;
     if (abilities.isEmpty || !_confirmed.hasMatch(last) || !llmReady) return;
     // A business with its own app: its bookings and orders are saved there (not here), and a message only when they left one.
-    if ((await builtAppTools({'all'})).isNotEmpty && !_forManager(const {}, convo)) return;
+    if ((await builtAppTools({'all'}, number: number)).isNotEmpty && !_forManager(const {}, convo)) return;
     // Orders and bookings only when the caller asked for a new one (not "is mine confirmed?", not cancelling).
     if (!abilities.contains('message') && !_askedForNew(convo)) return;
     final newThing = _askedForNew(convo);
@@ -1896,7 +1971,7 @@ class AppState extends ChangeNotifier {
       _ => 'name, phone, message, urgent (true/false)',
     };
     // The business's own app takes it if it can (it shows on its website and manager page).
-    final appTool = kind == 'message' ? null : _appToolFor(await builtAppTools({'all'}), kind);
+    final appTool = kind == 'message' ? null : _appToolFor(await builtAppTools({'all'}, number: number), kind);
     if (appTool != null) {
       try {
         final props = (appTool.tool.inputSchema['properties'] as Map?) ?? {};
@@ -2074,8 +2149,8 @@ class AppState extends ChangeNotifier {
   /// A call turn's system prompt: the same text on every turn, the warm-up and the hand-over, so it stays cached.
   Future<String> _callSystem(String mode, String lang, ({Map<String, Object?> agent, String team, String brief, List<Map<String, Object?>> others})? flow, Set<String> scopes,
           String? callerNumber) async =>
-      '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(await _uncovered(abilitiesOf(flow?.agent), scopes))}'
-      '${await builtAppRules(abilitiesOf(flow?.agent), scopes, call: mode != 'owner')}'
+      '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(await _uncovered(abilitiesOf(flow?.agent), scopes, number: callerNumber))}'
+      '${await builtAppRules(abilitiesOf(flow?.agent), scopes, call: mode != 'owner', number: callerNumber)}'
       '${calendar()}'
       '${callerNumber == null ? '' : ' The number of the person on this call is $callerNumber (use it only if they don\'t say another number).'}';
 
@@ -2195,8 +2270,8 @@ class AppState extends ChangeNotifier {
   }
 
   /// Abilities the business's app doesn't cover: when its add_ tool saves bookings/orders, "book"/"place_order" aren't offered, so don't describe them.
-  Future<Set<String>> _uncovered(Set<String> abilities, Set<String> scopes) async {
-    final appTools = await builtAppTools(scopes);
+  Future<Set<String>> _uncovered(Set<String> abilities, Set<String> scopes, {String? number}) async {
+    final appTools = await builtAppTools(scopes, number: number);
     return abilities.where((a) => !_appCovers(appTools, a)).toSet();
   }
 
@@ -2392,7 +2467,10 @@ class AppState extends ChangeNotifier {
         unawaited(prewarm([ChatMessage('system', await _voiceSystem(m, l))], scopes: _voiceScopes(m), target: voiceTarget(l), useTools: false).catchError((_) {}));
       }
       final task = await _taskOf(m);
-      return json(200, {'greeting': task != null ? await _openingLine(task, '${agent?['name'] ?? 'Ava'}') : Persona.greeting(agent), 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _vocabulary(), 'agentVoice': agent?['voice']});
+      // Recorded calls say so at the start (phone calls only).
+      final recorded = recordCalls && callRoom.startsWith('pstn');
+      final hello = task != null ? await _openingLine(task, '${agent?['name'] ?? 'Ava'}') : Persona.greeting(agent);
+      return json(200, {'record': recorded, 'greeting': recorded ? '$hello ${_recordedNote[l] ?? _recordedNote['en']!}' : hello, 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _vocabulary(), 'agentVoice': agent?['voice']});
     }
     if (path == '/api/connect') {
       return json(200, await _connectHuman(req.uri.queryParameters['room'] ?? ''));
@@ -2409,6 +2487,12 @@ class AppState extends ChangeNotifier {
       _activeCalls[room] = DateTime.now();
       notifyListeners();
       return json(200, {'ok': true, 'busy': _activeCalls.length, 'max': max});
+    }
+    if (path == '/api/call-state') {
+      // The voice engine: who is speaking on a call right now.
+      final b = jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>;
+      _liveState('${b['room'] ?? ''}', agent: '${b['agent'] ?? ''}', caller: '${b['caller'] ?? ''}', number: '${b['number'] ?? ''}');
+      return json(200, {'ok': true});
     }
     if (path == '/api/call-ended') {
       unawaited(_callEnded(jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>));
@@ -2466,6 +2550,8 @@ class AppState extends ChangeNotifier {
             ? ChatMessage('user', '${m.content}\n\n(System note:${noRepeat(lastSaid)}${dayNote(m.content)}$stay$own)')
             : m.role == 'assistant' ? ChatMessage('assistant', m.content.replaceFirst(_fillerStart, '')) : m,
     ];
+    // Live: this call's assistant is working on an answer (the voice engine also says when it speaks).
+    if (room.isNotEmpty && mode != 'owner') _liveState(room, agent: 'thinking', caller: 'listening', number: callerNumber);
     ({String name, String brief})? passTo;
     var saved = false, usedTool = false, refused = false, asking = false;
     // Where the time of this turn went (kept in voice-turns.jsonl): ms per stage.
@@ -2605,7 +2691,7 @@ class AppState extends ChangeNotifier {
       // model with their words (small models ask for the number, or guess the details, instead).
       if (routed == null && yesTool == null && mode != 'owner' && callerNumber != null && !gone &&
           convo.any((m) => m.role == 'user' && _aboutMine.hasMatch(callerWords(m.content))) && !_askedForNew(convo)) {
-        final finds = (await builtAppTools(scopes)).where((t) => t.tool.name.startsWith('find_my_')).toList();
+        final finds = (await builtAppTools(scopes, number: callerNumber)).where((t) => t.tool.name.startsWith('find_my_')).toList();
         final order = RegExp(r'\border', caseSensitive: false).hasMatch(convo.where((m) => m.role == 'user').map((m) => m.content).join(' '));
         final find = finds.where((t) => t.tool.name.contains('order') == order).firstOrNull ?? finds.firstOrNull;
         if (find != null) {
@@ -2764,7 +2850,7 @@ class AppState extends ChangeNotifier {
         final c = gone ? null : await commitClaimed(convo, sent, scopes, callerNumber: callerNumber).catchError((_) => null);
         if (c == null) {
           // Not while asking them something (e.g. the name the app needs first): judged on what was said, not the draft.
-          if (flow != null && !_waitsForCaller.hasMatch(sent.trim())) unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', sent)], '${flow.agent['name']}'));
+          if (flow != null && !_waitsForCaller.hasMatch(sent.trim())) unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', sent)], '${flow.agent['name']}', number: callerNumber));
         } else if (!c.ok && !gone) {
           final fix = ' ${_problemForCaller(c.text)}';
           chunk({'content': fix});
@@ -2846,6 +2932,7 @@ class AppState extends ChangeNotifier {
     slow.cancel();
     mark('hand_over');
     _logVoiceTurn(mode, lang, question, '${ack == null ? '' : '[${(ackAt ?? 0)} ms] $ack'}$sent', t0, gone && !capped, stages: stages, room: room);
+    if (room.isNotEmpty && liveCalls[room]?.agent == 'thinking') _liveState(room, agent: 'listening');
     chunk({}, finish: 'stop');
     write('data: [DONE]\n\n');
     try {

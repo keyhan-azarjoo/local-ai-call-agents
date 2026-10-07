@@ -13,6 +13,7 @@ import 'package:localailine/services/apps/app_spec.dart';
 import 'package:localailine/services/apps/app_templates.dart';
 import 'package:localailine/services/apps/apps_manager.dart';
 import 'package:localailine/services/mcp/mcp_manager.dart';
+import 'package:localailine/state/app_state.dart';
 
 String ymd(DateTime d) => d.toIso8601String().substring(0, 10);
 final tomorrow = ymd(DateTime.now().add(const Duration(days: 1)));
@@ -291,6 +292,12 @@ void main() {
     for (final (said, want) in [('2026-10-10', '2026-10-10'), ('2026-10-10T19:00', '2026-10-10'), ('10/11/2026', '2026-11-10'), ('today', '2026-10-06'), ('tomorrow', '2026-10-07'), ('Saturday', '2026-10-10'), ('next Tuesday', '2026-10-13'), ('2026-02-30', null), ('someday', null)]) {
       expect(parseDate(said, now: now), want, reason: said);
     }
+  });
+
+  test('what the caller hears once it is saved', () {
+    expect(AppState.doneLine('Done. Added to reservations with id 9:\nid 9 · Name: Freya Moreau · Phone: 0772 · Date: Saturday 2026-10-10 · Time: 19:10 · Guests: 2 · Table: 1 · Status: Confirmed'),
+        'That’s all done: Saturday 10 October at 7:10 pm, guests 2, table 1.');
+    expect(AppState.doneLine('Cancelled. id 9 · Name: X'), 'That’s cancelled for you.');
   });
 
   test('the day a caller means', () {

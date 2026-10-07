@@ -402,6 +402,7 @@ class ToolLoop {
     int depth = 0,
     Set<String> knownIds = const {},
     List<ToolBinding> preferred = const [],
+    List<ToolBinding> always = const [],
     List<String>? sticky,
     bool warmOnly = false,
     void Function(ToolBinding)? onToolStart,
@@ -426,7 +427,10 @@ class ToolLoop {
           j == i ? ChatMessage('system', '${messages[j].content}\n\n$rules') : messages[j],
       ];
     }
-    String q(String c) => c.contains('\n\nQuestion: ') ? c.substring(c.lastIndexOf('\n\nQuestion: ') + 12) : c;
+    String q(String c) {
+      c = c.split('\n\n(System note').first; // notes from the app, not the person's words
+      return c.contains('\n\nQuestion: ') ? c.substring(c.lastIndexOf('\n\nQuestion: ') + 12) : c;
+    }
     final lastUser = q(messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content);
     final recent = messages.where((m) => m.role == 'user').toList().reversed.take(3).map((m) => q(m.content)).join(' ');
     // Tools matched by meaning (embeddings) first, then by words.
@@ -480,10 +484,14 @@ class ToolLoop {
         ..clear()
         ..addAll(mcpOffered.take(12).map((t) => t.fnName));
     }
+    // Tools that are always offered, first and in the same order every turn (e.g. the business's own
+    // app on a call): the model can always save, and keeps the prompt in memory between turns.
+    final pinned = [for (final t in always) if (tools.contains(t)) t];
     final offered = <ToolBinding>[
       if (builtins) calculator,
       ?finder,
-      ...mcpOffered.take(12),
+      ...pinned,
+      ...mcpOffered.where((t) => !pinned.contains(t)).take(pinned.isEmpty ? 12 : 4),
       if (tools.isNotEmpty && depth == 0 && looksMultiStep(lastUser)) ...[planTool, delegateTool],
     ];
     var plan = <Map<String, dynamic>>[];

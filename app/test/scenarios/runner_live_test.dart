@@ -309,7 +309,14 @@ class Harness {
       if (text.contains('[hangup]') && _farewell.hasMatch(text)) hungUp = true;
       text = text.replaceAll(RegExp(r'\s*\[(voice|connect):[^\]]*\]\s*'), ' ').replaceAll('[hangup]', '').trim();
       turns.add({'role': 'assistant', 'content': text});
-      times.add({'at': hms(asked), 'ms': ms, 'first_ms': firstMs ?? ms});
+      // Where the time went inside the app (its own log of this turn).
+      Map<String, Object?>? stages;
+      try {
+        final log = File('${File(s.db.path).parent.path}/voice-turns.jsonl');
+        final last = log.readAsLinesSync().reversed.map((l) => jsonDecode(l) as Map).firstWhere((e) => e['room'] == room, orElse: () => {});
+        stages = (last['stages'] as Map?)?.cast<String, Object?>();
+      } catch (_) {}
+      times.add({'at': hms(asked), 'ms': ms, 'first_ms': firstMs ?? ms, 'stages': ?stages});
       live();
       if (env['SCEN_DEBUG'] != null) print('  AI: $text');
       if (hungUp || passedTo.any((p) => p.startsWith('person#'))) break;

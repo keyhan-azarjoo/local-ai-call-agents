@@ -458,6 +458,7 @@ class AppState extends ChangeNotifier {
   static Future<({bool ok, String text})?> commitWith(ToolLoop loop, ModelTarget target, ToolBinding tool, List<ChatMessage> convo,
       Future<({String text, bool isError})> Function(Map<String, dynamic>) run, {String? callerNumber}) async {
     ({String text, bool isError})? result;
+    var tries = 0;
     final today = DateTime.now();
     await loop.run(
       target: target,
@@ -470,8 +471,13 @@ class AppState extends ChangeNotifier {
       ],
       tools: [tool],
       approve: (_, _) async => true,
-      runTool: (b, args) async => result ??= await run(args),
-    );
+      runTool: (b, args) async {
+        result = await run(args); // refused (e.g. a typo in an item)? the model may try again, once
+        // Saved: that's all we need — no sentence to wait for.
+        if (!result!.isError || ++tries >= 2) throw const Cancelled();
+        return result!;
+      },
+    ).catchError((Object e) => e is Cancelled ? '' : throw e);
     return result == null ? null : (ok: !result!.isError, text: result!.text);
   }
 
@@ -524,6 +530,7 @@ class AppState extends ChangeNotifier {
             '(the system also checks it is the number they are calling from), confirm which booking, then call the cancel_my_ tool; '
             'to change one (new time, day, people, items), call the change_my_ tool with only what changes — never make a second booking. If nothing is found, say you can\'t find a booking under this number. '
             'Never guess or assume details of someone\'s booking (time, table, people): look them up first.' : ''}'
+        ' Never say something is not offered, not on the menu or not available without looking it up first with the list_ tool (people say names loosely: "cut and beard" is "Cut & beard").'
         ' When you say you will check something, call the tool in that same reply — never just say "let me check".';
   }
 
@@ -579,8 +586,9 @@ class AppState extends ChangeNotifier {
     };
     String? notes;
     if (sources.isNotEmpty && users.isNotEmpty) {
-      var q = users.last.content;
-      if (q.length < 40 && users.length > 1) q = '${users[users.length - 2].content} $q';
+      String said(ChatMessage m) => m.content.split('\n\n(System note').first;
+      var q = said(users.last);
+      if (q.length < 40 && users.length > 1) q = '${said(users[users.length - 2])} $q';
       q = await searchableQuery(q, model: model);
       final r = await knowledge.search(q, sources: sources, k: 5);
       // Only passages that really match (scores below ~0.28 were unrelated in tests).
@@ -706,6 +714,7 @@ class AppState extends ChangeNotifier {
       target: target ?? modelTarget,
       builtins: useTools,
       preferred: preferred,
+      always: callerNumber != null ? appTools : const [],
       sticky: sticky,
       onToolStart: onToolStart,
       messages: messages,
@@ -914,6 +923,7 @@ class AppState extends ChangeNotifier {
     _activeCalls.remove(room);
     _onCall.remove(room);
     _lastCheck.remove('${b['number'] ?? ''}');
+    _savedOn.remove(room);
     final turns = [for (final t in (b['transcript'] as List? ?? []).cast<Map>()) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': '${t['text']}'}];
     final answered = turns.any((t) => t['who'] == 'them');
     final pickedUp = b['answered'] == true;
@@ -1297,6 +1307,9 @@ class AppState extends ChangeNotifier {
 
   /// The last day checked on each call (by caller number), to catch a booking saved on another day.
   final _lastCheck = <String, String>{};
+
+  /// Calls (rooms) on which a booking/order was already saved or cancelled.
+  final _savedOn = <String>{};
   final _dayDoubted = <String>{};
 
   /// The agents a call can be passed between: the one answering calls, and those set up for hand-offs.
@@ -1470,29 +1483,59 @@ class AppState extends ChangeNotifier {
       r"\b(book|reserve|confirm|proceed|place (the|your|this) order|go ahead|save (it|that)|shall i|should i|would you like me to|want me to|is (that|this|everything) (all )?(right|correct|ok))\b[^?]*\?",
       caseSensitive: false);
 
-  /// The assistant offered to save a booking/order and the caller said yes: save it with the app now.
-  Future<({bool ok, String text})?> _saveOnYes(List<ChatMessage> convo, Set<String> scopes, String? callerNumber) async {
+  /// The assistant offered to save (or cancel) a booking/order and the caller said yes: the app's tool for it.
+  Future<ToolBinding?> _yesTool(List<ChatMessage> convo, Set<String> scopes, String? callerNumber) async {
     if (convo.length < 2 || convo.last.role != 'user' || convo[convo.length - 2].role != 'assistant' || !llmReady) return null;
     final yes = convo.last.content.trim();
     if (!_yes.hasMatch(yes) || yes.length > 120 || RegExp(r"\b(no|not|but|change|instead|wait|actually|cancel)\b", caseSensitive: false).hasMatch(yes)) return null;
-    if (!_proposal.hasMatch(convo[convo.length - 2].content)) return null;
+    final offer = convo[convo.length - 2].content;
+    if (!_proposal.hasMatch(offer)) return null;
     final tools = await builtAppTools(scopes);
-    // "Shall I cancel it?" — "Yes": cancel their own booking (checked against the number they call from).
-    if (RegExp(r'\bcancel', caseSensitive: false).hasMatch(convo[convo.length - 2].content) && callerNumber != null) {
-      final said = [for (final m in convo.reversed.take(6)) m.content].join(' ');
+    final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
+    if (RegExp(r'\bcancel', caseSensitive: false).hasMatch(offer)) {
+      if (callerNumber == null) return null;
       final cancels = tools.where((t) => t.tool.name.startsWith('cancel_my_')).toList();
-      final cancel = cancels.where((t) => RegExp(r'order', caseSensitive: false).hasMatch(t.tool.name) == RegExp(r'\border', caseSensitive: false).hasMatch(said)).firstOrNull ?? cancels.firstOrNull;
-      if (cancel == null) return null;
-      final r = await mcp.call(cancel.serverId, cancel.tool.name, {'phone': callerNumber});
-      return (ok: !r.isError, text: r.text);
+      return cancels.where((t) => RegExp(r'order', caseSensitive: false).hasMatch(t.tool.name) == RegExp(r'\border', caseSensitive: false).hasMatch(said)).firstOrNull ?? cancels.firstOrNull;
     }
     if (!_askedForNew(convo)) return null;
-    final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
-    final tool = RegExp(r'\border', caseSensitive: false).hasMatch(said) && !RegExp(r'\b(table for|book a table|reservation)\b', caseSensitive: false).hasMatch(said)
+    return RegExp(r'\border', caseSensitive: false).hasMatch(said) && !RegExp(r'\b(table for|book a table|reservation)\b', caseSensitive: false).hasMatch(said)
         ? _appToolFor(tools, 'order') ?? _appToolFor(tools, 'booking')
         : _appToolFor(tools, 'booking') ?? _appToolFor(tools, 'order');
-    if (tool == null) return null;
+  }
+
+  /// Does what the caller agreed to with [tool]: a cancel by their own number, or the booking/order from the call.
+  Future<({bool ok, String text})?> _runYes(ToolBinding tool, List<ChatMessage> convo, String? callerNumber) async {
+    if (tool.tool.name.startsWith('cancel_my_')) {
+      final r = await mcp.call(tool.serverId, tool.tool.name, {'phone': callerNumber});
+      return (ok: !r.isError, text: r.text);
+    }
     return commitWith(toolLoop, modelTarget, tool, convo, (args) => mcp.call(tool.serverId, tool.tool.name, args), callerNumber: callerNumber);
+  }
+
+  /// "Done. Added to reservations with id 9: id 9 · Name: … · Date: Saturday 2026-10-10 · Time: 19:10 · Guests: 2"
+  /// → "That's all done: Saturday 10 October at 7:10 pm, guests 2."
+  static String doneLine(String result) {
+    if (result.startsWith('Cancelled')) return 'That’s cancelled for you.';
+    final record = result.split('\n').skip(1).join(' ');
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    final parts = <String>[];
+    for (final kv in record.split(' · ')) {
+      final i = kv.indexOf(': ');
+      if (i < 0) continue;
+      final k = kv.substring(0, i).trim(), v = kv.substring(i + 2).trim();
+      if (RegExp(r'^(id|name|your name|phone|email|status|notes?|patient name|student name)$', caseSensitive: false).hasMatch(k) || v.isEmpty) continue;
+      final d = RegExp(r'^(\w+day) (\d{4})-(\d{2})-(\d{2})').firstMatch(v);
+      final t = RegExp(r'^(\d{2}):(\d{2})$').firstMatch(v);
+      if (d != null) {
+        parts.add('${d[1]} ${int.parse(d[4]!)} ${months[int.parse(d[3]!) - 1]}');
+      } else if (t != null) {
+        final h = int.parse(t[1]!), m = int.parse(t[2]!);
+        parts.add('at ${h % 12 == 0 ? 12 : h % 12}${m == 0 ? '' : ':${t[2]}'} ${h < 12 ? 'am' : 'pm'}');
+      } else {
+        parts.add('${k.toLowerCase().replaceFirst('your ', '')} $v');
+      }
+    }
+    return parts.isEmpty ? 'That’s all done.' : 'That’s all done: ${parts.join(', ').replaceAll(', at ', ' at ')}.';
   }
 
   /// The caller asked for a new booking/order in this call (not about an existing one, not cancelling).
@@ -2039,12 +2082,22 @@ class AppState extends ChangeNotifier {
           '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(abilitiesOf(flow?.agent))}'
           '${await builtAppRules(abilitiesOf(flow?.agent), scopes, call: mode != 'owner')}'
           '${calendar()}'
-          '${callerNumber == null ? '' : ' The number of the person on this call is $callerNumber.'}'
-          '${noRepeat(lastSaid)}'),
-      ...convo,
+          '${callerNumber == null ? '' : ' The number of the person on this call is $callerNumber.'}'),
+      // What changes every turn goes with the caller's words, so the long system prompt stays cached.
+      for (final (i, m) in convo.indexed)
+        i == convo.length - 1 && m.role == 'user' && noRepeat(lastSaid).isNotEmpty ? ChatMessage('user', '${m.content}\n\n(System note:${noRepeat(lastSaid)})') : m,
     ];
     ({String name, String brief})? passTo;
     var saved = false, usedTool = false;
+    // Where the time of this turn went (kept in voice-turns.jsonl): ms per stage.
+    final stages = <String, int>{};
+    final clock = Stopwatch()..start();
+    var lastMark = 0;
+    void mark(String stage) {
+      stages[stage] = (stages[stage] ?? 0) + clock.elapsedMilliseconds - lastMark;
+      lastMark = clock.elapsedMilliseconds;
+    }
+
     // A drafted call ("CALL_TASK {…}") is saved for review, never read aloud.
     Future<void> saveTask(String t) async {
       final m = RegExp(r'CALL_TASK\s*(\{.*\})').firstMatch(t);
@@ -2142,7 +2195,9 @@ class AppState extends ChangeNotifier {
     try {
       // Route by meaning: when the caller clearly wants a teammate's job, pass the call at once
       // (the agent's own judgement still works for anything less clear).
+      mark('start');
       final routed = await _routeByMeaning(flow, question, convo);
+      mark('route');
       final multilingual = voiceTarget(lang);
       final live = routed == null && multilingual is LocalTarget && mode == 'owner' && await _needsLiveTools(question, scopes);
       if (routed != null) {
@@ -2151,17 +2206,16 @@ class AppState extends ChangeNotifier {
         chunk({'content': line});
         sent = line;
       }
-      // The caller just said yes to saving it; small models often ask again instead of saving: save it now.
-      if (routed == null && mode != 'owner' && !gone) {
-        final pre = await _saveOnYes(convo, scopes, callerNumber).catchError((_) => null);
-        if (pre != null) {
-          if (pre.ok) saved = true;
-          final last = messages.removeLast();
-          messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: ${pre.ok
-              ? 'the caller said yes and it is now SAVED: ${pre.text.split('\n').take(3).join(' ')} Tell them in one or two short sentences that it is done (the day and time, or what was ordered and the total). Do not ask to confirm again and do not save it again.'
-              : 'you tried to save it, but the system said: ${pre.text.split('\n').first} Tell the caller and ask for what is missing, or offer what is free.'})'));
-        }
+      // The caller just said yes to saving it; small models often ask again instead of saving: tell it
+      // to save now, in this same reply (no extra model call). If it still doesn't, it's saved after.
+      final yesTool = routed == null && mode != 'owner' && !gone ? await _yesTool(convo, scopes, callerNumber).catchError((_) => null) : null;
+      if (yesTool != null) {
+        final last = messages.removeLast();
+        messages.add(ChatMessage(last.role,
+            '${last.content}\n\n(System note: the caller just agreed. In this reply call ${yesTool.fnName} now with the details agreed, then tell them in one short sentence that it is done. '
+            'If the system answers with a problem, tell them and offer what is free. Do not ask them to confirm again.)'));
       }
+      mark('save_on_yes');
       final full = routed != null ? sent : await agentReply(
         messages,
         target: live ? null : multilingual,
@@ -2206,6 +2260,7 @@ class AppState extends ChangeNotifier {
         },
       );
       // "Let me check…" and nothing checked: check now and say the answer in the same turn.
+      mark('reply');
       if (routed == null && !gone && unfinished(full, usedTool: usedTool, acted: saved) && (live || multilingual is! LocalTarget)) {
         var more = '';
         var skip = -1;
@@ -2243,10 +2298,23 @@ class AppState extends ChangeNotifier {
         );
         if (more.isNotEmpty) sent += ' $more';
       }
+      mark('follow_up');
+      // Agreed but still not saved: save it now (cancel by their number, or the agreed booking/order).
+      if (yesTool != null && !saved && !gone) {
+        final pre = await _runYes(yesTool, convo, callerNumber).catchError((_) => null);
+        if (pre != null) {
+          if (pre.ok) saved = true;
+          final line = ' ${pre.ok ? doneLine(pre.text) : _problemForCaller(pre.text)}';
+          chunk({'content': line});
+          sent += line;
+        }
+        mark('save_on_yes');
+      }
       await saveTask(full);
       // Said it's done but didn't save it (small models do that): save it now, into the business's
       // app if it has one; if that fails (e.g. the table is taken), say so straight away.
-      if (!saved && mode != 'owner' && passTo == null) {
+      // (Not when this call already saved something: "your table is booked, see you!" again is no new booking.)
+      if (!saved && mode != 'owner' && passTo == null && !_savedOn.contains(room)) {
         final c = gone ? null : await commitClaimed(convo, sent, scopes, callerNumber: callerNumber).catchError((_) => null);
         if (c == null) {
           if (flow != null) unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', full)], '${flow.agent['name']}'));
@@ -2255,10 +2323,13 @@ class AppState extends ChangeNotifier {
           chunk({'content': fix});
           sent += fix;
         } else {
+          saved = true;
           await log('Saved what ${flow?.agent['name'] ?? 'Ava'} agreed on a call');
         }
       }
       // The call goes to a teammate: they pick up straight away, in their own voice.
+      mark('safety_net');
+      if (saved && room.isNotEmpty) _savedOn.add(room);
       final target = passTo == null ? null : (await callTeam()).where((a) => '${a['name']}'.toLowerCase() == passTo!.name.toLowerCase()).firstOrNull;
       if (target != null && target['handles'] == 'human' && flow != null && !gone) {
         // A real person: the voice agent puts the caller on hold and rings them (see /api/connect).
@@ -2303,7 +2374,7 @@ class AppState extends ChangeNotifier {
       if (!capped) {
         ping.cancel();
         slow.cancel();
-        _logVoiceTurn(mode, lang, question, '${ack ?? ''}$sent', t0, true);
+        _logVoiceTurn(mode, lang, question, '${ack ?? ''}$sent', t0, true, stages: stages);
         sock.destroy();
         return;
       }
@@ -2313,7 +2384,8 @@ class AppState extends ChangeNotifier {
     }
     ping.cancel();
     slow.cancel();
-    _logVoiceTurn(mode, lang, question, '${ack == null ? '' : '[${(ackAt ?? 0)} ms] $ack'}$sent', t0, gone && !capped);
+    mark('hand_over');
+    _logVoiceTurn(mode, lang, question, '${ack == null ? '' : '[${(ackAt ?? 0)} ms] $ack'}$sent', t0, gone && !capped, stages: stages, room: room);
     chunk({}, finish: 'stop');
     write('data: [DONE]\n\n');
     try {
@@ -2323,10 +2395,10 @@ class AppState extends ChangeNotifier {
   }
 
   /// Every live voice turn, for checking how the assistant did (kept on this computer).
-  void _logVoiceTurn(String mode, String lang, String heard, String said, DateTime t0, bool dropped) {
+  void _logVoiceTurn(String mode, String lang, String heard, String said, DateTime t0, bool dropped, {Map<String, int>? stages, String? room}) {
     try {
       File(p.join(p.dirname(db.path), 'voice-turns.jsonl')).writeAsStringSync(
-          '${jsonEncode({'at': t0.toIso8601String(), 'mode': mode, 'lang': lang, 'heard': heard, 'said': said, 'ms': DateTime.now().difference(t0).inMilliseconds, if (dropped) 'dropped': true})}\n',
+          '${jsonEncode({'at': t0.toIso8601String(), 'mode': mode, 'lang': lang, 'heard': heard, 'said': said, 'ms': DateTime.now().difference(t0).inMilliseconds, if (dropped) 'dropped': true, 'room': ?room, if (stages != null) 'stages': {for (final e in stages.entries) if (e.value > 0) e.key: e.value}})}\n',
           mode: FileMode.append);
     } catch (_) {}
   }

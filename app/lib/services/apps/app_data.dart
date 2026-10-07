@@ -489,7 +489,7 @@ class AppData {
 
   /// What this phone number saved by phone in the last [minutes] (not cancelled): a second save
   /// in the same call is a correction of the first. For bookings, only one on the same day.
-  Future<int?> recentByPhone(TableSpec t, String phone, {String? date, String? name, int minutes = 20}) async {
+  Future<int?> recentByPhone(TableSpec t, String phone, {String? date, String? name, int minutes = 20, int? since}) async {
     final phoneF = t.fields.where((f) => f.type == 'phone').firstOrNull;
     String last9(Object? x) {
       final d = '${x ?? ''}'.replaceAll(RegExp(r'\D'), '');
@@ -497,8 +497,10 @@ class AppData {
     }
     if (phoneF == null || (last9(phone).length < 9 && name == null)) return null;
     final shape = BookingShape.of(spec, t);
-    final since = DateTime.now().subtract(Duration(minutes: minutes)).millisecondsSinceEpoch;
-    final rows = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND created_at > ?', whereArgs: [appId, t.id, since], orderBy: 'id DESC');
+    // Within this call only (when known): a caller ringing back later makes a new booking.
+    final window = DateTime.now().subtract(Duration(minutes: minutes)).millisecondsSinceEpoch;
+    final from = since != null && since > window ? since - 1000 : window;
+    final rows = await db.raw.query('app_rows', where: 'app_id = ? AND tbl = ? AND created_at > ?', whereArgs: [appId, t.id, from], orderBy: 'id DESC');
     for (final r in rows) {
       final d = (jsonDecode(r['data'] as String) as Map).cast<String, Object?>();
       // The same number, or (a caller who gave another number part-way) the same name within a few minutes.

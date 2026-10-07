@@ -313,9 +313,24 @@ void main() {
     expect(await data('barber', b).namedResource(bshape, 'A skin fade with Jay, not Tony'), 'Jay');
     // The phone tool keeps it even when the AI leaves it out.
     final r = await tool('clinic', 'add_appointments', {'name': 'Ana Lima', 'phone': '07700 900950', 'treatment': 'Check-up & clean', 'date': ymd(DateTime.now().add(const Duration(days: 33))), 'time': '10:00',
-      '_heard': ['Hi, a check-up please', 'With Dr Khalil if he is free']});
+      '_heard': ['Hi, this is Ana Lima, a check-up please', 'With Dr Khalil if he is free']});
     expect(r.error, false, reason: r.text);
     expect(r.text, contains('Omar Khalil'));
+  });
+
+  test('a name the caller never said is refused; a spelt or near one is fine', () async {
+    final date = ymd(DateTime.now().add(const Duration(days: 44)));
+    Future<({bool error, String text})> add(String name, List<String> heard, String phone) =>
+        tool('restaurant', 'add_reservations', {'name': name, 'phone': phone, 'date': date, 'time': '13:00', 'guests': 2, '_heard': heard});
+    expect((await add('Birthday Group', ['A table for two please', 'yes'], '07700 701001')).error, true);
+    expect((await add('Siobhan Nguyen', ['It is S-I-O-B-H-A-N, N-G-U-Y-E-N'], '07700 701002')).error, false);
+    expect((await add('Keyhan Azarjoo', ['my name is Kehan Azarjo'], '07700 701003')).error, false, reason: 'speech-to-text spelling');
+    expect((await add('Dana Lee', ['Dana Lee, two people at 1pm'], '07700 701004')).error, false);
+  });
+
+  test('a made-up table is left out, the best free one given', () async {
+    final r = await tool('restaurant', 'add_reservations', {'name': 'Ola Berg', 'phone': '07700 701010', 'date': ymd(DateTime.now().add(const Duration(days: 45))), 'time': '13:00', 'guests': 2, 'table': 'inside'});
+    expect(r.error, false, reason: r.text);
   });
 
   test('the day a caller means', () {

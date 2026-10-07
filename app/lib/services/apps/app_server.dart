@@ -488,7 +488,8 @@ class AppServer {
     if (tool == null) throw AppDataError('Unknown tool $name.');
     // The caller's own words in the call (sent by the phone side), newest last: who they asked for is kept.
     final heard = [for (final x in (args['_heard'] as List? ?? const [])) '$x'];
-    if (args.containsKey('_heard')) args = {...args}..remove('_heard');
+    final since = (args['_since'] as num?)?.toInt(); // when this call started
+    if (args.containsKey('_heard') || args.containsKey('_since')) args = {...args}..remove('_heard')..remove('_since');
     if (RegExp(r'^(find|cancel|change)_my_').hasMatch(name)) {
       if (name.startsWith('change_my_')) args = await _keepNamed(spec.table(name.substring(10))!, args, heard);
       return _mine(name, args);
@@ -543,6 +544,32 @@ class AppServer {
             final v = '${args[f.id] ?? ''}'.trim();
             if (v.isNotEmpty && _placeholder.hasMatch(v)) throw AppDataError('Ask the caller for their ${f.label.toLowerCase().replaceFirst('your ', '')} first ("$v" is not a name), then save it.');
           }
+          // A name the caller never said ("Birthday Group", the owner's name): ask for it. (Spelt out letters count;
+          // so does a near spelling, as speech-to-text writes names loosely.)
+          if (heard.isNotEmpty) {
+            final said = plain(heard.join(' '));
+            final letters = said.replaceAll(RegExp(r'[^a-z]'), '');
+            final words = said.split(RegExp(r'[^a-z]+')).where((w) => w.length >= 3).toSet();
+            bool near(String a, String b) {
+              if ((a.length - b.length).abs() > 2) return false;
+              var prev = List<int>.generate(b.length + 1, (i) => i);
+              for (var i = 1; i <= a.length; i++) {
+                final cur = [i, ...List<int>.filled(b.length, 0)];
+                for (var j = 1; j <= b.length; j++) {
+                  cur[j] = [prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1)].reduce((x, y) => x < y ? x : y);
+                }
+                prev = cur;
+              }
+              return prev[b.length] <= (a.length > 5 ? 2 : 1);
+            }
+
+            for (final f in t.fields.where((f) => f.type == 'text' && RegExp(r'^(name|student|patient)$|your name|patient name|student name', caseSensitive: false).hasMatch('${f.id}|${f.label}'.split('|').first == 'name' ? 'name' : f.label))) {
+              final parts = plain('${args[f.id] ?? ''}').split(RegExp(r'[^a-z]+')).where((w) => w.length >= 3).toList();
+              if (parts.isNotEmpty && !parts.any((p) => words.contains(p) || letters.contains(p) || words.any((w) => near(w, p)))) {
+                throw AppDataError('Ask the caller for their ${f.label.toLowerCase().replaceFirst('your ', '')} first ("${args[f.id]}" was never said), then save it.');
+              }
+            }
+          }
           // A phone number without its digits ("Lily"), or "unknown" for something required: ask for it.
           for (final f in t.fields.where((f) => !f.managerOnly)) {
             final v = '${args[f.id] ?? ''}'.trim();
@@ -561,7 +588,7 @@ class AppServer {
           final two = heard.any((h) => RegExp(r'\b(also|another|second|both)\b[^.?!]{0,40}\b(book|table|appointment|reservation|order|room|stay)|\btwo (tables|bookings|appointments|orders)\b', caseSensitive: false).hasMatch(h));
           final shape = BookingShape.of(spec, t);
           final prev = await data.recentByPhone(t, '${args[t.fields.where((f) => f.type == 'phone').firstOrNull?.id] ?? ''}',
-              date: shape == null ? null : parseDate('${args[shape.dateField.id] ?? ''}'), name: '${args[t.labelField] ?? ''}');
+              date: shape == null ? null : parseDate('${args[shape.dateField.id] ?? ''}'), name: '${args[t.labelField] ?? ''}', since: since);
           if (prev != null && !two) {
             await data.change(t.id, prev, args);
             return 'Done. Updated the one saved earlier in this call (not a second one):\n${await data.describe(t.id, [(await data.get(t.id, prev, manager: false))!])}';
@@ -571,7 +598,12 @@ class AppServer {
         data.swapped = null;
         final int id;
         try {
-          id = await data.add(t.id, args, manager: manager, via: 'phone');
+          id = await data.add(t.id, args, manager: manager, via: 'phone').catchError((Object e) async {
+            // A table/stylist that isn't one ("inside"): it may be left out (the best free one is given).
+            final res = BookingShape.of(spec, t)?.resourceField;
+            if (manager || res == null || e is! AppDataError || !e.message.startsWith('${res.label}: "')) throw e;
+            return data.add(t.id, {...args}..remove(res.id), manager: manager, via: 'phone');
+          });
         } finally {
           data.autoSwap = false;
         }

@@ -284,6 +284,9 @@ class ScenarioRunner {
   /// Numbers the scenarios' callers say (their bookings are test ones too).
   Set<String> testNumbers = const {};
 
+  /// The scenarios' callers' names (a misspoken number still makes it a test booking).
+  Set<String> testNames = const {};
+
   /// This scenario's own seeds (e.g. "The Loft is taken"): never cancelled to make room.
   final _keep = <Object?>{};
 
@@ -300,7 +303,8 @@ class ScenarioRunner {
     final ours = {for (final n in numbers.values) _digits(n)};
     bool test(Map<String, Object?> r) {
       final p = _digits('${r['phone'] ?? ''}');
-      return (p.startsWith('447700') || r['via'] == 'seed' || (p.length >= 9 && testNumbers.contains(p.substring(p.length - 9)))) && !ours.contains(p) && !_keep.contains(r['id']);
+      return (p.startsWith('447700') || r['via'] == 'seed' || (p.length >= 9 && testNumbers.contains(p.substring(p.length - 9))) || testNames.contains('${r[t.labelField] ?? ''}'.trim().toLowerCase())) &&
+          !ours.contains(p) && !_keep.contains(r['id']);
     }
     final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
     final off = status?.options.where((o) => RegExp('cancel', caseSensitive: false).hasMatch(o)).firstOrNull;
@@ -432,7 +436,7 @@ class ScenarioRunner {
       ended = said.contains('[END]');
       said = said.replaceAll('[END]', '').trim();
       // Asked something but only said goodbye: a real caller would answer.
-      final wanted = RegExp(r"\?\s*$|\b(please (provide|give|tell|confirm)|(can|could|may) i (have|take|get)|i.?ll need)\b", caseSensitive: false).hasMatch(turns.last['content']!);
+      final wanted = RegExp(r"\?\s*$|\b(please (provide|give|tell|confirm)|(can|could|may) i (have|take|get)|i.?ll need|let me (check|confirm))\b", caseSensitive: false).hasMatch(turns.last['content']!);
       if (said.isEmpty && (extra > 0 || (i > 0 && wanted && extra++ < 2))) said = 'Yes, please.';
       if (said.isEmpty) break;
       turns.add({'role': 'user', 'content': said});

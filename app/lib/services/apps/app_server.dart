@@ -459,7 +459,7 @@ class AppServer {
     return 'Cancelled. ${await data.describe(t.id, [r])}';
   }
 
-  static final _placeholder = RegExp(r'^(guest|customer|caller|client|unknown|n/?a|none|name|user|walk.?in|anonymous|patient|student|test|tbc|son|daughter|child|kid|boy|girl|wife|husband|partner|me|myself|mum|mom|dad|friend|\?+|-+)(\s*\d*)?$', caseSensitive: false);
+  static final _placeholder = RegExp(r'^((a|the|new|existing|regular|returning|valued)\s+)?(guest|customer|caller|client|unknown|n/?a|none|name|user|walk.?in|anonymous|patient|student|test|tbc|son|daughter|child|kid|boy|girl|wife|husband|partner|me|myself|mum|mom|dad|friend|\?+|-+)(\s*\d*)?$', caseSensitive: false);
 
   Future<String> callTool(String name, Map<String, dynamic> args, {required bool manager}) async {
     final tool = mcpTools(manager: manager).where((t) => t.name == name).firstOrNull;
@@ -477,9 +477,13 @@ class AppServer {
         String show(Map<String, Object?> r) => '${r[b.resources.labelField] ?? r['id']}${b.seatsField != null ? ' (${r[b.seatsField!.id]} seats)' : ''}';
         final what = b.resources.title.toLowerCase();
         final on = withDay(date);
-        return a.free.isEmpty
-            ? 'Nothing is free at $time on $on${guests > 0 ? ' for $guests' : ''}. Offer another time.'
-            : 'Free $what at $time on $on${guests > 0 ? ' for $guests' : ''}: ${a.free.map(show).join(', ')}. '
+        if (a.free.isEmpty) {
+          // Real times to offer ("11:00 or 13:00?"), not just "another time?".
+          final near = await data.nearestFree(b, date, time, guests: guests);
+          return 'Nothing is free at $time on $on${guests > 0 ? ' for $guests' : ''}. '
+              '${near.isEmpty ? 'Nothing else is free that day: ask which other day suits them.' : 'Free that day at: ${near.join(', ')}. Offer the nearest of these (nothing is booked yet).'}';
+        }
+        return 'Free $what at $time on $on${guests > 0 ? ' for $guests' : ''}: ${a.free.map(show).join(', ')}. '
                 '${a.taken.isEmpty ? '' : 'Booked: ${a.taken.map(show).join(', ')}. '}A booking lasts ${data.bookingMinutes} minutes. '
                 'This only checked — NOTHING IS BOOKED YET. Once you have the caller\'s name and phone and they agree, call add_${t.id} to book '
                 '(you may leave the ${b.resourceField.label.toLowerCase()} out: the best free one is given).';

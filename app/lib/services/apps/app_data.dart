@@ -78,7 +78,7 @@ Set<String> spokenDates(String text, {DateTime? now}) {
   now ??= DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
   String ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-  if (RegExp(r'\b\d{1,2}(st|nd|rd|th)\b|\b(january|february|march|april|may|june|july|august|september|october|november|december)\b|\d{4}-\d{2}|\d{1,2}/\d{1,2}').hasMatch(s)) return {};
+  if (RegExp(r'\b\d{1,2}(st|nd|rd|th)\b|\b(january|february|march|april|june|july|august|september|october|november|december)\b|\bmay \d|\d(st|nd|rd|th)? (of )?may\b|\d{4}-\d{2}|\d{1,2}/\d{1,2}').hasMatch(s)) return {};
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   final named = [
     if (RegExp(r'\b(today|tonight)\b').hasMatch(s)) 'today',
@@ -89,15 +89,13 @@ Set<String> spokenDates(String text, {DateTime? now}) {
   if (named.length != 1) return {};
   final n = named.single;
   if (n == 'today') return {ymd(today)};
-  if (n == 'tomorrow') return {ymd(today.add(const Duration(days: 1)))};
-  if (n == 'after') return {ymd(today.add(const Duration(days: 2)))};
-  final w = days.indexOf(n) + 1;
-  var d = today;
-  while (d.weekday != w) {
-    d = d.add(const Duration(days: 1));
-  }
+  // Day by day, not +24 h (that's a day off when the clocks change).
+  DateTime plus(int k) => DateTime(today.year, today.month, today.day + k);
+  if (n == 'tomorrow') return {ymd(plus(1))};
+  if (n == 'after') return {ymd(plus(2))};
+  final ahead = (days.indexOf(n) + 1 - today.weekday) % 7;
   // "Thursday" / "this Thursday" / "next Thursday": the coming one, or the one after (people differ).
-  return {ymd(d), ymd(d.add(const Duration(days: 7)))};
+  return {ymd(plus(ahead)), ymd(plus(ahead + 7))};
 }
 
 /// "2026-10-10" → "Saturday 2026-10-10" (small models get weekdays wrong on their own).
@@ -143,14 +141,16 @@ String? parseDate(String raw, {DateTime? now}) {
     return d.month == int.parse(m[2]!) ? ymd(d) : null;
   }
   if (s == 'today') return ymd(today);
-  if (s == 'tomorrow') return ymd(today.add(const Duration(days: 1)));
+  if (s == 'tomorrow') return ymd(DateTime(today.year, today.month, today.day + 1));
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   final w = days.indexWhere((d) => s.replaceFirst(RegExp(r'^(this|next|on)\s+'), '') == d);
   if (w >= 0) {
-    var d = today.add(const Duration(days: 1));
-    while (d.weekday != w + 1) {
-      d = d.add(const Duration(days: 1));
+    // Day by day, not +24 h (that's a day off when the clocks change).
+    var k = 1;
+    while (DateTime(today.year, today.month, today.day + k).weekday != w + 1) {
+      k++;
     }
+    final d = DateTime(today.year, today.month, today.day + k);
     return ymd(d);
   }
   return null;
@@ -227,8 +227,13 @@ class AppData {
     }
     if (via != null) clean['_via'] = via;
     final shape = BookingShape.of(spec, t);
-    if (shape != null) await _holdResource(shape, clean);
-    if (shape == null) await _holdStay(t, clean);
+    try {
+      if (shape != null) await _holdResource(shape, clean);
+      if (shape == null) await _holdStay(t, clean);
+    } on AppDataError {
+      // Test set-up ("someone has The Loft"): an earlier test record may hold it already — taken either way.
+      if (via != 'seed') rethrow;
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
     return db.raw.insert('app_rows', {'app_id': appId, 'tbl': t.id, 'data': jsonEncode(clean), 'created_at': now, 'updated_at': now});
   }
@@ -294,6 +299,22 @@ class AppData {
     return (free: free, taken: all.where(takenAt).toList());
   }
 
+  /// The nearest times on [date] when something is free (for "nothing at 12:00 — 11:00 or 13:00?").
+  Future<List<String>> nearestFree(BookingShape b, String date, String time, {int guests = 0, int count = 3}) async {
+    final at = _minutes(time);
+    if (at == null) return const [];
+    final plan = await dayPlan(b, date, manager: true);
+    final open = _minutes(plan['open']) ?? 9 * 60, close = _minutes(plan['close']) ?? 18 * 60;
+    final found = <int>[];
+    for (var step = 30; step <= 4 * 60 && found.length < count; step += 30) {
+      for (final m in [at - step, at + step]) {
+        if (found.length < count && m >= open && m < close && (await availability(b, date, _hhmm(m), guests: guests)).free.isNotEmpty) found.add(m);
+      }
+    }
+    found.sort();
+    return [for (final m in found) _hhmm(m)];
+  }
+
   /// A new booking: its table must be free then; with no table chosen, the best free one is given.
   /// When a taken table was swapped for a free one on the last add (for the AI to tell the caller).
   String? swapped;
@@ -308,7 +329,10 @@ class AppData {
     String names(List<Map<String, Object?>> rs) => rs.take(8).map((r) => '${r[b.resources.labelField] ?? r['id']}').join(', ');
     final chosen = clean[b.resourceField.id];
     if (chosen == null) {
-      if (a.free.isEmpty) throw AppDataError('Sorry, nothing is free at $time on $date${guests > 0 ? ' for $guests' : ''}. Try another time.');
+      if (a.free.isEmpty) {
+        final near = await nearestFree(b, '$date', '$time', guests: guests);
+        throw AppDataError('Sorry, nothing is free at $time on $date${guests > 0 ? ' for $guests' : ''}. ${near.isEmpty ? 'Try another day.' : 'Free that day at: ${near.join(', ')}.'}');
+      }
       clean[b.resourceField.id] = a.free.first['id'];
       return;
     }
@@ -436,7 +460,9 @@ class AppData {
       if (d['_via'] != 'phone' || (!samePhone && !sameName)) continue;
       final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
       if (status != null && RegExp(r'cancel', caseSensitive: false).hasMatch('${d[status.id] ?? ''}')) continue;
-      if (shape != null && date != null && d[shape.dateField.id] != date) continue;
+      // Another day is another booking — unless it was saved minutes ago (they changed the day in this call).
+      final fresh = (r['created_at'] as int) > DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
+      if (shape != null && date != null && d[shape.dateField.id] != date && !fresh) continue;
       return r['id'] as int;
     }
     return null;

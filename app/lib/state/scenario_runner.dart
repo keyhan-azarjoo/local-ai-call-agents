@@ -409,7 +409,7 @@ class ScenarioRunner {
       live();
       if (hungUp || passedTo.any((p) => p.startsWith('person#'))) break;
       // The caller said goodbye, but the assistant just asked something: they'd answer it.
-      if (ended && !(text.trim().endsWith('?') && extra++ < 2)) break;
+      if (ended && !(text.contains('?') && extra++ < 2)) break;
     }
     // The voice engine reports the end of the call (no transcript: no summary needed here).
     final end = await http.postUrl(Uri.parse('http://127.0.0.1:$port/api/call-ended?token=$key'));
@@ -436,9 +436,10 @@ class ScenarioRunner {
         '${c['wrong'] == null ? '' : 'Mistake to make: ${c['wrong']}\n'}'
         'How you talk: ${c['style_text'] ?? 'Natural and brief.'}\n'
         'Rules: speak like a real phone caller, ONE or TWO short sentences, no lists, no stage directions. Answer the question the assistant just asked. '
-        'If asked to confirm details that are right, say yes. If the assistant suggests or reads back a day, time, number of people, item or detail that is NOT in your facts, '
+        'A fixed timetable time for your course or class is fine. If asked to confirm details that are right, say yes. If the assistant suggests or reads back a day, time, number of people, item or detail that is NOT in your facts, '
         'say no and give the right one from your facts — never accept a wrong suggestion. A calendar date the assistant adds (like "Saturday 2026-10-10") is fine when the weekday '
-        'matches yours: never argue about date numbers. '
+        'matches yours: never argue about date numbers, and never say date numbers yourself (no "10 October", no "the 10th"): say the day only as your facts do. '
+        'Never say the same sentence twice in a row; if asked for a time or detail you have no fact for, say any time is fine / not needed. '
         'If asked something not in your facts (e.g. allergies, special requests, email) say no / not needed. '
         'When your goal is done (they clearly confirmed it) or clearly cannot be done, say a short goodbye and end with [END]. '
         'If the assistant keeps repeating itself or does not help after several tries, say goodbye and [END]. Output only what you say.';
@@ -503,6 +504,16 @@ class ScenarioRunner {
       final id = await data(app).add('${sd['table']}', v, manager: true, via: 'seed');
       seedTable[seeded.length] = '${sd['table']}';
       seeded.add(id);
+      // "Wednesday" on a Wednesday: the caller may mean today or next week (both pass the check),
+      // so someone else's booking fills both.
+      final vals = sd['values'] as Map;
+      final dow = DateTime.now().weekday;
+      if (vals.values.any((x) => x is Map && x['plus'] == null && (x['weekday'] as num?)?.toInt() == dow) && !vals.values.any((x) => x is String && x.startsWith('\$'))) {
+        await data(app).add('${sd['table']}', {
+          for (final e in vals.entries)
+            '${e.key}': e.value is Map && (e.value as Map)['weekday'] != null ? resolveDate({...(e.value as Map)}..remove('weekday')..['offset'] = 0) : resolve(e.value, numbers),
+        }, manager: true, via: 'seed');
+      }
     }
 
     final steps = (sc['steps'] as List?)?.cast<Map<String, dynamic>>() ??
@@ -550,6 +561,7 @@ class ScenarioRunner {
       final auditFrom = DateTime.now().millisecondsSinceEpoch;
       final used = <String>[];
       AppServer.onToolCall = (app, tool, args, result, error) {
+        if (app != data(curApp).spec.name) return; // another app (e.g. a background data refresh)
         used.add('$tool(${jsonEncode(args)}) → ${error ? 'ERROR ' : ''}${result.split('\n').first}');
         showLive({'tools': used});
       };

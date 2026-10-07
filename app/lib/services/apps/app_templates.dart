@@ -304,7 +304,7 @@ final appTemplates = <AppTemplate>[
     'site': {'style': 'minimal', 'tagline': 'Eight rooms by the sea', 'hero': 'unsplash:1566073771259-6a8506099945', 'about': 'A small boutique guesthouse with sea views, local breakfasts and the beach two minutes away.', 'address': '1 Quay Road, St Ives', 'phone': '01736 496 0987', 'email': 'stay@harbourhouse.example', 'currency': '£'},
     'tables': [
       _t('rooms', 'Rooms', 'Rooms and nightly prices', 'see', [
-        _f('name', 'Room', 'text', req: true), _f('description', 'Description', 'longtext'), _f('guests', 'Guests', 'number'), _f('bed', 'Bed', 'choice', options: ['Double', 'King', 'Twin', 'Family']),
+        _f('name', 'Room', 'text', req: true), _f('description', 'Description', 'longtext'), _f('guests', 'Sleeps up to', 'number'), _f('bed', 'Bed', 'choice', options: ['Double', 'King', 'Twin', 'Family']),
         _f('price', 'Per night', 'money'), _f('sea_view', 'Sea view', 'yesno'), _f('photo', 'Photo', 'image'),
       ]),
       _t('bookings', 'Bookings', 'Booking requests', 'add', [

@@ -453,7 +453,7 @@ class AppState extends ChangeNotifier {
   Future<({bool ok, String text})?> commitClaimed(List<ChatMessage> convo, String reply, Set<String> scopes, {String? callerNumber}) async {
     // A promise while still asking for details ("I'll book it — what's your name?") isn't a save yet.
     final stillAsking = RegExp(r'\b(name|number|phone|postcode|address|email|time|day|date)\b[^.?!]*\?', caseSensitive: false).hasMatch(reply);
-    if (!(_confirmed.hasMatch(reply) || (_promisedAction.hasMatch(reply) && !stillAsking)) || !llmReady || !_askedForNew(convo)) return null;
+    if (!(_confirmed.hasMatch(reply) || (_promisedAction.hasMatch(reply) && !stillAsking && !_waitsForCaller.hasMatch(reply.trim()))) || !llmReady || !_askedForNew(convo)) return null;
     final tools = await builtAppTools(scopes);
     final said = [for (final m in convo.reversed.take(6)) m.content, reply].join(' ');
     final tool = RegExp(r'order', caseSensitive: false).hasMatch(said)
@@ -500,10 +500,11 @@ class AppState extends ChangeNotifier {
     await loop.run(
       target: target,
       builtins: false,
+      maxTokens: 200, // one tool call; small models sometimes run on in it (36 s) — cut off, it retries short
       messages: [
         ChatMessage('system', 'You save what was agreed on a phone call into ${tool.serverName}. Call ${tool.fnName} exactly once with the details from the call. '
             'Dates as YYYY-MM-DD (today is ${today.toIso8601String().substring(0, 10)}), times as HH:MM (7pm = 19:00).'
-            '${callerNumber == null ? '' : ' If no phone number was said, use the caller\'s number: $callerNumber.'}${calendar(today)} Then reply with one short sentence.'),
+            '${callerNumber == null ? '' : ' If no phone number was said, use the caller\'s number: $callerNumber.'}${calendar(today)}  Only fields that were said, short values; notes only for a special request, in a few words. Then reply with one short sentence.'),
         ChatMessage('user', '${convo.where((m) => m.role == 'user' || m.role == 'assistant').map((m) => '${m.role == 'user' ? 'Caller' : 'Assistant'}: ${m.content}').join('\n')}\n\nSave it now.'),
       ],
       tools: [tool],
@@ -593,8 +594,11 @@ class AppState extends ChangeNotifier {
   static bool promisesAction(String reply) => _promisedAction.hasMatch(reply);
 
   /// The turn isn't finished: it promised a look and looked at nothing, or an action that wasn't done.
+  /// Asked the caller something, or to confirm first ("Confirm and I'll book it."): wait for their answer.
+  static final _waitsForCaller = RegExp(r"(\?\s*$|\b(confirm|once you|when you|if you)\b[^.!?]{0,30}\bi.?ll\b)", caseSensitive: false);
+
   static bool unfinished(String reply, {required bool usedTool, required bool acted}) =>
-      (!usedTool && _promisedCheck.hasMatch(reply)) || (!acted && _promisedAction.hasMatch(reply));
+      !_waitsForCaller.hasMatch(reply.trim()) && ((!usedTool && _promisedCheck.hasMatch(reply)) || (!acted && _promisedAction.hasMatch(reply)));
 
   /// The day the caller just named, as a date: small models ask "which date exactly?" otherwise.
   static String dayNote(String said) {
@@ -662,7 +666,7 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<ChatMessage>> prepare(List<ChatMessage> messages, {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile, String? model, AgentAccess? access}) async {
+  Future<List<ChatMessage>> prepare(List<ChatMessage> messages, {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile, String? model, AgentAccess? access, bool quote = true}) async {
     final extra = <String>[];
     final skills = [
       for (final k in await db.all('skills', where: "enabled = 1 AND instructions IS NOT NULL AND instructions != ''", orderBy: 'id'))
@@ -730,7 +734,7 @@ class AppState extends ChangeNotifier {
       out = [if (i < 0) ChatMessage('system', block), for (var j = 0; j < out.length; j++) j == i ? ChatMessage('system', '${out[j].content}\n\n$block') : out[j]];
     }
     // Orders: exact totals from the document's price lines (local models add up badly).
-    if (!usingCloud && users.isNotEmpty && OrderQuote.worthChecking(users.last.content)) {
+    if (quote && !usingCloud && users.isNotEmpty && OrderQuote.worthChecking(users.last.content)) {
       try {
         final t = modelTarget;
         if (t is LocalTarget) {
@@ -786,6 +790,7 @@ class AppState extends ChangeNotifier {
     Set<String> abilities = const {},
     String? agentName,
     String? callerNumber,
+    bool warmOnly = false,
   }) async {
     void check() {
       if (cancelled?.call() ?? false) throw const Cancelled();
@@ -796,15 +801,17 @@ class AppState extends ChangeNotifier {
     // agents that take them use its tools, even if their own tool list leaves it out.
     final appTools = useTools && (callerNumber != null || abilities.any(const {'booking', 'order'}.contains)) ? await builtAppTools(scopes) : <ToolBinding>[];
     final own = useTools ? await toolsFor(scopes, access: access) : <ToolBinding>[];
+    final abilityTools = useTools ? Abilities.bindings(abilities.where((a) => !_appCovers(appTools, a))) : <ToolBinding>[];
     final tools = useTools
         ? [
             ...own,
             for (final t in appTools)
               if (!own.any((o) => o.fnName == t.fnName)) t,
-            ...Abilities.bindings(abilities.where((a) => !_appCovers(appTools, a))),
+            ...abilityTools,
           ]
         : <ToolBinding>[];
-    messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile, model: target is LocalTarget ? target.model : null, access: access);
+    messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile, model: target is LocalTarget ? target.model : null, access: access,
+        quote: callerNumber == null || abilities.contains('order'));
     // Find tools by meaning too (typos, other words), using the local embedding model.
     var preferred = <ToolBinding>[];
     final question = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;
@@ -818,7 +825,8 @@ class AppState extends ChangeNotifier {
       target: target ?? modelTarget,
       builtins: useTools,
       preferred: preferred,
-      always: callerNumber != null ? appTools : const [],
+      always: callerNumber != null ? [...appTools, ...abilityTools] : const [],
+      warmOnly: warmOnly,
       sticky: sticky,
       onToolStart: onToolStart,
       messages: messages,
@@ -1734,7 +1742,7 @@ class AppState extends ChangeNotifier {
   static bool _askedForNew(List<ChatMessage> convo) {
     final asked = [for (final m in convo.reversed.where((m) => m.role == 'user').take(6)) m.content].join(' ');
     return RegExp(r"\b(book|reserv|table for|order|appointment|i.?d like|i want|i need|i.?m after|looking (for|to)|(can|could) (i|you|we) (get|have|book|do)|sign me up|put me down|get me)", caseSensitive: false).hasMatch(asked) &&
-        !RegExp(r'\b(cancel|change|move|reschedul|my (booking|reservation|appointment|table|order|stay))', caseSensitive: false).hasMatch(asked);
+        !RegExp(r"\b(cancel|change|move|reschedul|my (booking|reservation|appointment|table|order|stay)|(i|we)(.ve| have| had)? (already )?(booked|reserved|ordered)\b)", caseSensitive: false).hasMatch(asked);
   }
 
   static final _confirmed = RegExp(r'\b(confirmed|saved|booked|placed|reserved|signed (you |them |him |her )?up|enrolled|registered|all set|passed (it )?on|i.ll (let them know|pass that on|make sure they get))\b', caseSensitive: false);
@@ -1927,6 +1935,14 @@ class AppState extends ChangeNotifier {
     final id = int.tryParse(mode.startsWith('outbound#') ? mode.substring(9) : '');
     return id == null ? null : (await db.all('call_tasks', where: 'id = ?', args: [id])).firstOrNull;
   }
+
+  /// A call turn's system prompt: the same text on every turn, the warm-up and the hand-over, so it stays cached.
+  Future<String> _callSystem(String mode, String lang, ({Map<String, Object?> agent, String team, String brief, List<Map<String, Object?>> others})? flow, Set<String> scopes,
+          String? callerNumber) async =>
+      '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(await _uncovered(abilitiesOf(flow?.agent), scopes))}'
+      '${await builtAppRules(abilitiesOf(flow?.agent), scopes, call: mode != 'owner')}'
+      '${calendar()}'
+      '${callerNumber == null ? '' : ' The number of the person on this call is $callerNumber (use it only if they don\'t say another number).'}';
 
   Future<String> _voiceSystem(String mode, [String lang = '', Map<String, Object?>? onCall]) async {
     final agent = onCall ?? (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
@@ -2217,14 +2233,25 @@ class AppState extends ChangeNotifier {
     if (path == '/api/voice-config') {
       // The agent answering this call (by line, in the call flow) greets in its own voice.
       final callRoom = req.uri.queryParameters['room'] ?? '';
-      final flowAgent = callRoom.isEmpty ? null : (await _callAgent(callRoom, 'caller'))?.agent;
+      final callFlow = callRoom.isEmpty ? null : await _callAgent(callRoom, 'caller');
+      final flowAgent = callFlow?.agent;
       final agent = flowAgent ?? (await db.all('agents', where: "handles = 'incoming'", orderBy: 'id')).firstOrNull;
       // A call is starting: load the model and its instructions while the greeting plays.
       final qm = req.uri.queryParameters['mode'] ?? '';
       final m = qm == 'owner' || qm.startsWith('outbound#') ? qm : 'caller';
       final l = req.uri.queryParameters['lang'] ?? voiceLanguage;
       // The main AI for English (and for detecting); the multilingual one too when a language is chosen.
-      unawaited(prewarm([ChatMessage('system', await _voiceSystem(m))], scopes: _voiceScopes(m)).catchError((_) {}));
+      if (m == 'caller' && callFlow != null) {
+        // The very prompt the first turn sends (same system and tools): only the caller's words are new then.
+        final number = RegExp(r'^pstn-in-\d+-_(\+?\d{6,})_').firstMatch(callRoom)?.group(1);
+        unawaited(() async {
+          await agentReply([ChatMessage('system', await _callSystem(m, 'en', callFlow, _voiceScopes(m), number))],
+              scopes: _voiceScopes(m), approve: (_, _) async => false, access: await accessOf(callFlow.agent),
+              abilities: abilitiesOf(callFlow.agent), agentName: '${callFlow.agent['name']}', callerNumber: number, warmOnly: true);
+        }().catchError((_) {}));
+      } else {
+        unawaited(prewarm([ChatMessage('system', await _voiceSystem(m))], scopes: _voiceScopes(m)).catchError((_) {}));
+      }
       if (l != 'auto' && l != 'en' && voiceTarget(l) != null) {
         unawaited(prewarm([ChatMessage('system', await _voiceSystem(m, l))], scopes: _voiceScopes(m), target: voiceTarget(l), useTools: false).catchError((_) {}));
       }
@@ -2287,11 +2314,7 @@ class AppState extends ChangeNotifier {
         : (RegExp(r'^pstn-in-\d+-_(\+?\d{6,})_').firstMatch(room)?.group(1) ?? (await _taskOf(mode))?['number']?.toString());
     final lastSaid = convo.lastWhere((m) => m.role == 'assistant', orElse: () => ChatMessage('assistant', '')).content.trim();
     final messages = [
-      ChatMessage('system',
-          '${await _voiceSystem(mode, lang, flow?.agent)}${flow?.brief ?? ''}${flow?.team ?? ''}${abilityRules(await _uncovered(abilitiesOf(flow?.agent), scopes))}'
-          '${await builtAppRules(abilitiesOf(flow?.agent), scopes, call: mode != 'owner')}'
-          '${calendar()}'
-          '${callerNumber == null ? '' : ' The number of the person on this call is $callerNumber (use it only if they don\'t say another number).'}'),
+      ChatMessage('system', await _callSystem(mode, lang, flow, scopes, callerNumber)),
       // What changes every turn goes with the caller's words, so the long system prompt stays cached.
       for (final (i, m) in convo.indexed)
         i == convo.length - 1 && m.role == 'user' && '${noRepeat(lastSaid)}${dayNote(m.content)}'.isNotEmpty
@@ -2472,7 +2495,7 @@ class AppState extends ChangeNotifier {
       );
       // "Let me check…" and nothing checked: check now and say the answer in the same turn.
       mark('reply');
-      if (routed == null && !gone && unfinished(full, usedTool: usedTool, acted: saved) && (live || multilingual is! LocalTarget)) {
+      if (routed == null && passTo == null && !gone && unfinished(full, usedTool: usedTool, acted: saved) && (live || multilingual is! LocalTarget)) {
         var more = '';
         var skip = -1;
         await agentReply(
@@ -2511,7 +2534,9 @@ class AppState extends ChangeNotifier {
       }
       mark('follow_up');
       // Agreed but still not saved: save it now (cancel by their number, or the agreed booking/order).
-      if (yesTool != null && !saved && !gone) {
+      // Not when this call already saved one (a duplicate), nor while the model is asking for a missing detail.
+      if (yesTool != null && !saved && !gone && !_savedOn.contains(room) &&
+          !RegExp(r'\b(name|number|phone|postcode|address|email|time|date)\b[^.?!]*\?', caseSensitive: false).hasMatch(full)) {
         final pre = await _runYes(yesTool, convo, callerNumber).catchError((_) => null);
         if (pre != null) {
           if (pre.ok) saved = true;
@@ -2562,7 +2587,7 @@ class AppState extends ChangeNotifier {
         var said = '';
         await agentReply(
           [
-            ChatMessage('system', '${await _voiceSystem(mode, lang, flow!.agent)}${flow.brief}${flow.team}${abilityRules(await _uncovered(abilitiesOf(flow.agent), scopes))}${await builtAppRules(abilitiesOf(flow.agent), scopes)}'),
+            ChatMessage('system', await _callSystem(mode, lang, flow!, scopes, callerNumber)),
             ...convo,
             ChatMessage('assistant', spokenText(full.split('[transfer').first).trim()),
             ChatMessage('user', '(You have just taken over the call. Greet the caller in one short sentence as ${target['name']}, show you know what they need from the brief, and carry on: if the brief already has what you need, use your tools now in this same reply (check, or save once they have agreed) — never just say you will check.)'),

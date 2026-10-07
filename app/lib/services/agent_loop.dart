@@ -407,6 +407,7 @@ class ToolLoop {
     bool warmOnly = false,
     void Function(ToolBinding)? onToolStart,
     bool builtins = true,
+    int maxTokens = 1500,
   }) async {
     final byName = {for (final t in tools) t.fnName: t};
 
@@ -486,13 +487,15 @@ class ToolLoop {
     }
     // Tools that are always offered, first and in the same order every turn (e.g. the business's own
     // app on a call): the model can always save, and keeps the prompt in memory between turns.
-    final pinned = [for (final t in always) if (tools.contains(t)) t];
+    // By name: the app's server is also among the connected ones, so the same tool comes in twice.
+    final pinned = [for (final t in always) ?byName[t.fnName]];
     final offered = <ToolBinding>[
       if (builtins) calculator,
       ?finder,
       ...pinned,
-      ...mcpOffered.where((t) => !pinned.contains(t)).take(pinned.isEmpty ? 12 : 4),
-      if (tools.isNotEmpty && depth == 0 && looksMultiStep(lastUser)) ...[planTool, delegateTool],
+      // On a call the pinned tools are the list (the rest via find_tools): the same every turn, so it stays cached.
+      ...mcpOffered.where((t) => !pinned.contains(t)).take(pinned.isEmpty ? 12 : 0),
+      if (tools.isNotEmpty && depth == 0 && pinned.isEmpty && looksMultiStep(lastUser)) ...[planTool, delegateTool],
     ];
     var plan = <Map<String, dynamic>>[];
     var planNudges = 0;
@@ -695,7 +698,7 @@ class ToolLoop {
       return '';
     }
     return switch (target) {
-      LocalTarget t => _ollama(t, messages, offered, exec, nudge, onText),
+      LocalTarget t => _ollama(t, messages, offered, exec, nudge, onText, maxTokens),
       CloudTarget t => switch (t.config.provider) {
           CloudProvider.openai || CloudProvider.azure => _openai(t.config, messages, offered, exec, nudge),
           CloudProvider.anthropic => _anthropic(t.config, messages, offered, exec, nudge),
@@ -769,7 +772,7 @@ class ToolLoop {
   // ---------------- Ollama ----------------
   Future<String> _ollama(LocalTarget t, List<ChatMessage> messages, List<ToolBinding> tools,
       Future<(String, bool)> Function(String, Map<String, dynamic>) exec, String? Function() nudge,
-      void Function(String)? onText) async {
+      void Function(String)? onText, [int maxTokens = 1500]) async {
     final msgs = <Map<String, Object?>>[for (final m in messages) m.toJson()];
     // One context size for the whole question: changing it makes Ollama reload
     // the model and re-read everything (seconds each time).
@@ -789,7 +792,7 @@ class ToolLoop {
           'keep_alive': -1,
           'think': ?(t.disableThinking ? false : null),
           // A cap, so a model stuck repeating itself stops in seconds instead of minutes.
-          'options': {'num_ctx': ctx, 'temperature': 0.4, 'num_predict': 1500},
+          'options': {'num_ctx': ctx, 'temperature': 0.4, 'num_predict': maxTokens},
         }, onText);
       } on CloudError catch (e) {
         // A tool call the model never finished (it got stuck repeating): ask once more, simply.
@@ -829,7 +832,7 @@ class ToolLoop {
       'stream': true,
       'keep_alive': -1,
       'think': ?(t.disableThinking ? false : null),
-      'options': {'num_ctx': baseCtx, 'temperature': 0.4, 'num_predict': 1500},
+      'options': {'num_ctx': baseCtx, 'temperature': 0.4, 'num_predict': maxTokens},
     }, onText);
     return _stripThink((last['content'] as String?) ?? '');
   }

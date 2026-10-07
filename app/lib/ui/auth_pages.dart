@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -256,8 +257,9 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
-  final username = TextEditingController();
-  final password = TextEditingController();
+  // TODO(before release): remove — development builds only, filled in for now as the owner asked.
+  final username = TextEditingController(text: '');
+  final password = TextEditingController(text: kDebugMode ? '' : '');
   String? error;
   bool busy = false;
 

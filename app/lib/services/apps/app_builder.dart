@@ -250,10 +250,16 @@ class AppBuilder {
     final see = spec.tables.where((t) => t.access.see && !t.single).map((t) => t.id).join(', ');
     final single = spec.tables.where((t) => t.access.see && t.single).map((t) => t.id).join(', ');
     final add = spec.tables.where((t) => t.access.add).map((t) => t.id).join(', ');
+    final photos = spec.tables.where((t) => t.access.see && !t.single && t.fields.any((f) => f.type == 'image')).map((t) => t.id).join(', ');
+    final quotes = spec.tables.where((t) => t.access.see && !t.single && t.fields.any((f) => f.type == 'longtext')).map((t) => t.id).join(', ');
     return '{"blocks":[ ...blocks... ]}\nBlocks you can use:\n'
         '{"type":"hero","title":"A big, inviting headline","text":"One sentence under it","button":"Button text","link":"page id the button opens"}  (a big banner; use it first)\n'
         '{"type":"text","text":"## Heading\\nA short friendly paragraph"}\n'
-        '${see.isEmpty ? '' : '{"type":"list","table":"one of: $see","title":"...","search":true}  (cards with a search box)\n'}'
+        '{"type":"features","title":"Why people choose us","text":"Fresh every day: short line\\nFamily run: short line\\nEasy parking: short line"}  (3 to 6 cards with icons, one per line "Title: text")\n'
+        '{"type":"contact","title":"Find us"}  (address, phone, email, opening hours and a map link, from the business details)\n'
+        '${see.isEmpty ? '' : '{"type":"list","table":"one of: $see","title":"...","search":true}  (cards with a search box; add "layout":"menu" for a printed-menu look with sections and prices)\n'}'
+        '${photos.isEmpty ? '' : '{"type":"gallery","table":"one of: $photos","title":"..."}  (a grid of photos)\n'}'
+        '${quotes.isEmpty ? '' : '{"type":"testimonials","table":"one of: $quotes","title":"What people say"}  (quotes, only from a table of reviews)\n'}'
         '${single.isEmpty ? '' : '{"type":"info","table":"one of: $single","title":"..."}  (shows the one record)\n'}'
         '${add.isEmpty ? '' : '{"type":"form","table":"one of: $add","title":"...","submit":"button text","thanks":"message after sending"}\n'}'
         'Put a list right before a form that picks from it: customers then press "Add" on a card to put it in the form.';

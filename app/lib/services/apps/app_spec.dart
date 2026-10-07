@@ -138,6 +138,17 @@ bool personal(FieldSpec f) =>
     f.type == 'email' ||
     RegExp(r'address|post ?code|zip|street|birth|\bdob\b|allerg|medical|health|nhs|insurance|card|payment|passport|national|private|notes?\b', caseSensitive: false).hasMatch('${f.id} ${f.label}');
 
+/// A record's status (New, Confirmed, Cancelled…): the choice field called `status`, else the first
+/// choice only the manager sets. (Other manager-only choices, like payment, are never the status.)
+FieldSpec? statusOf(TableSpec t) =>
+    t.fields.where((f) => f.type == 'choice' && f.id == 'status').firstOrNull ?? t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+
+/// Days the business is closed (holidays, private hire): a list with a date in it, called
+/// closures / holidays / closed days.
+TableSpec? closuresOf(AppSpec spec) => spec.tables
+    .where((t) => !t.single && RegExp(r'closure|holiday|closed', caseSensitive: false).hasMatch('${t.id} ${t.purpose}') && t.fields.any((f) => f.type == 'date'))
+    .firstOrNull;
+
 class Access {
   const Access({this.see = false, this.add = false});
   final bool see, add;
@@ -222,6 +233,11 @@ class Block {
   String describe(AppSpec spec) => switch (type) {
         'hero' => 'banner',
         'text' => 'text',
+        'contact' => 'contact details and map link',
+        'features' => 'highlights',
+        'gallery' => 'photo gallery${table == null ? '' : ' of ${spec.table(table!)?.title.toLowerCase() ?? table}'}',
+        'testimonials' => 'reviews from ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
+        'list' when data['layout'] == 'menu' => 'menu of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
         'availability' => 'free times of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
         _ => '${type == 'info' ? 'details' : type} of ${spec.table(table ?? '')?.title.toLowerCase() ?? table ?? '?'}',
       };
@@ -237,6 +253,10 @@ class Block {
       'form' || 'create' || 'add' || 'booking' || 'order' || 'input' => 'form',
       'info' || 'details' || 'single' || 'record' || 'hours' => 'info',
       'availability' || 'free' || 'slots' || 'calendar' || 'schedule' || 'timetable' => 'availability',
+      'gallery' || 'photos' || 'images' || 'pictures' || 'carousel' => 'gallery',
+      'testimonials' || 'testimonial' || 'reviews' || 'quotes' => 'testimonials',
+      'contact' || 'map' || 'location' || 'find_us' || 'contact_us' => 'contact',
+      'features' || 'highlights' || 'benefits' || 'why_us' || 'icons' => 'features',
       _ => '',
     };
     if (type.isEmpty) return null;
@@ -249,6 +269,36 @@ class Block {
         final v = _str(j[k == 'text' ? 'text' : k] ?? (k == 'text' ? j['subtitle'] : null));
         if (v.isNotEmpty && !(k == 'text' && v == title)) out[k] = k == 'link' ? slug(v) : v;
       }
+    } else if (type == 'contact') {
+      for (final k in const ['title', 'text']) {
+        final v = _str(j[k] ?? (k == 'title' ? j['heading'] : null));
+        if (v.isNotEmpty) out[k] = v.length > 600 ? v.substring(0, 600) : v;
+      }
+    } else if (type == 'features') {
+      // One card per line: "Title: what it means". Also from a list of items.
+      final items = j['items'] ?? j['features'];
+      var text = _str(j['text'] ?? j['content']);
+      if (text.isEmpty && items is List) {
+        text = [
+          for (final x in items)
+            if (x is Map) [_str(x['title'] ?? x['name']), _str(x['text'] ?? x['description'])].where((v) => v.isNotEmpty).join(': ') else _str(x),
+        ].where((l) => l.isNotEmpty).join('\n');
+      }
+      final lines = text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).take(12).toList();
+      if (lines.isEmpty) return null;
+      out['text'] = lines.join('\n').length > 2000 ? lines.join('\n').substring(0, 2000) : lines.join('\n');
+      final title = _str(j['title'] ?? j['heading']);
+      if (title.isNotEmpty) out['title'] = title;
+    } else if (type == 'gallery') {
+      // Photos: from a table's pictures, and/or a list of pictures.
+      final title = _str(j['title'] ?? j['heading']);
+      if (title.isNotEmpty) out['title'] = title;
+      final t = j['table'] ?? j['source'];
+      if (t != null && _str(t).isNotEmpty) out['table'] = slug(t);
+      final imgs = j['images'] ?? j['photos'];
+      final list = [for (final x in (imgs is List ? imgs : const [])) _str(x is Map ? (x['url'] ?? x['src']) : x)]..removeWhere((x) => x.isEmpty);
+      if (list.isNotEmpty) out['images'] = list.take(24).toList();
+      if (out['table'] == null && out['images'] == null) return null;
     } else if (type == 'text') {
       final text = _str(j['text'] ?? j['content'] ?? j['body'] ?? j['title']);
       if (text.isEmpty) return null;
@@ -261,6 +311,10 @@ class Block {
       if (title.isNotEmpty) out['title'] = title;
       if (j['fields'] is List) out['fields'] = [for (final f in j['fields'] as List) slug(f is Map ? (f['id'] ?? f['name']) : f)];
       if (type == 'list') out['search'] = j['search'] == null ? true : _bool(j['search']);
+      // A printed-menu look (sections, dotted lines to the price) instead of cards.
+      if (type == 'list' && slug(j['layout'] ?? j['style'], fallback: '') == 'menu') out['layout'] = 'menu';
+      // Only the records ticked yes in this field (e.g. popular dishes).
+      if (type == 'list' && _str(j['only']).isNotEmpty) out['only'] = slug(j['only']);
       if (type == 'form') {
         final submit = _str(j['submit'] ?? j['button']);
         final thanks = _str(j['thanks'] ?? j['success'] ?? j['message']);
@@ -325,7 +379,7 @@ class AppSpec {
   final Map<String, String> site;
   String get style => site['style'] ?? 'modern';
 
-  static const siteKeys = ['style', 'tagline', 'about', 'logo', 'hero', 'address', 'phone', 'email', 'footer', 'currency', 'booking_minutes'];
+  static const siteKeys = ['style', 'tagline', 'about', 'logo', 'hero', 'address', 'phone', 'email', 'footer', 'currency', 'booking_minutes', 'delivery_fee', 'min_order'];
 
   /// The look: dark background, and sans / serif / rounded letters.
   final bool dark;
@@ -448,8 +502,17 @@ class AppSpec {
     for (final p in pages) {
       final blocks = <Block>[];
       for (final b in p.blocks) {
-        if (b.type == 'text') {
+        if (b.type == 'text' || b.type == 'contact' || b.type == 'features') {
           blocks.add(b);
+          continue;
+        }
+        if (b.type == 'gallery') {
+          // Pictures from a table only when visitors may see that table.
+          final d = Map<String, Object?>.of(b.data)..remove('table');
+          final t = b.table == null ? null : byId[resolve(b.table) ?? ''];
+          if (t != null && !t.single && t.fields.any((f) => f.type == 'image' && !f.managerOnly) && (p.manager || t.access.see)) d['table'] = t.id;
+          if (d['table'] == null && d['images'] == null) continue;
+          blocks.add(Block(d));
           continue;
         }
         if (b.type == 'hero') {
@@ -469,6 +532,13 @@ class AppSpec {
             d['fields'] = keep;
           }
         }
+        if (b.type == 'testimonials') {
+          // Quotes from a list visitors may see (reviews the manager picked), never from bookings.
+          final quote = t.fields.any((f) => (f.type == 'longtext' || f.type == 'text') && !f.managerOnly);
+          if (!t.single && quote && (p.manager || t.access.see)) blocks.add(Block(d));
+          continue;
+        }
+        if (b.type == 'list' && d['only'] != null && t.field('${d['only']}')?.type != 'yesno') d.remove('only');
         if (b.type == 'availability') {
           final link = t.fields.where((f) => f.type == 'link').firstOrNull;
           final ok = link != null && t.fields.any((f) => f.type == 'date') && t.fields.any((f) => f.type == 'time') && (p.manager || t.access.add);
@@ -477,7 +547,7 @@ class AppSpec {
         }
         final type = b.type == 'list' && t.single ? 'info' : (b.type == 'info' && !t.single ? 'list' : b.type);
         d['type'] = type;
-        if (type != 'list') d.remove('search');
+        if (type != 'list') d..remove('search')..remove('layout')..remove('only');
         // Public pages only show what customers may use.
         if (!p.manager && (type == 'list' || type == 'info') && !t.access.see) continue;
         if (!p.manager && type == 'form' && !t.access.add) continue;

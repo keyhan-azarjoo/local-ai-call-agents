@@ -191,6 +191,11 @@ class AppServer {
       if (!manager) return _json(req, 403, {'error': 'Only the manager can do that.'});
       return _saveSite(req);
     }
+    if (rest == '_stats') {
+      // Takings and how busy it is: the manager's dashboard only.
+      if (!manager) return _json(req, 403, {'error': 'Only the manager can do that.'});
+      return _json(req, 200, await data.stats());
+    }
     if (rest.startsWith('_plan/')) {
       // Which tables (stylists, rooms…) are booked when on a day. Customers see no names.
       final t = spec.table(rest.substring(6));
@@ -314,17 +319,34 @@ class AppServer {
   static Block _editedBlock(Block b, Object? edit) {
     if (edit is! Map || edit.isEmpty) return b;
     final d = Map<String, Object?>.of(b.data);
-    final keys = switch (b.type) { 'hero' => const ['title', 'text', 'button', 'image'], 'text' => const ['text'], _ => const ['title'] };
+    final keys = switch (b.type) {
+      'hero' => const ['title', 'text', 'button', 'image'],
+      'text' => const ['text'],
+      'features' => const ['title', 'text'],
+      'contact' => const ['title', 'text'],
+      _ => const ['title'],
+    };
+    // A gallery's own pictures: the ones uploaded here, or on the web.
+    if (b.type == 'gallery' && edit['images'] is List) {
+      final imgs = [for (final x in edit['images'] as List) '$x'.trim()]..removeWhere((x) => !RegExp(r'^(/files/[a-z0-9]+\.(jpg|jpeg|png|webp|gif)|https://\S+)$').hasMatch(x));
+      if (imgs.isEmpty) {
+        d.remove('images');
+      } else {
+        d['images'] = imgs.take(24).toList();
+      }
+      if (d['images'] == null && d['table'] == null) return b;
+    }
     for (final k in keys) {
       if (!edit.containsKey(k)) continue;
       final v = '${edit[k] ?? ''}'.trim();
-      if (v.isEmpty && !(b.type == 'text' && k == 'text')) {
+      if (v.isEmpty && !((b.type == 'text' || b.type == 'features') && k == 'text')) {
         d.remove(k);
       } else {
         d[k] = v.length > 2000 ? v.substring(0, 2000) : v;
       }
     }
     if (b.type == 'hero' && (d['title'] ?? '').toString().isEmpty) return b;
+    if (b.type == 'features' && '${d['text'] ?? ''}'.trim().isEmpty) return b;
     return Block(d);
   }
 
@@ -531,7 +553,7 @@ class AppServer {
       await data.change(t.id, rid, {for (final e in args.entries) if (!fixed.contains(e.key) && e.value != null && '${e.value}'.isNotEmpty) e.key: e.value});
       return 'Done. Changed (the old details are replaced):\n${await data.describe(t.id, [(await data.get(t.id, rid, manager: true))!])}';
     }
-    final status = shape?.statusField ?? t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+    final status = shape?.statusField ?? statusOf(t);
     final cancelled = status?.options.where((o) => RegExp(r'cancel', caseSensitive: false).hasMatch(o)).firstOrNull;
     if (status != null && cancelled != null) {
       await data.update(t.id, rid, {status.id: cancelled});
@@ -577,6 +599,11 @@ class AppServer {
           if (from == null || to == null) throw AppDataError('Give check-in and check-out as YYYY-MM-DD (today is ${withDay(DateTime.now().toIso8601String().substring(0, 10))}).');
           if (to.compareTo(from) <= 0) throw AppDataError('${stay.to.label} must be after ${stay.from.label.toLowerCase()}.');
           final guests = (args[stay.guests?.id] as num?)?.toInt() ?? int.tryParse('${args[stay.guests?.id] ?? ''}') ?? 0;
+          for (var d = DateTime.parse(from); d.isBefore(DateTime.parse(to)); d = DateTime(d.year, d.month, d.day + 1)) {
+            final day = d.toIso8601String().substring(0, 10);
+            final why = await data.closedOn(day);
+            if (why != null) return AppData.closedMessage(day, why);
+          }
           final a = await data.freeStay(t, from, to, guests: guests);
           final label = spec.table(stay.room.link!)!.labelField;
           final nights = DateTime.parse('${to}T00:00:00Z').difference(DateTime.parse('${from}T00:00:00Z')).inDays;
@@ -589,6 +616,9 @@ class AppServer {
         final date = parseDate('${args['date'] ?? ''}') ?? (throw AppDataError('Give the date as YYYY-MM-DD (today is ${withDay(DateTime.now().toIso8601String().substring(0, 10))}).'));
         final time = parseTime('${args['time'] ?? ''}') ?? (throw AppDataError('Give the time as HH:MM, 24-hour (7pm = 19:00).'));
         final guests = (args['guests'] as num?)?.toInt() ?? int.tryParse('${args['guests'] ?? ''}') ?? 0;
+        // A holiday or other closed day: say so, rather than "nothing is free".
+        final why = await data.closedOn(date);
+        if (why != null) return AppData.closedMessage(date, why);
         final a = await data.availability(b, date, time, guests: guests);
         final area = b.resources.fields.where((f) => f.type == 'choice').firstOrNull;
         String show(Map<String, Object?> r) => '${r[b.resources.labelField] ?? r['id']}${b.seatsField != null ? ' (${r[b.seatsField!.id]} seats${area != null && r[area.id] != null ? ', ${r[area.id]}' : ''})' : ''}';

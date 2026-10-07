@@ -363,7 +363,28 @@ class AppsManager extends ChangeNotifier {
     ]);
     if (phone.trim().isNotEmpty) site['phone'] = phone.trim();
     if (address.trim().isNotEmpty) site['address'] = address.trim();
-    var raw = <String, dynamic>{...t.spec, 'site': site, 'features': {'website': true, 'ava': ava}};
+    // Pictures on the pages too (a banner's photo, a gallery's).
+    final pages = <Object?>[];
+    for (final p in (t.spec['pages'] as List? ?? const [])) {
+      final blocks = <Object?>[];
+      if (p is! Map) {
+        pages.add(p);
+        continue;
+      }
+      for (final b in (p['blocks'] is List ? p['blocks'] as List : const [])) {
+        if (b is! Map) {
+          blocks.add(b);
+          continue;
+        }
+        final d = Map<String, Object?>.of(b.cast<String, Object?>());
+        if (d['image'] != null) d['image'] = await photo(d['image'], big: true);
+        if (d['images'] is List) d['images'] = [for (final x in d['images'] as List) ?(await photo(x))];
+        d.removeWhere((k, v) => v == null);
+        blocks.add(d);
+      }
+      pages.add({...p.cast<String, Object?>(), 'blocks': blocks});
+    }
+    var raw = <String, dynamic>{...t.spec, 'site': site, 'pages': pages, 'features': {'website': true, 'ava': ava}};
     // Their own name everywhere the sample name was (title, texts, footer).
     final sample = t.spec['name'] as String;
     if (name.trim().isNotEmpty && name.trim() != sample) {

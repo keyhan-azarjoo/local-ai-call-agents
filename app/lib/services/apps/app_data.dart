@@ -22,7 +22,7 @@ class BookingShape {
     return BookingShape(t, link, res, date, time,
         guestsField: t.fields.where((f) => f.type == 'number' && RegExp(r'guest|people|party|person|size|covers').hasMatch(f.id)).firstOrNull,
         seatsField: res.fields.where((f) => f.type == 'number' && RegExp(r'seat|capacity|guest|size|people|places').hasMatch(f.id)).firstOrNull,
-        statusField: t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull);
+        statusField: statusOf(t));
   }
 
   static final _bookable = RegExp(r'table|room|stylist|barber|doctor|dentist|therap|staff|trainer|coach|court|desk|seat|bay|chair|lane|pitch|vehicle|tutor|teacher|person', caseSensitive: false);
@@ -210,6 +210,10 @@ class AppData {
     if (t.single) return setSingle(table, values, manager: manager);
     final clean = await _clean(t, values, manager: manager, partial: false);
     if (!manager) await _inStock(t, clean);
+    if (via != 'seed') await _open(t, clean);
+    if (!manager) await _minimum(t, clean);
+    // The order's total, kept with it (the manager may type their own).
+    if (!(manager && clean[_totalField(t)?.id] != null)) await _fillTotal(t, clean);
     // The same booking or order again within half an hour (asked twice, saved twice): keep one.
     final same = await _recentSame(t, clean);
     if (same != null) {
@@ -292,6 +296,8 @@ class AppData {
   /// What can be booked on [date] at [time] for [guests]: free ones first, smallest that fits first.
   Future<({List<Map<String, Object?>> free, List<Map<String, Object?>> taken})> availability(BookingShape b, String date, String time, {int guests = 0, int? ignore}) async {
     final at = _minutes(time) ?? (throw AppDataError('Give the time as HH:MM.'));
+    // Closed that day (a holiday, private hire): nothing is free.
+    if (await closedOn(date) != null) return (free: <Map<String, Object?>>[], taken: <Map<String, Object?>>[]);
     final hold = await busy(b, date, ignore: ignore);
     final all = await list(b.resources.id, manager: true);
     bool fits(Map<String, Object?> r) => guests <= 0 || b.seatsField == null || ((r[b.seatsField!.id] as num?) ?? 999) >= guests;
@@ -304,7 +310,7 @@ class AppData {
   /// The nearest times on [date] when something is free (for "nothing at 12:00 — 11:00 or 13:00?").
   Future<List<String>> nearestFree(BookingShape b, String date, String time, {int guests = 0, int count = 3}) async {
     final at = _minutes(time);
-    if (at == null) return const [];
+    if (at == null || await closedOn(date) != null) return const [];
     final plan = await dayPlan(b, date, manager: true);
     final open = _minutes(plan['open']) ?? 9 * 60, close = _minutes(plan['close']) ?? 18 * 60;
     final found = <int>[];
@@ -365,7 +371,7 @@ class AppData {
   /// Rooms free for every night from [from] to [to] that sleep [guests], and the ones taken then.
   Future<({List<Map<String, Object?>> free, List<Map<String, Object?>> taken})> freeStay(TableSpec t, String from, String to, {int guests = 0, int? ignore}) async {
     final s = stayOf(t)!;
-    final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+    final status = statusOf(t);
     final rooms = await list(s.room.link!, manager: true);
     final sleeps = spec.table(s.room.link!)!.fields.where((f) => f.type == 'number' && RegExp(r'seat|capacity|guest|size|people|places|sleeps').hasMatch(f.id)).firstOrNull;
     final taken = <Object?>{};
@@ -405,7 +411,9 @@ class AppData {
       close = _minutes(r[times[1].id]);
       if (open != null && close != null) break;
     }
+    final closed = await closedOn(date);
     return {
+      'closed': ?closed,
       'minutes': bookingMinutes,
       'open': _hhmm(open ?? 12 * 60),
       'close': _hhmm(close ?? 22 * 60),
@@ -436,6 +444,7 @@ class AppData {
     final old = (jsonDecode(r.first['data'] as String) as Map).cast<String, Object?>();
     final clean = await _clean(t, values, manager: false, partial: true)..removeWhere((k, v) => v == null);
     final merged = {...old, ...clean};
+    await _open(t, merged);
     final shape = BookingShape.of(spec, t);
     // A stay moved to other nights or another room: never onto a taken one.
     if (shape == null) await _holdStay(t, merged, ignore: id);
@@ -457,6 +466,8 @@ class AppData {
     for (final f in t.fields.where((f) => f.when != null)) {
       if (!f.appliesTo(out)) out.remove(f.id);
     }
+    await _minimum(t, out);
+    await _fillTotal(t, out);
     await db.raw.update('app_rows', {'data': jsonEncode(out), 'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
   }
 
@@ -508,7 +519,7 @@ class AppData {
       final samePhone = last9(phone).length >= 9 && last9(d[phoneF.id]) == last9(phone);
       // Only ever their own (same number): the same name alone could be someone else's booking.
       if (d['_via'] != 'phone' || !samePhone) continue;
-      final status = t.fields.where((f) => f.type == 'choice' && f.managerOnly).firstOrNull;
+      final status = statusOf(t);
       if (status != null && RegExp(r'cancel', caseSensitive: false).hasMatch('${d[status.id] ?? ''}')) continue;
       // Another day is another booking — unless it was saved minutes ago (they changed the day in this call).
       final fresh = (r['created_at'] as int) > DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
@@ -524,7 +535,13 @@ class AppData {
     if (r.isEmpty) throw AppDataError('No ${t.title.toLowerCase()} record with id $id.');
     final old = (jsonDecode(r.first['data'] as String) as Map).cast<String, Object?>();
     final clean = await _clean(t, values, manager: true, partial: true);
-    await db.raw.update('app_rows', {'data': jsonEncode({...old, ...clean}), 'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
+    final merged = {...old, ...clean};
+    // Items or delivery changed: the total follows (unless the manager typed a new one).
+    final tf = _totalField(t);
+    if (tf != null && clean[tf.id] == old[tf.id] && t.fields.any((f) => (f.type == 'links' || f.type == 'choice') && !f.managerOnly && jsonEncode(old[f.id]) != jsonEncode(merged[f.id]))) {
+      await _fillTotal(t, merged);
+    }
+    await db.raw.update('app_rows', {'data': jsonEncode(merged), 'updated_at': DateTime.now().millisecondsSinceEpoch}, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<int> setSingle(String table, Map<String, dynamic> values, {bool manager = true}) async {
@@ -687,39 +704,197 @@ class AppData {
       return '$v';
     }
 
-    // An order's total, from the prices of what's in it.
-    final prices = <String, Map<int, num>>{};
-    for (final f in t.fields.where((f) => f.type == 'links' && f.qty)) {
-      final target = spec.table(f.link!)!;
-      final money = target.fields.where((x) => x.type == 'money').firstOrNull;
-      if (money != null) prices[f.id] = {for (final r in await list(target.id, manager: true)) if (r[money.id] is num) r['id'] as int: r[money.id] as num};
-    }
-    String? total(Map<String, Object?> r) {
-      num sum = 0;
-      var any = false;
-      for (final e in prices.entries) {
-        for (final x in (r[e.key] as List? ?? [])) {
-          if (x is Map && e.value[x['id']] != null) {
-            sum += e.value[x['id']]! * ((x['qty'] as num?) ?? 1);
-            any = true;
-          }
-        }
-      }
-      final cur = spec.site['currency'] ?? '';
-      return any ? 'Total: $cur${sum.toStringAsFixed(sum == sum.roundToDouble() ? 0 : 2)}' : null;
-    }
-
+    // An order's total, from the prices of what's in it (and the delivery fee).
+    final prices = await _prices(t);
+    final tf = _totalField(t);
     if (rows.isEmpty) return 'No ${t.title.toLowerCase()} yet.';
-    return rows.map((r) {
+    final lines = <String>[];
+    for (final r in rows) {
       final parts = ['id ${r['id']}'];
       for (final f in t.fields) {
-        if (!r.containsKey(f.id)) continue;
+        if (!r.containsKey(f.id) || f == tf) continue;
         final v = show(f, r[f.id]);
         if (v.isNotEmpty) parts.add('${f.label}: $v');
       }
-      final tot = total(r);
-      if (tot != null) parts.add(tot);
-      return parts.join(' · ');
-    }).join('\n');
+      final tot = await orderTotal(t.id, r, prices: prices);
+      if (tot != null) parts.add('Total: ${money(tot.total)}${tot.fee > 0 ? ' (${money(tot.items)} + ${money(tot.fee)} delivery)' : ''}');
+      lines.add(parts.join(' · '));
+    }
+    return lines.join('\n');
+  }
+
+  // ---------------- orders: totals, delivery ----------------
+
+  /// What an order can hold, with prices: field → record id → price.
+  Future<Map<String, Map<int, num>>> _prices(TableSpec t) async {
+    final out = <String, Map<int, num>>{};
+    for (final f in t.fields.where((f) => f.type == 'links' && f.qty)) {
+      final target = spec.table(f.link!);
+      final price = target?.fields.where((x) => x.type == 'money').firstOrNull;
+      if (target == null || price == null) continue;
+      out[f.id] = {for (final r in await list(target.id, manager: true, limit: 5000)) if (r[price.id] is num) r['id'] as int: r[price.id] as num};
+    }
+    return out;
+  }
+
+  /// A delivery (its "Collection or delivery" choice says Delivery).
+  static bool isDelivery(TableSpec t, Map<String, Object?> r) =>
+      t.fields.any((f) => f.type == 'choice' && !f.managerOnly && RegExp(r'^deliver', caseSensitive: false).hasMatch('${r[f.id] ?? ''}'));
+
+  num _siteNumber(String k) => num.tryParse((spec.site[k] ?? '').replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+
+  /// What delivery costs, and the least a delivery order may come to (0 = none); set on the website.
+  num get deliveryFee => _siteNumber('delivery_fee');
+  num get minOrder => _siteNumber('min_order');
+
+  /// "£12.50" in the app's currency.
+  String money(num n) => '${spec.site['currency'] ?? ''}${n.toStringAsFixed(n == n.roundToDouble() ? 0 : 2)}';
+
+  /// An order's total: the prices of what's in it, plus the delivery fee on a delivery.
+  /// Null when nothing in it has a price.
+  Future<({num items, num fee, num total})?> orderTotal(String table, Map<String, Object?> row, {Map<String, Map<int, num>>? prices}) async {
+    final t = _table(table);
+    prices ??= await _prices(t);
+    num sum = 0;
+    var any = false;
+    for (final e in prices.entries) {
+      for (final x in (row[e.key] is List ? row[e.key] as List : const [])) {
+        if (x is Map && e.value[x['id']] != null) {
+          sum += e.value[x['id']]! * ((x['qty'] as num?) ?? 1);
+          any = true;
+        }
+      }
+    }
+    if (!any) return null;
+    final fee = isDelivery(t, row) ? deliveryFee : 0;
+    return (items: sum, fee: fee, total: sum + fee);
+  }
+
+  /// The manager-only "Total" an order keeps (filled in by itself).
+  FieldSpec? _totalField(TableSpec t) => t.fields.where((f) => f.type == 'money' && f.managerOnly && RegExp(r'^(order_)?total$').hasMatch(f.id)).firstOrNull;
+
+  Future<void> _fillTotal(TableSpec t, Map<String, Object?> r) async {
+    final f = _totalField(t);
+    if (f == null) return;
+    final tot = await orderTotal(t.id, r);
+    if (tot != null) r[f.id] = (tot.total * 100).round() / 100;
+  }
+
+  /// A delivery below the minimum order is refused (collection is fine).
+  Future<void> _minimum(TableSpec t, Map<String, Object?> r) async {
+    if (minOrder <= 0 || !isDelivery(t, r)) return;
+    final tot = await orderTotal(t.id, r);
+    if (tot != null && tot.items < minOrder) {
+      throw AppDataError('The minimum order for delivery is ${money(minOrder)} (this order is ${money(tot.items)}): add something more, or choose collection.');
+    }
+  }
+
+  // ---------------- closed days ----------------
+
+  /// Why the business is closed on [date] ("YYYY-MM-DD"): the reason, "closed", or null when open.
+  Future<String?> closedOn(String date) async {
+    final c = closuresOf(spec);
+    if (c == null || date.length < 10) return null;
+    final day = date.substring(0, 10);
+    final dates = c.fields.where((f) => f.type == 'date').toList();
+    final why = c.fields.where((f) => (f.type == 'text' || f.type == 'longtext') && !f.managerOnly).firstOrNull;
+    for (final r in await list(c.id, manager: true, limit: 5000)) {
+      final from = '${r[dates[0].id] ?? ''}';
+      if (from.isEmpty) continue;
+      final until = dates.length > 1 ? '${r[dates[1].id] ?? ''}' : '';
+      final to = until.compareTo(from) > 0 ? until : from;
+      if (day.compareTo(from) >= 0 && day.compareTo(to) <= 0) {
+        final w = why == null ? '' : '${r[why.id] ?? ''}'.trim();
+        return w.isEmpty ? 'closed' : w;
+      }
+    }
+    return null;
+  }
+
+  /// What a caller or visitor is told when the day they want is closed.
+  static String closedMessage(String date, String why) =>
+      'Sorry, we are closed on ${withDay(date)}${why == 'closed' ? '' : ' ($why)'}, so nothing can be booked that day. Ask which other day suits them.';
+
+  /// Bookings (and anything else customers send with a day) can't be for a closed day.
+  Future<void> _open(TableSpec t, Map<String, Object?> r) async {
+    final c = closuresOf(spec);
+    if (c == null || c.id == t.id || !t.access.add) return;
+    final days = <String>[];
+    final stay = stayOf(t);
+    if (stay != null) {
+      final from = DateTime.tryParse('${r[stay.from.id] ?? ''}'), to = DateTime.tryParse('${r[stay.to.id] ?? ''}');
+      for (var d = from; d != null && to != null && d.isBefore(to) && days.length < 60; d = DateTime(d.year, d.month, d.day + 1)) {
+        days.add('${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}');
+      }
+    } else {
+      final f = t.fields.where((f) => (f.type == 'date' || f.type == 'datetime') && !f.managerOnly).firstOrNull;
+      final v = '${r[f?.id] ?? ''}';
+      if (v.length >= 10) days.add(v.substring(0, 10));
+    }
+    for (final d in days) {
+      final why = await closedOn(d);
+      if (why != null) throw AppDataError(closedMessage(d, why));
+    }
+  }
+
+  // ---------------- the manager's dashboard ----------------
+
+  /// The numbers on the manager's dashboard: today's bookings, open orders, takings, the last
+  /// 14 days of each kind of record, and the busiest hours. Manager only (it has the takings).
+  Future<Map<String, Object?>> stats({DateTime? now}) async {
+    now ??= DateTime.now();
+    String ymd(DateTime d) => '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+    final today = ymd(now);
+    final days = [for (var i = 13; i >= 0; i--) ymd(DateTime(now.year, now.month, now.day - i))];
+    final ended = RegExp(r'done|complet|collected|delivered|cancel|finish|closed|no.?show|served|redeemed|attended|checked out|viewed|declin|reject', caseSensitive: false);
+    final cancelled = RegExp(r'cancel|no.?show|declin|reject', caseSensitive: false);
+    var bookingsToday = 0, openOrders = 0, newToday = 0, ordersToday = 0;
+    num revenueToday = 0, revenueWeek = 0;
+    final hours = List<int>.filled(24, 0);
+    final tables = <String, Object?>{};
+    for (final t in spec.tables.where((t) => t.access.add && !t.single)) {
+      final rows = await list(t.id, manager: true, limit: 100000);
+      final st = statusOf(t);
+      final dateF = t.fields.where((f) => f.type == 'date' || f.type == 'datetime').firstOrNull;
+      final timeF = t.fields.where((f) => f.type == 'time').firstOrNull;
+      final prices = await _prices(t);
+      final isOrder = prices.isNotEmpty;
+      final counts = List<int>.filled(14, 0);
+      for (final r in rows) {
+        final made = '${r['created_at'] ?? ''}'; // "YYYY-MM-DD HH:MM", this computer's time
+        final madeDay = made.length >= 10 ? made.substring(0, 10) : '';
+        final i = days.indexOf(madeDay);
+        if (i >= 0) counts[i]++;
+        if (madeDay == today) newToday++;
+        final status = st == null ? '' : '${r[st.id] ?? ''}';
+        if (cancelled.hasMatch(status)) continue;
+        final on = dateF == null ? '' : '${r[dateF.id] ?? ''}';
+        if (!isOrder && on.startsWith(today)) bookingsToday++;
+        if (isOrder) {
+          if (st != null && !ended.hasMatch(status)) openOrders++;
+          if (madeDay == today) ordersToday++;
+          final tot = await orderTotal(t.id, r, prices: prices);
+          if (tot != null && madeDay == today) revenueToday += tot.total;
+          if (tot != null && madeDay.isNotEmpty && madeDay.compareTo(days[7]) >= 0) revenueWeek += tot.total;
+        }
+        // When it happens: the time booked, else when it came in.
+        final at = _minutes(timeF == null ? null : r[timeF.id]) ?? _minutes(made.length > 11 ? made.substring(11) : null);
+        if (at != null) hours[at ~/ 60 % 24]++;
+      }
+      tables[t.id] = {'title': t.title, 'kind': isOrder ? 'orders' : (dateF != null ? 'bookings' : 'requests'), 'total': rows.length, 'counts': counts};
+    }
+    return {
+      'today': today,
+      'currency': spec.site['currency'] ?? '',
+      'bookings_today': bookingsToday,
+      'open_orders': openOrders,
+      'orders_today': ordersToday,
+      'new_today': newToday,
+      'revenue_today': (revenueToday * 100).round() / 100,
+      'revenue_7d': (revenueWeek * 100).round() / 100,
+      'days': days,
+      'tables': tables,
+      'hours': hours,
+    };
   }
 }

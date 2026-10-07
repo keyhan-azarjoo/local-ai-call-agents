@@ -25,6 +25,7 @@ Map<String, Object?> _list(String table, String title, {bool search = true}) => 
 Map<String, Object?> _form(String table, String title, String submit, String thanks) => {'type': 'form', 'table': table, 'title': title, 'submit': submit, 'thanks': thanks};
 Map<String, Object?> _info(String table, String title) => {'type': 'info', 'table': table, 'title': title};
 Map<String, Object?> _text(String text) => {'type': 'text', 'text': text};
+Map<String, Object?> _features(String title, List<String> lines) => {'type': 'features', 'title': title, 'text': lines.join('\n')};
 
 final _hours = _t('opening_hours', 'Opening hours', 'When you are open', 'see', [_f('opens', 'Opens', 'time'), _f('closes', 'Closes', 'time'), _f('days', 'Days', 'text')], single: true);
 
@@ -32,12 +33,14 @@ final appTemplates = <AppTemplate>[
   AppTemplate('restaurant', 'Restaurant', 'Menu with photos, orders for collection, delivery or to your table, reservations and opening hours.', {
     'name': 'Trattoria Bella',
     'summary': 'Guests browse the menu, order to their table and book ahead.',
-    'site': {'style': 'elegant', 'tagline': 'Wood-fired pizza & handmade pasta', 'hero': 'unsplash:1414235077428-338989a2e8c0', 'about': 'A family trattoria serving the food of Naples since 1998: slow-proved dough, fresh pasta every morning and wine from small Italian growers.', 'address': '12 Harbour Street', 'phone': '020 7946 0123', 'currency': '£'},
+    'site': {'style': 'elegant', 'tagline': 'Wood-fired pizza & handmade pasta', 'hero': 'unsplash:1414235077428-338989a2e8c0', 'about': 'A family trattoria serving the food of Naples since 1998: slow-proved dough, fresh pasta every morning and wine from small Italian growers.', 'address': '12 Harbour Street', 'phone': '020 7946 0123', 'email': 'ciao@trattoriabella.example', 'currency': '£', 'footer': 'Free Wi-Fi · Dogs welcome on the terrace'},
     'tables': [
       _t('menu_items', 'Menu', 'Dishes and drinks with prices', 'see', [
-        _f('name', 'Dish', 'text', req: true), _f('category', 'Category', 'choice', options: ['Starters', 'Pizza', 'Pasta', 'Desserts', 'Drinks']),
+        _f('name', 'Dish', 'text', req: true), _f('category', 'Category', 'choice', options: ['Starters', 'Pizza', 'Pasta', 'Desserts', 'Drinks', 'Sides']),
         _f('description', 'Description', 'longtext'), _f('price', 'Price', 'money', req: true), _f('photo', 'Photo', 'image'),
         _f('vegetarian', 'Vegetarian', 'yesno'), _f('spicy', 'Spicy', 'yesno'),
+        _f('allergens', 'Allergens', 'text'), _f('vegan', 'Vegan', 'yesno'), _f('gluten_free', 'Gluten free', 'yesno'), _f('popular', 'Popular', 'yesno'),
+        _f('available', 'Available today', 'yesno'),
       ]),
       _t('dining_tables', 'Tables', 'Tables in the restaurant', 'see', [_f('number', 'Table', 'text', req: true), _f('seats', 'Seats', 'number'), _f('area', 'Area', 'choice', options: ['Inside', 'Terrace', 'Window'])]),
       _t('orders', 'Orders', 'Food orders: collection, delivery or to a table', 'add', [
@@ -48,18 +51,49 @@ final appTemplates = <AppTemplate>[
         _f('ready_at', 'Ready / delivered at', 'time'),
         _f('items', 'Your order', 'links', link: 'menu_items', qty: true, req: true),
         _f('notes', 'Notes for the kitchen (allergies…)', 'longtext'), _f('status', 'Status', 'choice', options: ['New', 'Preparing', 'Ready', 'Out for delivery', 'Done', 'Cancelled'], manager: true),
+        _f('payment', 'Payment', 'choice', options: ['Unpaid', 'Paid card', 'Paid cash'], manager: true), _f('total', 'Total', 'money', manager: true),
       ]),
       _t('reservations', 'Reservations', 'Table bookings', 'add', [
         _f('name', 'Name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('date', 'Date', 'date', req: true), _f('time', 'Time', 'time', req: true),
         _f('guests', 'Guests', 'number', req: true), _f('table', 'Table', 'link', link: 'dining_tables'), _f('requests', 'Special requests', 'longtext'),
         _f('status', 'Status', 'choice', options: ['Confirmed', 'Seated', 'Finished', 'Cancelled', 'No-show'], manager: true),
+        _f('occasion', 'Occasion', 'choice', options: ['Birthday', 'Anniversary', 'Business', 'Date night', 'Other']), _f('deposit', 'Deposit', 'money', manager: true),
       ]),
       _hours,
+      _t('closures', 'Closed days', 'Days we are closed (holidays, private hire): no bookings then', 'see', [
+        _f('reason', 'Closed for', 'text', req: true), _f('date', 'Date', 'date', req: true), _f('until', 'Until (for several days)', 'date'),
+      ]),
+      _t('vouchers', 'Gift vouchers', 'Gift vouchers people buy for someone', 'add', [
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('amount', 'Amount', 'money', req: true),
+        _f('recipient', 'Who it’s for', 'text'), _f('message', 'Message for them', 'longtext'),
+        _f('code', 'Voucher code', 'text', manager: true), _f('status', 'Status', 'choice', options: ['Requested', 'Paid', 'Sent', 'Redeemed', 'Cancelled'], manager: true),
+      ]),
+      _t('private_events', 'Private dining', 'Parties and private dining enquiries', 'add', [
+        _f('name', 'Your name', 'text', req: true), _f('phone', 'Phone', 'phone', req: true), _f('date', 'Date', 'date', req: true), _f('guests', 'Guests', 'number', req: true),
+        _f('event_type', 'Occasion', 'choice', options: ['Birthday', 'Corporate', 'Wedding', 'Anniversary', 'Other'], req: true), _f('notes', 'Tell us more', 'longtext'),
+        _f('status', 'Status', 'choice', options: ['Enquiry', 'Confirmed', 'Deposit paid', 'Cancelled'], manager: true),
+      ]),
+      _t('reviews', 'Reviews', 'What guests say (you choose which to show)', 'see', [
+        _f('name', 'Name', 'text', req: true), _f('rating', 'Stars', 'number'), _f('quote', 'Review', 'longtext', req: true), _f('source', 'Where', 'text'),
+      ]),
     ],
     'pages': [
       {'id': 'home', 'title': 'Home', 'blocks': [
         _hero('Real Neapolitan cooking, right by the harbour', 'Wood-fired pizza, fresh pasta made every morning and a warm welcome.', button: 'Order now', link: 'order'),
-        _list('menu_items', 'Our menu'), _info('opening_hours', 'Visit us'),
+        _features('Why guests come back', [
+          'Wood-fired oven: Pizzas baked in ninety seconds at 450°, the Naples way.',
+          'Pasta made every morning: Rolled and cut by hand before we open.',
+          'Small Italian growers: Wine, olive oil and cheese from families we know.',
+          'Delivery & collection: Order online and pick it up hot, or have it brought to you.',
+        ]),
+        {..._list('menu_items', 'Guest favourites', search: false), 'only': 'popular'},
+        {'type': 'testimonials', 'table': 'reviews', 'title': 'What our guests say'},
+        _info('opening_hours', 'Visit us'),
+        {'type': 'contact', 'title': 'Find us', 'text': 'Two minutes from the harbour car park. Step-free entrance and a heated terrace.'},
+      ]},
+      {'id': 'menu', 'title': 'Menu', 'blocks': [
+        _hero('Our menu', 'Seasonal, simple and made here. Tell us about any allergy and the kitchen will look after you.'),
+        {..._list('menu_items', 'Menu'), 'layout': 'menu'},
       ]},
       {'id': 'order', 'title': 'Order', 'blocks': [
         _hero('Order online', 'Pick your dishes, then collect them, have them delivered, or eat in and we’ll bring them to your table.'),
@@ -70,26 +104,63 @@ final appTemplates = <AppTemplate>[
         {'type': 'availability', 'table': 'reservations', 'title': 'Find a free table'},
         _form('reservations', 'Your booking', 'Book this table', 'Your table is booked — we look forward to seeing you!'),
       ]},
+      {'id': 'private_dining', 'title': 'Private dining', 'blocks': [
+        {..._hero('Private dining & parties', 'Birthdays, team dinners and family celebrations: the whole terrace or our private room for up to 30.'), 'image': 'unsplash:1517248135467-4c7edcad34c4'},
+        _features('How it works', [
+          'Your own space: The private room seats 30, the terrace 40.',
+          'A menu for the day: Sharing feasts from £35 a head, built with the chef.',
+          'Everything arranged: Cake, flowers, a playlist: just ask.',
+        ]),
+        {'type': 'gallery', 'table': 'menu_items', 'title': 'From our kitchen'},
+        _form('private_events', 'Tell us about your event', 'Send enquiry', 'Thank you! We’ll call you within a day to plan it together.'),
+      ]},
+      {'id': 'vouchers', 'title': 'Gift vouchers', 'blocks': [
+        _hero('Give a dinner to remember', 'A Trattoria Bella gift voucher: for any amount, valid for a year, on food and wine.'),
+        _features('Good to know', [
+          'Any amount: From £20, spent over one visit or several.',
+          'Valid for 12 months: Lunch, dinner, takeaway or delivery.',
+          'Sent your way: We text the code to you, ready to print or forward.',
+        ]),
+        _form('vouchers', 'Buy a gift voucher', 'Request voucher', 'Thank you! We’ll call to take payment and then text you the voucher code.'),
+      ]},
+      {'id': 'contact', 'title': 'Contact', 'blocks': [
+        _hero('Come and see us', 'Lunch and dinner from Tuesday to Sunday. Call us, drop in, or book a table online.'),
+        {'type': 'contact', 'title': 'Contact & directions'},
+        _info('opening_hours', 'Opening hours'),
+        _list('closures', 'Days we are closed', search: false),
+      ]},
     ],
   }, {
     'menu_items': [
-      {'name': 'Burrata & heritage tomatoes', 'category': 'Starters', 'description': 'Creamy Puglian burrata, sweet tomatoes, basil oil and sea salt.', 'price': 9.5, 'vegetarian': true},
-      {'name': 'Fritto misto', 'category': 'Starters', 'description': 'Crispy squid, prawns and courgette with lemon aioli.', 'price': 11},
-      {'photo': 'unsplash:1574071318508-1cdbab80d002', 'name': 'Margherita', 'category': 'Pizza', 'description': 'San Marzano tomato, fior di latte, basil, extra-virgin olive oil.', 'price': 10.5, 'vegetarian': true},
-      {'photo': 'unsplash:1565299624946-b28f40a0ae38', 'name': 'Diavola', 'category': 'Pizza', 'description': 'Tomato, mozzarella, spicy salami, chilli honey.', 'price': 13, 'spicy': true},
-      {'photo': 'unsplash:1513104890138-7c749659a591', 'name': 'Tartufo', 'category': 'Pizza', 'description': 'White base, mushrooms, black truffle cream, rocket.', 'price': 15, 'vegetarian': true},
-      {'photo': 'unsplash:1621996346565-e3dbc646d9a9', 'name': 'Cacio e pepe', 'category': 'Pasta', 'description': 'Tonnarelli, pecorino romano, toasted black pepper.', 'price': 12.5, 'vegetarian': true},
-      {'photo': 'unsplash:1551183053-bf91a1d81141', 'name': 'Linguine allo scoglio', 'category': 'Pasta', 'description': 'Mussels, clams, prawns, cherry tomato and white wine.', 'price': 18},
-      {'photo': 'unsplash:1571877227200-a0d98ea607e9', 'name': 'Tiramisù', 'category': 'Desserts', 'description': 'Our nonna’s recipe, made fresh every day.', 'price': 7, 'vegetarian': true},
-      {'name': 'Limoncello sorbet', 'category': 'Desserts', 'description': 'Light, zesty and refreshing.', 'price': 6, 'vegetarian': true},
-      {'name': 'Aperol spritz', 'category': 'Drinks', 'description': 'Aperol, prosecco, soda and orange.', 'price': 9},
-      {'name': 'San Pellegrino', 'category': 'Drinks', 'description': 'Sparkling mineral water, 750 ml.', 'price': 4},
+      {'name': 'Burrata & heritage tomatoes', 'category': 'Starters', 'description': 'Creamy Puglian burrata, sweet tomatoes, basil oil and sea salt.', 'price': 9.5, 'vegetarian': true, 'allergens': 'Milk', 'gluten_free': true},
+      {'name': 'Fritto misto', 'category': 'Starters', 'description': 'Crispy squid, prawns and courgette with lemon aioli.', 'price': 11, 'allergens': 'Gluten, molluscs, crustaceans, egg'},
+      {'photo': 'unsplash:1574071318508-1cdbab80d002', 'name': 'Margherita', 'category': 'Pizza', 'description': 'San Marzano tomato, fior di latte, basil, extra-virgin olive oil.', 'price': 10.5, 'vegetarian': true, 'allergens': 'Gluten, milk', 'popular': true},
+      {'photo': 'unsplash:1565299624946-b28f40a0ae38', 'name': 'Diavola', 'category': 'Pizza', 'description': 'Tomato, mozzarella, spicy salami, chilli honey.', 'price': 13, 'spicy': true, 'allergens': 'Gluten, milk', 'popular': true},
+      {'photo': 'unsplash:1513104890138-7c749659a591', 'name': 'Tartufo', 'category': 'Pizza', 'description': 'White base, mushrooms, black truffle cream, rocket.', 'price': 15, 'vegetarian': true, 'allergens': 'Gluten, milk'},
+      {'photo': 'unsplash:1621996346565-e3dbc646d9a9', 'name': 'Cacio e pepe', 'category': 'Pasta', 'description': 'Tonnarelli, pecorino romano, toasted black pepper.', 'price': 12.5, 'vegetarian': true, 'allergens': 'Gluten, egg, milk', 'popular': true},
+      {'photo': 'unsplash:1551183053-bf91a1d81141', 'name': 'Linguine allo scoglio', 'category': 'Pasta', 'description': 'Mussels, clams, prawns, cherry tomato and white wine.', 'price': 18, 'allergens': 'Gluten, molluscs, crustaceans, sulphites'},
+      {'photo': 'unsplash:1571877227200-a0d98ea607e9', 'name': 'Tiramisù', 'category': 'Desserts', 'description': 'Our nonna’s recipe, made fresh every day.', 'price': 7, 'vegetarian': true, 'allergens': 'Gluten, egg, milk', 'popular': true},
+      {'name': 'Limoncello sorbet', 'category': 'Desserts', 'description': 'Light, zesty and refreshing.', 'price': 6, 'vegetarian': true, 'vegan': true, 'gluten_free': true},
+      {'name': 'Aperol spritz', 'category': 'Drinks', 'description': 'Aperol, prosecco, soda and orange.', 'price': 9, 'vegan': true, 'gluten_free': true, 'allergens': 'Sulphites'},
+      {'name': 'San Pellegrino', 'category': 'Drinks', 'description': 'Sparkling mineral water, 750 ml.', 'price': 4, 'vegan': true, 'gluten_free': true},
+      {'name': 'Garlic focaccia', 'category': 'Sides', 'description': 'Rosemary, sea salt and roasted garlic, warm from the oven.', 'price': 5, 'vegetarian': true, 'vegan': true, 'allergens': 'Gluten'},
+      {'name': 'Rocket & parmesan salad', 'category': 'Sides', 'description': 'Wild rocket, aged parmesan, lemon and olive oil.', 'price': 5.5, 'vegetarian': true, 'gluten_free': true, 'allergens': 'Milk'},
+      {'name': 'Rosemary potatoes', 'category': 'Sides', 'description': 'Crisp roast potatoes with rosemary and garlic.', 'price': 4.5, 'vegetarian': true, 'vegan': true, 'gluten_free': true},
     ],
     'dining_tables': [
       {'number': '1', 'seats': 2, 'area': 'Window'}, {'number': '2', 'seats': 2, 'area': 'Window'}, {'number': '3', 'seats': 4, 'area': 'Inside'},
       {'number': '4', 'seats': 4, 'area': 'Inside'}, {'number': '5', 'seats': 6, 'area': 'Inside'}, {'number': '6', 'seats': 4, 'area': 'Terrace'}, {'number': '7', 'seats': 8, 'area': 'Terrace'},
     ],
     'opening_hours': [{'opens': '12:00', 'closes': '22:30', 'days': 'Tuesday – Sunday'}],
+    'closures': [
+      {'reason': 'Christmas', 'date': '2026-12-25', 'until': '2026-12-26'},
+      {'reason': 'New Year’s Day', 'date': '2027-01-01'},
+    ],
+    'reviews': [
+      {'name': 'Sophie M.', 'rating': 5, 'quote': 'The best pizza outside Naples. The Diavola with chilli honey is unreal, and the staff remembered our daughter’s birthday.', 'source': 'Google'},
+      {'name': 'James O.', 'rating': 5, 'quote': 'Booked online in seconds, table by the window, cacio e pepe done exactly right. We’ll be back next week.', 'source': 'Tripadvisor'},
+      {'name': 'Priya K.', 'rating': 4, 'quote': 'Lovely terrace, fresh pasta and a proper tiramisù. Delivery arrived hot too.', 'source': 'Google'},
+    ],
   }),
 
   AppTemplate('salon', 'Hair & beauty salon', 'Services and prices, your team, and online appointment requests.', {

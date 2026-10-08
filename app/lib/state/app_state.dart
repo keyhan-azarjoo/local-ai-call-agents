@@ -1469,7 +1469,7 @@ class AppState extends ChangeNotifier {
   Future<void> startVoice() async {
     final v = voice!;
     if (Directory(v.engineDir).existsSync()) {
-      final src = await rootBundle.loadString('assets/engine/localline_voice.py');
+      final src = await rootBundle.loadString('assets/engine/localailine_voice.py');
       final f = File(v.script);
       if (!f.existsSync() || f.readAsStringSync() != src) await f.writeAsString(src);
     }
@@ -1478,7 +1478,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> installVoiceEngine() async {
-    await voice!.install(engineScript: await rootBundle.loadString('assets/engine/localline_voice.py'));
+    await voice!.install(engineScript: await rootBundle.loadString('assets/engine/localailine_voice.py'), requirements: await rootBundle.loadString('assets/engine/requirements.txt'));
   }
 
   HostClient? remote;
@@ -2129,7 +2129,7 @@ class AppState extends ChangeNotifier {
     if (v == null || !File(v.python).existsSync()) return null;
     try {
       final script = File(p.join(v.engineDir, 'speech_lab.py'))..writeAsStringSync(await rootBundle.loadString('assets/engine/speech_lab.py'));
-      File(p.join(v.engineDir, 'localline_voice.py')).writeAsStringSync(await rootBundle.loadString('assets/engine/localline_voice.py'));
+      File(p.join(v.engineDir, 'localailine_voice.py')).writeAsStringSync(await rootBundle.loadString('assets/engine/localailine_voice.py'));
       await Process.start(v.python, [script.path, '--port', '8920'],
           workingDirectory: v.engineDir,
           environment: {'LL_KOKORO_DIR': v.kokoroDir, 'LL_WHISPER_URL': 'http://127.0.0.1:${VoiceEngine.whisperPort}', 'LL_WHISPER_URLS': v.hearingUrls.join(',')},

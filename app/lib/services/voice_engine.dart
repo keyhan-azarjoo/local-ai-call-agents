@@ -184,7 +184,7 @@ class VoiceEngine extends ChangeNotifier {
   /// The Python environment with LiveKit Agents (created by the installer).
   String get engineDir => p.join(dataDir, 'engine');
   String get python => p.join(engineDir, '.venv', 'bin', 'python');
-  String get script => p.join(engineDir, 'localline_voice.py');
+  String get script => p.join(engineDir, 'localailine_voice.py');
 
   Future<String?> whisperModel() async {
     final home = Platform.environment['HOME'] ?? '';
@@ -235,7 +235,7 @@ class VoiceEngine extends ChangeNotifier {
 
   /// Installs the voice engine: a private Python environment (uv) with LiveKit Agents
   /// and Piper, plus the engine script and its models.
-  Future<void> install({required String engineScript}) async {
+  Future<void> install({required String engineScript, String? requirements}) async {
     final uv = await which('uv');
     if (uv == null) throw Exception('Install uv first: brew install uv');
     Directory(engineDir).createSync(recursive: true);
@@ -249,7 +249,13 @@ class VoiceEngine extends ChangeNotifier {
     }
 
     if (!File(python).existsSync()) await run([uv, 'venv', '--python', '3.12', '.venv']);
-    await run([uv, 'pip', 'install', '--python', python, 'livekit-agents[silero,turn-detector,openai]~=1.8', 'piper-tts', 'kokoro-onnx', 'numpy']);
+    // The tested versions (assets/engine/requirements.txt), so every install is the same.
+    if (requirements != null) {
+      File(p.join(engineDir, 'requirements.txt')).writeAsStringSync(requirements);
+      await run([uv, 'pip', 'install', '--python', python, '-r', 'requirements.txt']);
+    } else {
+      await run([uv, 'pip', 'install', '--python', python, 'livekit-agents[silero,turn-detector,openai]~=1.8', 'piper-tts', 'kokoro-onnx', 'numpy']);
+    }
     await run([python, script, 'download-files']);
     await _naturalVoice();
     _log('Voice engine installed.');
@@ -354,6 +360,7 @@ class VoiceEngine extends ChangeNotifier {
     if (!Platform.isWindows) {
       for (final pattern in [
         script,
+        p.join(engineDir, 'localline_voice.py'), // its name before 0.9
         'whisper-server .*--port $whisperPort',
         'whisper-server .*--port $accuratePort',
         'whisper-server .*--port 89[34][0-9]',

@@ -52,7 +52,7 @@ from livekit.agents.voice.background_audio import AudioConfig, BackgroundAudioPl
 from livekit.plugins import openai, silero
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-log = logging.getLogger("localline.voice")
+log = logging.getLogger("localailine.voice")
 
 WHISPER_URL = os.environ.get("LL_WHISPER_URL", "http://127.0.0.1:8910")
 # Hearing for several calls at once: a whisper server hears one request at a time, so the app

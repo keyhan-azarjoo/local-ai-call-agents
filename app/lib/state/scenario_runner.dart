@@ -566,7 +566,7 @@ class ScenarioRunner {
       for (final m in RegExp(r'\[voice:([^\]]*)\]|\[connect:(\d+)\]').allMatches(text)) {
         passedTo.add(m.group(1) ?? 'person#${m.group(2)}');
       }
-      // The voice engine hangs up only on a goodbye (see _FAREWELL in localline_voice.py).
+      // The voice engine hangs up only on a goodbye (see _FAREWELL in localailine_voice.py).
       final before = text.split('[hangup]').first;
       if (text.contains('[hangup]') && _farewell.hasMatch(before.length > 90 ? before.substring(before.length - 90) : before) && !before.trim().endsWith('?')) hungUp = true;
       // A hand-over: hold music, then the teammate in their own voice (shown as such).

@@ -6,7 +6,7 @@ real hearing (the Whisper server), timing both and saying how well it was unders
   POST /roundtrip {"text": "...", "voice": "af_heart", "lang": "en", "stt": true}
     -> {"first_ms", "tts_ms", "audio_s", "stt_ms", "heard", "match"}
 
-Uses the voice engine's own code (localline_voice.py), so tests hear what callers hear.
+Uses the voice engine's own code (localailine_voice.py), so tests hear what callers hear.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from aiohttp import web
 HERE = Path(__file__).resolve().parent
 _ARGS = sys.argv[1:]
 sys.argv = [sys.argv[0]]  # the engine module reads no arguments of ours
-_spec = importlib.util.spec_from_file_location("localline_voice", HERE / "localline_voice.py")
+_spec = importlib.util.spec_from_file_location("localailine_voice", HERE / "localailine_voice.py")
 v = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(v)  # type: ignore[union-attr]
 

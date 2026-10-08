@@ -10,7 +10,7 @@ flowchart TB
   twilio <-->|SIP over TLS, registered outward| bridge[Call bridge · Go<br/>assets/engine/sipreg]
   subgraph mac [This computer]
     bridge <--> lksip[LiveKit SIP] <--> lk[LiveKit server]
-    lk <--> agent[Voice agent · Python<br/>assets/engine/localline_voice.py<br/>VAD · turn detection · Kokoro/Piper]
+    lk <--> agent[Voice agent · Python<br/>assets/engine/localailine_voice.py<br/>VAD · turn detection · Kokoro/Piper]
     agent <--> whisper[whisper.cpp pool]
     agent <-->|OpenAI-style streaming /v1/chat/completions| host[LocalAILine app · Dart<br/>lib/state/app_state.dart]
     host <--> llm[AI model<br/>llama.cpp built-in · Ollama · vLLM… · cloud]
@@ -23,7 +23,7 @@ flowchart TB
 ## A call, step by step
 
 1. **In.** Twilio sends the call to the SIP trunk LocalAILine created in the owner's account. The call bridge (`app/assets/engine/sipreg/main.go`) keeps this computer registered with that trunk, so calls arrive with no port forwarding, and hands them to LiveKit SIP on `127.0.0.1`. LiveKit puts each call in its own room (`pstn-in-<line>-_<number>_…`).
-2. **Listening.** A LiveKit Agents worker (`localline_voice.py`) joins the room in its own process. Silero VAD and a multilingual turn detector decide when the caller has finished. Streaming speech recognition runs on whisper.cpp servers in a pool, so parallel calls never queue behind each other, with a larger model for hard languages.
+2. **Listening.** A LiveKit Agents worker (`localailine_voice.py`) joins the room in its own process. Silero VAD and a multilingual turn detector decide when the caller has finished. Streaming speech recognition runs on whisper.cpp servers in a pool, so parallel calls never queue behind each other, with a larger model for hard languages.
 3. **Thinking.** The agent sends the conversation to the app's own OpenAI-compatible endpoint. The app (`agentReply` in `app_state.dart`):
    - finds which agent is on the call (the call flow);
    - builds a system prompt that stays the same on every turn, so the model can reuse it;

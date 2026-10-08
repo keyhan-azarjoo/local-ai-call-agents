@@ -453,15 +453,15 @@ class _CallFlowPageState extends State<CallFlowPage> {
                 if (a['enabled'] != 1) const Pill('Off'),
               ]),
               const SizedBox(height: 4),
-              Flexible(
+              // All the room between the name and the last line: two lines, then "…" (never cut through a line).
+              Expanded(
                 child: Text(
-                entry ? 'Answers every call' : (('${a['transfer_when'] ?? ''}').trim().isEmpty ? 'Tap to say when calls come here' : 'When: ${a['transfer_when']}'),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: c.muted),
+                  entry ? 'Answers every call' : (('${a['transfer_when'] ?? ''}').trim().isEmpty ? 'Tap to say when calls come here' : 'When: ${a['transfer_when']}'),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: c.muted),
+                ),
               ),
-              ),
-              const Spacer(),
               Text(
                 human
                     ? [if (acc['device'] != null) 'Rings their app', if ('${acc['number'] ?? ''}'.isNotEmpty) 'Rings ${acc['number']}'].join(' · ').ifEmpty('Add a number or paired phone')

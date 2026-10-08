@@ -34,6 +34,7 @@ import '../services/speech.dart';
 import '../services/system.dart';
 import '../services/phone.dart';
 import '../services/voice_engine.dart';
+import 'call_monitor.dart';
 import 'scenario_runner.dart';
 
 enum Gate { loading, setup, signIn, app, companion }
@@ -1390,16 +1391,25 @@ class AppState extends ChangeNotifier {
   /// The voice agent reports a finished phone call: keep it in Calls and report back on the task.
   Future<void> _callEnded(Map<String, dynamic> b) async {
     final room = '${b['room'] ?? ''}';
-    _activeCalls.remove(room);
-    liveCalls.remove(room);
-    liveEnded(room);
+    // The owner took over: the AI has left, but the call goes on (it stays on the live view and
+    // keeps its line until the owner ends it). What was said so far is kept now.
+    final takenBy = '${b['taken_over_by'] ?? ''}'.trim();
+    if (takenBy.isEmpty || !liveCalls.containsKey(room)) {
+      _activeCalls.remove(room);
+      liveCalls.remove(room);
+      liveEnded(room);
+    }
     _onCall.remove(room);
     _lastCheck.remove('${b['number'] ?? ''}');
     _verifiedName.remove('${b['number'] ?? ''}');
     _notFound.remove('${b['number'] ?? ''}');
     _savedOn.remove(room);
     roomAgent.remove(room);
-    final turns = [for (final t in (b['transcript'] as List? ?? []).cast<Map>()) {'who': t['role'] == 'user' ? 'them' : 'ai', 'text': '${t['text']}'}];
+    final turns = [
+      for (final t in (b['transcript'] as List? ?? []).cast<Map>())
+        {'who': switch (t['role']) { 'user' => 'them', 'note' => 'note', _ => 'ai' }, 'text': '${t['text']}'},
+      if (takenBy.isNotEmpty && !(b['transcript'] as List? ?? []).any((t) => t is Map && t['role'] == 'note')) {'who': 'note', 'text': 'Taken over by $takenBy'},
+    ];
     final answered = turns.any((t) => t['who'] == 'them');
     final pickedUp = b['answered'] == true;
     final taskId = int.tryParse(room.startsWith('pstn-out-') ? room.substring(9) : '');
@@ -1411,7 +1421,7 @@ class AppState extends ChangeNotifier {
         await for (final t in chat([
           ChatMessage('system', 'Summarise this phone call for the person who asked for it, in 1–3 short sentences: what was found out or agreed, '
               'especially anything the goal asked to find out. Plain text.'),
-          ChatMessage('user', '${task == null ? '' : 'Goal: ${task['goal']}\n\n'}Call:\n${turns.map((t) => '${t['who'] == 'ai' ? 'Ava' : 'Them'}: ${t['text']}').join('\n')}'),
+          ChatMessage('user', '${task == null ? '' : 'Goal: ${task['goal']}\n\n'}Call:\n${turns.map((t) => t['who'] == 'note' ? '(${t['text']})' : '${t['who'] == 'ai' ? 'Ava' : 'Them'}: ${t['text']}').join('\n')}'),
         ]).timeout(const Duration(seconds: 40))) {
           out.write(t);
         }
@@ -1887,9 +1897,86 @@ class AppState extends ChangeNotifier {
         ..text = text
         ..done = done;
     } else if (!(done && last != null && last.who == 'caller' && last.text == text)) {
-      lines.add(LiveLine('caller', text, done: done));
+      lines.add(LiveLine('caller', text, name: _callerLabel(room), done: done));
     }
     _liveState(room, caller: done ? 'listening' : 'speaking');
+  }
+
+  // ---------- the owner on a live call (see CallMonitor) ----------
+
+  /// Listening in on calls and taking them over, from this computer.
+  late final callMonitor = CallMonitor(this);
+
+  /// The owner's name as shown on a call they joined.
+  String get ownerName {
+    final n = user?.name.trim() ?? '';
+    return n.isEmpty ? 'Owner' : n.split(RegExp(r'\s+')).first;
+  }
+
+  /// Calls the owner took over from the AI (room → the owner's name): the AI has left them.
+  final takenOver = <String, String>{};
+
+  /// Voice test calls where the owner speaks as the caller (room → the owner's name).
+  final callerAs = <String, String>{};
+
+  /// Whether the owner is speaking on a call they took over (from the room's audio levels).
+  final ownerSpeaking = <String>{};
+
+  String? _callerLabel(String room) => callerAs[room] == null ? null : '${callerAs[room]} (as caller)';
+
+  void _liveNote(String room, String text) {
+    final lines = liveText.putIfAbsent(room, () => []);
+    lines.lastOrNull?.done = true;
+    lines.add(LiveLine('note', text, done: true));
+    _liveState(room);
+  }
+
+  /// The owner took over [room]: the AI steps out and they carry on the conversation.
+  void liveTakeover(String room, String by) {
+    if (room.isEmpty) return;
+    takenOver[room] = by;
+    _liveNote(room, '$by took over the call');
+    _liveState(room, agent: 'listening');
+    log('Took over a call ($room)');
+  }
+
+  /// The owner handed the call back to the AI.
+  void liveHandedBack(String room) {
+    if (takenOver.remove(room) == null) return;
+    ownerSpeaking.remove(room);
+    _liveNote(room, 'Handed back to the AI');
+  }
+
+  /// Who is speaking on a call the owner took over (the AI isn't there to say): keeps it on the view.
+  void liveOnCall(String room, {required bool owner, required bool caller}) {
+    if (!takenOver.containsKey(room)) return;
+    owner ? ownerSpeaking.add(room) : ownerSpeaking.remove(room);
+    _liveState(room, agent: 'listening', caller: caller ? 'speaking' : 'listening');
+  }
+
+  /// A call the owner was on is over (they ended it, or the caller hung up).
+  void liveCallGone(String room) {
+    takenOver.remove(room);
+    callerAs.remove(room);
+    ownerSpeaking.remove(room);
+    _activeCalls.remove(room);
+    if (liveCalls.remove(room) != null || liveText.containsKey(room)) {
+      _liveNote(room, 'Call ended');
+      liveCalls.remove(room);
+      liveEnded(room);
+    }
+    notifyListeners();
+  }
+
+  /// The owner speaks as the caller on a voice test call ([by] null: the simulated caller is back).
+  void liveCallerAs(String room, String? by) {
+    if (by == null) {
+      if (callerAs.remove(room) != null) _liveNote(room, 'The simulated caller is back');
+    } else {
+      callerAs[room] = by;
+      _liveNote(room, '$by is speaking as the caller');
+    }
+    notifyListeners();
   }
 
   /// What the AI was given as the caller's turn: replaces the pieces heard while they spoke
@@ -1901,7 +1988,7 @@ class AppState extends ChangeNotifier {
     while (lines.isNotEmpty && lines.last.who == 'caller') {
       lines.removeLast();
     }
-    lines.add(LiveLine('caller', text, done: true));
+    lines.add(LiveLine('caller', text, name: _callerLabel(room), done: true));
     _liveState(room, caller: 'listening');
   }
 
@@ -1944,6 +2031,9 @@ class AppState extends ChangeNotifier {
   /// The call is over: keep its conversation with the recent ones.
   void liveEnded(String room) {
     _liveWho.remove(room);
+    takenOver.remove(room);
+    callerAs.remove(room);
+    ownerSpeaking.remove(room);
     final lines = liveText.remove(room);
     if (lines == null || lines.isEmpty) return;
     for (final l in lines) {

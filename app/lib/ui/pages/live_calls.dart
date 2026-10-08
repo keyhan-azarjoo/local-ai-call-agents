@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../state/app_state.dart';
+import '../../state/call_monitor.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
 
@@ -80,9 +81,11 @@ class LiveCallsPanel extends StatelessWidget {
             for (final e in calls) ...[
               const SizedBox(height: 12),
               _LiveCall(
+                room: e.key,
                 number: e.value.number.isEmpty ? e.key : e.value.number,
                 state: switch ((e.value.agent, e.value.caller)) {
-                  (_, 'speaking') => 'caller is speaking',
+                  (_, 'speaking') => s.callerAs[e.key] != null ? '${s.callerAs[e.key]} (as caller) is speaking' : 'caller is speaking',
+                  _ when s.takenOver[e.key] != null => s.ownerSpeaking.contains(e.key) ? '${s.takenOver[e.key]} is speaking' : '${s.takenOver[e.key]} is on the call',
                   ('speaking', _) => 'AI is speaking',
                   ('thinking', _) => 'AI is thinking',
                   _ => 'listening',
@@ -117,12 +120,13 @@ class LiveCallsPanel extends StatelessWidget {
 /// One call on the line: its conversation so far, newest at the bottom.
 class _LiveCall extends StatelessWidget {
   const _LiveCall({
+    required this.room,
     required this.number,
     required this.state,
     required this.test,
     required this.lines,
   });
-  final String number, state;
+  final String room, number, state;
   final bool test;
   final List<LiveLine> lines;
 
@@ -139,7 +143,7 @@ class _LiveCall extends StatelessWidget {
         Row(
           children: [
             Flexible(child: Muted(number, mono: true, size: 12.5)),
-            if (test) ...[
+            if (test || CallMonitor.isVoiceTest(room)) ...[
               const SizedBox(width: 8),
               const Pill('test call', tone: Tone.neutral),
             ],
@@ -147,6 +151,8 @@ class _LiveCall extends StatelessWidget {
             Muted(state, size: 12.5),
           ],
         ),
+        const SizedBox(height: 8),
+        CallControls(room: room),
         const SizedBox(height: 8),
         if (lines.isEmpty)
           const Muted('Waiting for the first words…', size: 12.5)
@@ -158,6 +164,96 @@ class _LiveCall extends StatelessWidget {
               reverse: true,
               shrinkWrap: true,
               children: [for (final l in lines.reversed) LiveBubble(l)],
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+/// The owner on a live call: listen in on the speakers, take over from the AI (and hand back or
+/// hang up), and on voice test calls speak as the caller. See [CallMonitor].
+class CallControls extends StatelessWidget {
+  const CallControls({super.key, required this.room});
+  final String room;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = context.read<AppState>();
+    final m = s.callMonitor;
+    return ListenableBuilder(
+      listenable: m,
+      builder: (context, _) {
+        final mode = m.modeOf(room);
+        final asCaller = context.select<AppState, bool>((s) => s.callerAs.containsKey(room));
+        final voiceTest = CallMonitor.isVoiceTest(room);
+        final owner = s.ownerName;
+        final busy = m.callerBusy(room);
+        final on = mode == MonitorMode.listening || mode == MonitorMode.takenOver;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            switch (mode) {
+              MonitorMode.off => Btn('Listen', icon: Icons.headphones, small: true, onPressed: () => m.listen(room)),
+              MonitorMode.connecting => Btn('Connecting…', icon: Icons.headphones, small: true, kind: BtnKind.ghost, onPressed: () => m.stop(room)),
+              MonitorMode.listening => Btn('Stop listening', icon: Icons.headset_off, small: true, kind: BtnKind.ghost, onPressed: () => m.stop(room)),
+              MonitorMode.takenOver => Btn(m.mutedOn(room) ? 'Unmute' : 'Mute', icon: m.mutedOn(room) ? Icons.mic_off : Icons.mic, small: true, kind: BtnKind.ghost, onPressed: () => m.toggleMute(room)),
+              MonitorMode.handingBack => const Btn('Handing back…', icon: Icons.smart_toy_outlined, small: true, kind: BtnKind.ghost),
+            },
+            if (mode == MonitorMode.off || mode == MonitorMode.listening)
+              Btn('Take over', icon: Icons.record_voice_over, small: true, kind: BtnKind.amber, onPressed: () => m.takeOver(room)),
+            if (mode == MonitorMode.takenOver) ...[
+              Btn('Hand back to AI', icon: Icons.smart_toy_outlined, small: true, kind: BtnKind.green, onPressed: () => m.handBack(room)),
+              Btn('End call', icon: Icons.call_end, small: true, kind: BtnKind.danger, onPressed: () => m.endCall(room)),
+            ],
+            if (voiceTest && mode != MonitorMode.takenOver && mode != MonitorMode.handingBack)
+              asCaller
+                  ? Btn(busy ? 'Handing back…' : 'Hand back', icon: Icons.person_off_outlined, small: true, onPressed: busy ? null : () => m.speakAsCaller(room, back: true))
+                  : Btn(busy ? 'Switching…' : 'Speak as the caller', icon: Icons.person_outline, small: true, onPressed: busy ? null : () => m.speakAsCaller(room)),
+            if (on) _Level(level: m.levelOf(room), muted: m.mutedOn(room)),
+            if (on)
+              Muted(
+                switch ((mode, m.speakingOn(room))) {
+                  (MonitorMode.takenOver, 'owner') => 'You’re speaking',
+                  (MonitorMode.takenOver, 'caller') => 'The caller is speaking',
+                  (MonitorMode.takenOver, _) => m.mutedOn(room) ? 'On the call · microphone off' : 'On the call as $owner · microphone on',
+                  (_, 'caller') => 'Listening · the caller is speaking',
+                  (_, 'agent') => 'Listening · the AI is speaking',
+                  _ => 'Listening on this computer’s speakers',
+                },
+                size: 12,
+              ),
+            if (asCaller && mode != MonitorMode.takenOver) Muted('You’re the caller (your microphone, through the test caller)', size: 12),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// How loud the call is right now (a small bar), so it's clear audio is coming through.
+class _Level extends StatelessWidget {
+  const _Level({required this.level, required this.muted});
+  final double level;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Audio level',
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < 5; i++)
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            width: 4,
+            height: 6.0 + i * 2.5,
+            margin: const EdgeInsets.only(right: 2),
+            decoration: BoxDecoration(
+              color: level > i * .12 + .02 ? (muted ? context.c.muted : context.c.greenInk) : context.c.line,
+              borderRadius: BorderRadius.circular(1),
             ),
           ),
       ],
@@ -236,7 +332,7 @@ class LiveBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Muted(
-              '${caller ? 'Caller' : (line.name?.isNotEmpty == true ? line.name! : 'AI')} · $at${line.done
+              '${caller ? (line.name?.isNotEmpty == true ? line.name! : 'Caller') : (line.name?.isNotEmpty == true ? line.name! : 'AI')} · $at${line.done
                   ? ''
                   : caller
                   ? ' · hearing…'

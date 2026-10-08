@@ -42,6 +42,7 @@ from livekit.agents import (
     JobContext,
     WorkerOptions,
     cli,
+    room_io,
     stt,
     tts,
     utils,
@@ -121,6 +122,57 @@ WHISPER_LANGS = {
 }
 
 EMOJI = __import__("re").compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F]")
+
+# ---------- the owner taking over a call (from the app's Calls page) ----------
+# The app joins the call's room as "owner-\u2026", then sends {"takeover": true, "by": "<name>"} on this
+# topic (and sets the attribute below): the AI stops at once, says nothing more and leaves; the
+# caller stays on the line with the owner. "Hand back to AI" sends the agent back in with job
+# metadata {"handback": true, "by": "<name>"}.
+TAKEOVER_TOPIC = "localailine"
+TAKEOVER_ATTRIBUTE = "localailine.takeover"
+OWNER_PREFIX = "owner-"
+
+
+def _owner_name(v: object) -> str:
+    return v.strip()[:60] if isinstance(v, str) and v.strip() else "the owner"
+
+
+def takeover_by(data: object, topic: str | None, identity: str | None = "") -> str | None:
+    """Who is taking over, from a data message the owner's app sent; None if it isn't one."""
+    if topic != TAKEOVER_TOPIC or not str(identity or "").startswith(OWNER_PREFIX):
+        return None
+    try:
+        raw = bytes(data).decode("utf-8") if isinstance(data, (bytes, bytearray, memoryview)) else str(data)
+        msg = json.loads(raw)
+    except (ValueError, TypeError, UnicodeDecodeError):
+        return None
+    if not isinstance(msg, dict) or msg.get("takeover") is not True:
+        return None
+    return _owner_name(msg.get("by"))
+
+
+def takeover_by_attributes(attributes: dict | None, identity: str | None = "") -> str | None:
+    """Who is taking over, from the owner's participant attributes; None if nobody is."""
+    if not str(identity or "").startswith(OWNER_PREFIX):
+        return None
+    v = (attributes or {}).get(TAKEOVER_ATTRIBUTE)
+    if not isinstance(v, str) or v.strip().lower() in ("", "0", "false", "no"):
+        return None
+    return "the owner" if v.strip().lower() in ("1", "true", "yes") else _owner_name(v)
+
+
+def handback_of(metadata: str | None) -> str | None:
+    """The owner handing a call back to the AI (the job's metadata): who handed it back, or None."""
+    try:
+        m = json.loads(metadata or "")
+    except (ValueError, TypeError):
+        return None
+    return _owner_name(m.get("by")) if isinstance(m, dict) and m.get("handback") is True else None
+
+
+def is_app_listener(identity: str | None) -> bool:
+    """The owner in the app (listening in or on the call): never the caller the AI talks to."""
+    return str(identity or "").startswith((OWNER_PREFIX, "listen-"))
 
 
 def wav_bytes(pcm: np.ndarray, sr: int) -> bytes:
@@ -1087,7 +1139,13 @@ async def entrypoint(ctx: JobContext) -> None:
 
     ava = Ava(instructions=os.environ.get("LL_INSTRUCTIONS", "You are Ava, a warm, brief phone assistant.")
               + " This is a phone call: speak naturally in short sentences, no emojis, no lists or markdown.")
-    await session.start(agent=ava, room=ctx.room)
+    # Sent back in by the owner ("Hand back to AI"): talk to the caller, not to the owner still in the room.
+    handback = handback_of(getattr(ctx.job, "metadata", "") or "")
+    caller_id = next((p.identity for p in ctx.room.remote_participants.values() if not is_app_listener(p.identity)), None) if handback else None
+    if caller_id:
+        await session.start(agent=ava, room=ctx.room, room_options=room_io.RoomOptions(participant_identity=caller_id))
+    else:
+        await session.start(agent=ava, room=ctx.room)
     # The app's "Interrupt" button (its mic is off while Ava speaks, so she can't hear herself).
     async def _interrupt(_data) -> str:  # noqa: ANN001
         await session.interrupt(force=True)
@@ -1174,26 +1232,66 @@ async def entrypoint(ctx: JobContext) -> None:
             try:
                 folder = Path(os.environ.get("LL_RECORDINGS_DIR") or (VOICES_DIR.parent.parent / "recordings"))
                 # (The room name carries the caller's number as their phone network sent it: only safe characters in a file name.)
-                safe = re.sub(r"[^A-Za-z0-9_+-]", "", ctx.room.name)[-24:] or "call"
+                safe = _re.sub(r"[^A-Za-z0-9_+-]", "", ctx.room.name)[-24:] or "call"
                 recording = stt_.recorder.save(folder / f"{time.strftime('%Y-%m-%d_%H-%M-%S')}_{safe}.wav")
             except Exception as e:  # noqa: BLE001
                 log.warning("could not save the recording: %s", e)
-        transcript = []
+        transcript = [{"role": "note", "text": f"Handed back to the AI by {handback}"}] if handback else []
         for item in session.history.items:
             text = getattr(item, "text_content", None)
             role = getattr(item, "role", None)
             if text and role in ("user", "assistant"):
                 transcript.append({"role": role, "text": text})
+        if taken["by"]:
+            transcript.append({"role": "note", "text": f"Taken over by {taken['by']}"})
         try:
             async with aiohttp.ClientSession() as h:
                 await h.post(f"{base}/api/call-ended", json={"room": ctx.room.name, "transcript": transcript, "answered": picked_up["yes"], "number": caller_number(),
                                                               "started_at": int(started * 1000), "duration_s": int(time.time() - started),
-                                                              "recording": str(recording) if recording else None},
+                                                              "recording": str(recording) if recording else None,
+                                                              **({"taken_over_by": taken["by"]} if taken["by"] else {})},
                              headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=10))
         except Exception as e:  # noqa: BLE001
             log.warning("could not report the call: %s", e)
 
     ctx.add_shutdown_callback(report)
+
+    # The owner takes over (the app's "Take over"): stop mid-word, say nothing more, and leave the
+    # call to them. The caller stays connected; what was said so far is saved by report().
+    taken = {"by": None}
+
+    def step_out(by: str) -> None:
+        if taken["by"]:
+            return
+        taken["by"] = by
+        log.info("taken over by %s; leaving the call to them", by)
+        ava.hangup_requested = False
+        ava.connect_requested = None
+        stop_sound()
+        for quiet in (lambda: session.input.set_audio_enabled(False), lambda: session.output.set_audio_enabled(False), lambda: session.interrupt(force=True)):
+            try:
+                quiet()
+            except Exception as e:  # noqa: BLE001
+                log.warning("stepping out: %s", e)
+        asyncio.create_task(leave_to_owner())
+
+    async def leave_to_owner() -> None:
+        await asyncio.sleep(0.3)
+        ctx.shutdown("taken over by the owner")  # the room (and the caller) stay
+
+    def on_data(packet) -> None:  # noqa: ANN001
+        p = getattr(packet, "participant", None)
+        by = takeover_by(getattr(packet, "data", b""), getattr(packet, "topic", None), getattr(p, "identity", "") if p else "")
+        if by:
+            step_out(by)
+
+    def on_attributes(_changed, participant) -> None:  # noqa: ANN001
+        by = takeover_by_attributes(dict(participant.attributes), participant.identity)
+        if by:
+            step_out(by)
+
+    ctx.room.on("data_received", on_data)
+    ctx.room.on("participant_attributes_changed", on_attributes)
 
     async def hang_up() -> None:
         await asyncio.sleep(1.0)  # let the goodbye finish on their side
@@ -1323,7 +1421,9 @@ async def entrypoint(ctx: JobContext) -> None:
 
     greeting = cfg.get("greeting") if (mode == "caller" or mode.startswith("outbound#")) else f"Hi, it's {cfg.get('name', 'Ava')}. What can I do for you?"
     greeting = greeting or os.environ.get("LL_GREETING", "")
-    if greeting:
+    if handback:  # back on a call the owner had taken over: no fresh hello, no "calling on behalf of"
+        greeting = f"Hi, it's {cfg.get('name', 'Ava')} again. Is there anything else I can help you with?"
+    if greeting and not taken["by"]:
         session.say(greeting, allow_interruptions=True)
 
 

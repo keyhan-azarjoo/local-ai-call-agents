@@ -179,7 +179,7 @@ void showCall(BuildContext context, Map<String, Object?> c) {
                       SizedBox(
                         width: 76,
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Eyebrow(t['who'] == 'ai' ? 'AI' : 'Caller'),
+                          Eyebrow(switch (t['who']) { 'ai' => 'AI', 'note' => 'Note', _ => 'Caller' }),
                           if (t['at'] != null) Muted('${t['at']}', mono: true, size: 10.5),
                           if (t['ms'] != null) Muted('${((t['ms'] as num) / 1000).toStringAsFixed(1)} s', mono: true, size: 10.5),
                         ]),

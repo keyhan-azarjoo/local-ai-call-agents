@@ -535,7 +535,19 @@ class VoiceEngine extends ChangeNotifier {
   }
 
   /// A signed LiveKit access token (JWT, HS256) for joining one room.
-  Future<String> token({required String identity, String room = '', String? name, Duration ttl = const Duration(hours: 2), bool sipAdmin = false}) async {
+  /// [canPublish] false + [hidden]: a silent listener nobody in the room sees (the owner listening
+  /// in on a call). [canUpdateOwnMetadata]: may set its own attributes (the owner taking over).
+  Future<String> token({
+    required String identity,
+    String room = '',
+    String? name,
+    Duration ttl = const Duration(hours: 2),
+    bool sipAdmin = false,
+    bool canPublish = true,
+    bool canPublishData = true,
+    bool hidden = false,
+    bool canUpdateOwnMetadata = false,
+  }) async {
     String b64(Object o) => base64Url.encode(utf8.encode(jsonEncode(o))).replaceAll('=', '');
     final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
     final head = b64({'alg': 'HS256', 'typ': 'JWT'});
@@ -545,10 +557,45 @@ class VoiceEngine extends ChangeNotifier {
       'name': name ?? identity,
       'nbf': now - 10,
       'exp': now + ttl.inSeconds,
-      'video': {'room': room, 'roomJoin': room.isNotEmpty, 'roomCreate': sipAdmin, 'roomAdmin': sipAdmin, 'canPublish': true, 'canSubscribe': true, 'canPublishData': true},
+      'video': {
+        'room': room,
+        'roomJoin': room.isNotEmpty,
+        'roomCreate': sipAdmin,
+        'roomAdmin': sipAdmin,
+        if (sipAdmin) 'roomList': true,
+        'canPublish': canPublish,
+        'canSubscribe': true,
+        'canPublishData': canPublishData,
+        if (hidden) 'hidden': true,
+        if (canUpdateOwnMetadata) 'canUpdateOwnMetadata': true,
+      },
       if (sipAdmin) 'sip': {'admin': true, 'call': true},
     });
     final mac = await Hmac.sha256().calculateMac(utf8.encode('$head.$body'), secretKey: SecretKey(utf8.encode(apiSecret)));
     return '$head.$body.${base64Url.encode(mac.bytes).replaceAll('=', '')}';
   }
+
+  /// LiveKit's server API (Twirp, JSON), signed by this app. [room]: the room the request is about.
+  Future<Map<String, dynamic>> roomApi(String service, String method, Map<String, Object?> body, {String room = ''}) async {
+    final jwt = await token(identity: 'localailine-app', room: room, sipAdmin: true, ttl: const Duration(minutes: 1));
+    final r = await http
+        .post(Uri.parse('http://127.0.0.1:$livekitPort/twirp/livekit.$service/$method'),
+            headers: {'Authorization': 'Bearer $jwt', 'Content-Type': 'application/json'}, body: jsonEncode(body))
+        .timeout(const Duration(seconds: 6));
+    final j = r.body.isEmpty ? <String, dynamic>{} : (jsonDecode(r.body) as Map).cast<String, dynamic>();
+    if (r.statusCode != 200) throw StateError('${j['msg'] ?? 'LiveKit $method failed (${r.statusCode})'}');
+    return j;
+  }
+
+  /// Whether a call's room is live. (Joining a room that isn't would open a new one, and the
+  /// voice agent would answer an empty call.)
+  Future<bool> roomExists(String room) async =>
+      ((await roomApi('RoomService', 'ListRooms', {'names': [room]}))['rooms'] as List?)?.isNotEmpty == true;
+
+  /// Ends a call: everyone leaves its room (a phone caller is hung up on).
+  Future<void> deleteRoom(String room) => roomApi('RoomService', 'DeleteRoom', {'room': room}, room: room);
+
+  /// Sends the voice agent (back) into a call's room; [metadata] reaches it as the job's metadata.
+  Future<void> dispatchAgent(String room, {String metadata = ''}) =>
+      roomApi('AgentDispatchService', 'CreateDispatch', {'room': room, 'agent_name': '', 'metadata': metadata}, room: room);
 }

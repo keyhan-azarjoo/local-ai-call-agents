@@ -2110,10 +2110,21 @@ class AppState extends ChangeNotifier {
     text = text.trim();
     if (room.isEmpty || text.isEmpty) return;
     final lines = liveText.putIfAbsent(room, () => []);
+    // A start of an answer cut off as they went on ("One…"): not an answer.
+    while (lines.isNotEmpty && lines.last.who == 'ai' && lines.last.text.trim().split(RegExp(r'\s+')).length <= 2 && lines.length >= 2 && lines[lines.length - 2].who == 'caller') {
+      lines.removeLast();
+    }
     while (lines.isNotEmpty && lines.last.who == 'caller') {
       lines.removeLast();
     }
-    lines.add(LiveLine('caller', text, name: _callerLabel(room), done: true));
+    // What they said is already there (heard, then given to the AI): once, not twice.
+    String norm(String x) => x.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ').trim();
+    final prev = lines.lastWhere((l) => l.who != 'note', orElse: () => LiveLine('note', ''));
+    if (prev.who == 'caller' && norm(prev.text) == norm(text)) {
+      prev.done = true;
+    } else {
+      lines.add(LiveLine('caller', text, name: _callerLabel(room), done: true));
+    }
     _liveState(room, caller: 'listening');
   }
 
@@ -3488,8 +3499,9 @@ class AppState extends ChangeNotifier {
         // Details written as data ("[Name: Sam, Phone: +447700900258, Date: 2026-10-09, Time: 20:30]"): said as people say them.
         .replaceAllMapped(RegExp(r'\[((?:[A-Z][A-Za-z ]{0,20}:\s*[^,\]]+,?\s*)+)\]'),
             (m) => m[1]!.replaceAllMapped(RegExp(r'([A-Z][A-Za-z ]{0,20}):\s*'), (k) => '${k[1]!.toLowerCase()} ').trim())
-        .replaceAllMapped(RegExp(r'\b(20\d\d)-(\d\d)-(\d\d)\b'), (m) {
-          final d = DateTime.tryParse(m[0]!);
+        // (With its day already in front — "Thursday 2026-10-08" — the day once, not "Thursday, Thursday".)
+        .replaceAllMapped(RegExp(r'(?:\b(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day,?\s+)?\b(20\d\d)-(\d\d)-(\d\d)\b'), (m) {
+          final d = DateTime.tryParse('${m[1]}-${m[2]}-${m[3]}');
           if (d == null) return m[0]!;
           const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
           const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];

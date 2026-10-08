@@ -84,4 +84,20 @@ void main() {
     await shot('live-3-recent');
     expect(find.textContaining('passed to Mia'), findsOneWidget);
   });
+
+  test('what the caller said shows once, even if the AI started and was cut off', () async {
+    final tmp = Directory.systemTemp.createTempSync('live_once');
+    final s = AppState(dbPath: '${tmp.path}/t.db');
+    s.db = await Db.open(path: '${tmp.path}/t.db');
+    const room = 'pstn-in-0-_+447700900656_vt8950-1';
+    const said = "I'd like to book a table for two at 7:30 pm tonight, please. One of us is vegetarian.";
+    s.liveCaller(room, said, done: true); // heard
+    s.liveAiSpoken(room, 'One'); // the start of an answer, cut off as they went on
+    s.liveCallerTurn(room, said); // what the AI was given
+    s.liveAiSpoken(room, "I'm sorry, there's no table at 7:30 pm.", done: true);
+    final lines = s.liveText[room]!;
+    expect(lines.where((l) => l.who == 'caller').length, 1);
+    expect(lines.map((l) => l.text), isNot(contains('One')));
+    expect(lines.last.text, contains('no table'));
+  });
 }

@@ -174,4 +174,9 @@ void main() {
     expect(AppState.agreedTime([ChatMessage('assistant', 'Free at 6 pm or 9 pm.'), ChatMessage('user', 'Yes please.')]), isNull);
     expect(AppState.agreedTime([ChatMessage('user', 'Is 6 pm or 6:30 pm better?')]), isNull);
   });
+
+  test('the day is said once', () {
+    expect(AppState.spokenText('Nothing on Thursday 2026-10-08 at 7:30 pm.'), 'Nothing on Thursday 8 October at 7:30 pm.');
+    expect(AppState.spokenText('Booked for Friday, 2026-10-09.'), 'Booked for Friday 9 October.');
+  });
 }

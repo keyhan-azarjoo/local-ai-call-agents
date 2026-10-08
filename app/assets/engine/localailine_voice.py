@@ -1175,8 +1175,9 @@ def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool =
             # otherwise."): ending the turn 0.2 s into a pause split one answer into three, each
             # answered on its own (and the rest of what they said cut off). On calls, wait longer.
             "endpointing": {"mode": "dynamic", "min_delay": 0.7, "max_delay": 2.4} if phone_call else {"mode": "dynamic", "min_delay": 0.2, "max_delay": 1.5},
-            # Think (and start speaking) before the turn is confirmed; dropped if the caller continues.
-            "preemptive_generation": {"enabled": True, "preemptive_tts": True},
+            # Think before the turn is confirmed (dropped if the caller continues), but don't start
+            # speaking until it is: it said "One—", "Okay, once—" and was cut off as they went on.
+            "preemptive_generation": {"enabled": True, "preemptive_tts": False},
             # "vad" keeps barge-in local ("adaptive" calls LiveKit Cloud).
             # Interrupt only on the caller's real words: Ava's own voice is filtered out by the hearing.
             # On the phone, "okay" / "yeah" / "mm" while she speaks is listening, not interrupting.

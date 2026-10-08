@@ -152,4 +152,12 @@ void main() {
       expect(AppState.injection.hasMatch(t), isFalse, reason: t);
     }
   });
+
+  test('a tool call or JSON written out is never said', () {
+    // Seen in the live view: …"name": "Sam Carter"}. {"date": "202rsday 8 October", … I'll call: trattoria_bellacheck_reservations({…})]
+    const t = 'I can book a table for two at 7 pm. Let me see {"phone": "07700 900781", "name": "Sam Carter"}. I\'ll call: trattoria_bella__check_reservations({"date": "2026-10-08", "time": "19:00", "guests": 2})]';
+    expect(AppState.spokenText(t).trim(), 'I can book a table for two at 7 pm.');
+    expect(AppState.spokenText('Sure, "time": "19:00", "guests": 2 that works.'), 'Sure, that works.');
+    expect(AppState.spokenText('Checking trattoria_bella__check_reservations({"date": "2026'), 'Checking');
+  });
 }

@@ -2682,7 +2682,7 @@ class AppState extends ChangeNotifier {
   static final _aboutMine = RegExp(r"\b(my (booking|reservation|appointment|order|stay|room|table|class|lesson|visit)|i (have |had |made |'ve )?(booked|ordered|reserved)|booked with|cancel|reschedul|when is my|what time is my)\b", caseSensitive: false);
 
   /// A tool's name written in the reply instead of calling it ("[add_reservations] Done.").
-  static final _fakeTool = RegExp(r'\[(add|check|find|cancel|change_my|list|get)_\w*\]');
+  static final _fakeTool = RegExp(r'\[(add|check|find|cancel|change_my|list|get)_\w*\]|\b\w*(add|check|find_my|cancel_my|change_my|list|get)_\w+\s*\(\s*\{');
 
   /// The start of the app's "That's all done", while it is still coming in.
   static final _appDoneStart = RegExp(r"\s*That(?:[’']s?(?:\s+al?l?(?:\s+do?n?)?)?)?$");
@@ -2726,6 +2726,12 @@ class AppState extends ChangeNotifier {
 
   /// The app's own line after a save: when the model writes it, nothing was saved.
   static final _appDone = RegExp(r"\s*That[’']s all done\b");
+
+  /// Where the finished part of a reply being written ends: after its last sentence or clause end.
+  static int _stableEnd(String t) {
+    final ends = RegExp(r'[.!?…,;](?=\s)|\n').allMatches(t).toList();
+    return ends.isEmpty ? 0 : ends.last.end;
+  }
 
   /// A sentence saying something is booked, ordered or saved (from its start).
   static final _claimsDone = RegExp(
@@ -3418,9 +3424,11 @@ class AppState extends ChangeNotifier {
   /// A trailing fragment that might still turn into markdown is held back.
   static String spokenText(String t) {
     t = t.split('CALL_TASK').first;
+    // A quote still open ("name": "Sam…): held back from it until it closes.
+    if ('"'.allMatches(t).length.isOdd) t = t.substring(0, t.lastIndexOf('"'));
     // (Held back while it may still turn into markup: a list, bold, CALL_TASK, a tool written out as "[take_message:{…".)
     // (…and while a date, time or number may still be coming: it is said as a whole, see below.)
-    final pending = RegExp(r"(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z_]*|\[[a-z_]+:\s*\{[^\]]*|\[[a-z]+_[a-z_]+:[^\]]*|\[[A-Z][^\]]*|\+(4(4\s?(7\d{0,3}\s?\d{0,5})?)?)?|\b20\d\d(-\d{0,2}(-\d?)?)?|\b\d{1,2}:\d?|(?:^|(?<=[.!?…]\s))(?:(?:okay|sure|right),?\s*)?(?:I'?ll|I will|let me|I'?m going to|I)\s+(?:just\s+)?(?:check|confirm|look|see|verify)\b(?:[^.!?:]|(?<=\d)[:.](?=\d))*|\s+)$");
+    final pending = RegExp(r"(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z_]*|\[[a-z_]+:\s*\{[^\]]*|\[[a-z]+_[a-z_]+:[^\]]*|\[[A-Z][^\]]*|\+(4(4\s?(7\d{0,3}\s?\d{0,5})?)?)?|\b20\d\d(-\d{0,2}(-\d?)?)?|\b\d{1,2}:\d?|\{[^}]*|\b[A-Za-z_]+\s*\([^)]*|(?:^|(?<=[.!?…]\s))(?:(?:okay|sure|right),?\s*)?(?:I'?ll|I will|let me|I'?m going to|I)\s+(?:just\s+)?(?:check|confirm|look|see|verify)\b(?:[^.!?:]|(?<=\d)[:.](?=\d))*|\s+)$");
     for (var held = t.replaceFirst(pending, ''); held != t; held = t.replaceFirst(pending, '')) {
       t = held;
     }
@@ -3432,6 +3440,11 @@ class AppState extends ChangeNotifier {
         .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]*\]'), '') // a tool's name written out instead of called
         .replaceAll(RegExp(r'\s*\[[a-z_]+:\s*\{[^\]]*\}?\]?'), '') // …or with its details: "[take_message:{"name":…}]"
         .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]+:[^\]]*\]?'), '') // …or "[check_appointments: date="…"]"
+        // A tool call written out instead of made ("I'll call: trattoria_bella__check_reservations({"date": …})")
+        // or bits of its JSON ({"time": "19:00"}, "name": "Sam"): never said.
+        .replaceAll(RegExp(r"""\s*(?:(?:I'?ll|I will|let me|I'?m going to)\s+(?:call|use|run)\s*:?\s*)?\b[A-Za-z_]+\s*\(\s*\{[^}]*\}?\s*\)?\]?""", caseSensitive: false), '')
+        .replaceAll(RegExp(r'\s*\{[^{}]*"\s*:[^{}]*\}?'), '')
+        .replaceAll(RegExp(r'\s*"[A-Za-z_]+"\s*:\s*(?:"[^"]*"|[\d.]+|true|false|null)(?:\s*[,}])?'), '')
         // Saying what it is doing ("I'll check the availability for you. Let me see.") before the
         // answer: the check is done already, so straight to what it found (it said this every turn).
         .replaceAll(RegExp(r"(?:^|(?<=[.!?…]\s))\s*(?:(?:okay|sure|right),?\s*)?(?:I'?ll|I will|let me|I'?m going to|I)\s+(?:just\s+)?(?:check|confirm|look|see|verify)(?:ing)?\b(?:[^.!?:]|(?<=\d)[:.](?=\d))*(?:[.!…]+|$)\s*", caseSensitive: false), '')
@@ -3839,6 +3852,59 @@ class AppState extends ChangeNotifier {
             'postcode' => RegExp(r'\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b', caseSensitive: false).hasMatch(heardNow),
             _ => true,
           };
+      // What the caller hears of the answer as it is written ([last]: the whole answer, at the end).
+      void speak(String t, {bool last = false}) {
+        if (t.isEmpty) {
+          sent = ''; // text before a tool call is dropped; the real answer follows
+          return;
+        }
+        // Passing the call to a teammate: never said aloud.
+        final m = _transfer.firstMatch(t);
+        if (m != null) {
+          final name = m.group(1)!.trim();
+          // Only a real teammate: small models sometimes write [transfer: …] with a sentence in it.
+          // Not after asking the caller something ("…proceed with the cancellation? [transfer:…]"): wait for their answer.
+          final askedFirst = t.substring(0, m.start).trim().endsWith('?');
+          if (!askedFirst && (flow?.others.any((a) => '${a['name']}'.toLowerCase() == name.toLowerCase()) ?? false)) passTo = (name: name, brief: (m.group(2) ?? '').trim());
+        }
+        final cut = t.toLowerCase().indexOf('[transfer');
+        if (cut >= 0) t = t.substring(0, cut);
+        // Never hang up on a question ("…thanks for calling! Would you like to order? [hangup]").
+        if (t.contains('[hangup]') && t.split('[hangup]').first.trim().endsWith('?')) t = t.replaceAll('[hangup]', '');
+        // …nor before the caller has said they have nothing else.
+        if (!ending) t = t.replaceAll('[hangup]', '');
+        // Only finished pieces (up to a sentence or clause end): a date, time or number is cleaned
+        // up once it is whole, so nothing already said changes ("2026-10-08" half sent came out
+        // as "202rsday 8 October", "7 p.m" as "7 p.mLet mee").
+        if (!last) t = t.substring(0, _stableEnd(t));
+        t = spokenText(t);
+        if (!saved) t = t.split(_appDone).first.replaceFirst(_appDoneStart, ''); // copying the app's "That's all done" without saving
+        // "Your booking is confirmed" with nothing saved (it said so twice while the table was
+        // taken): held back; the save below says it's done, or what the problem is.
+        if (!saved && mode != 'owner' && !_savedOn.contains(room)) {
+          final claim = _claimsDone.firstMatch(t);
+          if (claim != null) {
+            withheld = t.substring(claim.start);
+            t = t.substring(0, claim.start).trimRight();
+          }
+        }
+        // Its last answer again, word for word: held back while it's only that.
+        if (repeating) {
+          if (_saidAlready(saidBefore, t.replaceAll('[hangup]', ''))) return;
+          repeating = false;
+        }
+        // Nobody listens to a minute-long answer: stop at a sentence end and offer the rest.
+        if (t.length > _maxSpoken && passTo == null) {
+          final end = t.lastIndexOf(RegExp(r'[.!?؟。]\s'), _maxSpoken);
+          t = '${t.substring(0, end > sent.length ? end + 1 : _maxSpoken)} ${_more[lang] ?? _more['en']!}';
+          capped = true;
+        }
+        // Only ever add to what was said; never repeat it.
+        if (t.length > sent.length) chunk({'content': t.substring(sent.length)});
+        if (t.length > sent.length) sent = t;
+        if (capped) throw const Cancelled(); // enough said: stop the model too
+      }
+
       final full = routed != null ? sent : await agentReply(
         messages,
         target: live ? null : multilingual,
@@ -3865,54 +3931,10 @@ class AppState extends ChangeNotifier {
         },
         approve: (_, _) async => false, // callers can't approve changes; the owner gets a summary later
         onToolStart: (_) => fill(),
-        onText: (t) {
-          if (t.isEmpty) {
-            sent = ''; // text before a tool call is dropped; the real answer follows
-            return;
-          }
-          // Passing the call to a teammate: never said aloud.
-          final m = _transfer.firstMatch(t);
-          if (m != null) {
-            final name = m.group(1)!.trim();
-            // Only a real teammate: small models sometimes write [transfer: …] with a sentence in it.
-            // Not after asking the caller something ("…proceed with the cancellation? [transfer:…]"): wait for their answer.
-            final askedFirst = t.substring(0, m.start).trim().endsWith('?');
-            if (!askedFirst && (flow?.others.any((a) => '${a['name']}'.toLowerCase() == name.toLowerCase()) ?? false)) passTo = (name: name, brief: (m.group(2) ?? '').trim());
-          }
-          final cut = t.toLowerCase().indexOf('[transfer');
-          if (cut >= 0) t = t.substring(0, cut);
-          // Never hang up on a question ("…thanks for calling! Would you like to order? [hangup]").
-          if (t.contains('[hangup]') && t.split('[hangup]').first.trim().endsWith('?')) t = t.replaceAll('[hangup]', '');
-          // …nor before the caller has said they have nothing else.
-          if (!ending) t = t.replaceAll('[hangup]', '');
-          t = spokenText(t);
-          if (!saved) t = t.split(_appDone).first.replaceFirst(_appDoneStart, ''); // copying the app's "That's all done" without saving
-          // "Your booking is confirmed" with nothing saved (it said so twice while the table was
-          // taken): held back; the save below says it's done, or what the problem is.
-          if (!saved && mode != 'owner' && !_savedOn.contains(room)) {
-            final claim = _claimsDone.firstMatch(t);
-            if (claim != null) {
-              withheld = t.substring(claim.start);
-              t = t.substring(0, claim.start).trimRight();
-            }
-          }
-          // Its last answer again, word for word: held back while it's only that.
-          if (repeating) {
-            if (_saidAlready(saidBefore, t.replaceAll('[hangup]', ''))) return;
-            repeating = false;
-          }
-          // Nobody listens to a minute-long answer: stop at a sentence end and offer the rest.
-          if (t.length > _maxSpoken && passTo == null) {
-            final end = t.lastIndexOf(RegExp(r'[.!?؟。]\s'), _maxSpoken);
-            t = '${t.substring(0, end > sent.length ? end + 1 : _maxSpoken)} ${_more[lang] ?? _more['en']!}';
-            capped = true;
-          }
-          // Only ever add to what was said; never repeat it.
-          if (t.length > sent.length) chunk({'content': t.substring(sent.length)});
-          if (t.length > sent.length) sent = t;
-          if (capped) throw const Cancelled(); // enough said: stop the model too
-        },
+        onText: speak,
       );
+      // The rest of the answer (its last words may not end with a full stop).
+      if (routed == null && !gone && !capped && full.trim().isNotEmpty) speak(full, last: true);
       // "Let me check…" and nothing checked: check now and say the answer in the same turn.
       mark('reply');
       // Said its last answer again (held back): ask it once more for something new; only if that fails too, a short line.

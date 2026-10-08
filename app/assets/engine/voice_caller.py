@@ -389,6 +389,8 @@ _NONSENSE = [
     ("answered its own question", re.compile(r"\?\s*(yes|yeah|yep|that'?s (right|correct)|correct)\b[ ,.]", re.I)),
     ("offered something it can't do", re.compile(r"\b(send|text|email)(ing)? (you )?(a |the |an )?(secure |payment |confirmation )*(link|text|sms|email|message to your)", re.I)),
     ("read data out raw", re.compile(r"\b20\d\d-\d\d-\d\d\b|\b2\.0\d\d\b|\b(1[3-9]|2[0-3])[.:][0-5]\d\b(?!\s*[ap]\.?m)|\+\s?44", re.I)),
+    ("read code or JSON aloud", re.compile(r"[{}]|\"\w+\"\s*:|\b\w+_\w+\s*\(", re.I)),
+    ("broken words", re.compile(r"\b\d{3}rsday\b|\bp\.m[A-Z]|\b\d{2}pm\b", re.I)),
     ("bad grammar", re.compile(r"\bthey isn.?t\b|\bI 's\b", re.I)),
     ("made up a policy", re.compile(r"no (delivery )?fee (since|because|as) you", re.I)),
 ]

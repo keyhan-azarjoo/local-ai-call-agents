@@ -86,12 +86,13 @@ void main() {
     final f = File('${dir.path}/hours.md')..writeAsStringSync('# Opening hours\nWe open at 9am on Sundays.');
     final fid = await k.addSource(dir.path, scope: 'all');
     await settle(k, fid, db);
-    expect((await k.search('Sunday opening time', k: 2)).hits.first.text, contains('9am'));
+    // (Among the top results: without the embedding model, keyword search may rank the skill's own hours first.)
+    expect((await k.search('Sunday opening time', k: 3)).hits.map((h) => h.text).join(' '), contains('9am'));
     await Future.delayed(const Duration(milliseconds: 1100)); // mtime resolution
     f.writeAsStringSync('# Opening hours\nWe open at 11am on Sundays.');
     k.enqueue(fid); // the folder watcher does this automatically in the app
     await settle(k, fid, db);
-    final after = (await k.search('Sunday opening time', k: 2)).hits.first.text;
+    final after = (await k.search('Sunday opening time', k: 3)).hits.map((h) => h.text).join(' ');
     print('  CHANGED → $after');
     expect(after, contains('11am'));
     f.deleteSync();

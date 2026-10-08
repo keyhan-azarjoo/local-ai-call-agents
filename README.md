@@ -1,5 +1,7 @@
 # LocalAILine: local AI call agents
 
+[![CI](https://github.com/keyhan-azarjoo/local-ai-call-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/keyhan-azarjoo/local-ai-call-agents/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) ![Flutter](https://img.shields.io/badge/Flutter-3.44-02569B?logo=flutter) ![macOS](https://img.shields.io/badge/host-macOS-black?logo=apple)
+
 **An AI receptionist that runs on your own computer.** LocalAILine answers your business phone with a team of AI agents, takes bookings and orders in websites it builds for you, and keeps every word of every call on your machine. There's no LocalAILine cloud, no account to sign up for, and no per-minute AI bill.
 
 ![Live calls: each conversation streams word by word as it happens](docs/screenshots/app-calls-live.png)
@@ -86,7 +88,7 @@ The app is tested with **spoken** calls. Simulated callers (personas, accents, o
 | Hard calls | 479 | Five-minute calls with detours and small talk, changing their mind, rude callers, spelling names, prompt-injection attempts, eight other languages |
 | Security | 176 | Callers trying to get other people's details, cancel their bookings, pose as the manager, or break the AI's rules, across all 11 businesses |
 
-Plus about 190 automated unit and widget tests (more as the template loops expand): website and MCP rules for every template, attacks on the business apps' servers, call-ending logic, live-view rendering, and the model engines.
+Plus 275 automated unit, widget and security tests, run on every push: website and MCP rules for every template, attacks on the business apps' servers, call-ending logic, live-view rendering, and the model engines.
 
 **Results so far** (1,800+ spoken calls run while developing):
 

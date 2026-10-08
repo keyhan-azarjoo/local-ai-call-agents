@@ -31,7 +31,7 @@ Give it your business name, phone and address, and it's ready. Your website runs
 
 ## Or describe your business, and the local AI builds it
 
-You don't need a template. Choose **Build an app → Something else** and tell it, in your own words, what your business is and what customers do. For example:
+You don't need a template. Choose **Build an app → Describe my own** and tell it, in your own words, what your business is and what customers do. For example:
 
 > "We're a dog-grooming salon with three groomers. Customers book a wash, a trim or a full groom for their dog; we also sell shampoo and treats. We're closed on Mondays."
 

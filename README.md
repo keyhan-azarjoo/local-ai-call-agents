@@ -41,7 +41,7 @@ flowchart LR
   mcp --> agents[Your call agents<br/>answer the phone]
 ```
 
-1. In **Build an app → Something else**, describe your business. The local model asks a few questions (what customers book or order, opening hours, who works there) and proposes a plan.
+1. In **Build an app → Describe my own**, describe your business. The local model asks a few questions (what customers book or order, opening hours, who works there) and proposes a plan.
 2. When you agree, it builds the app. The same description becomes three things that always agree:
    - **a public website** where customers book and order;
    - **a management website** where you run the day;

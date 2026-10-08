@@ -91,7 +91,7 @@ void main() {
         'phone' => phone,
         'email' => 'test$salt@example.com',
         'date' => ymd(DateTime.now().add(Duration(days: 7 + salt * 10))),
-        'time' => '${(10 + salt % 8).toString().padLeft(2, '0')}:00',
+        'time' => '${(13 + salt % 4).toString().padLeft(2, '0')}:00', // (when every template is open)
         'datetime' => '$tomorrow 17:00',
         'number' || 'money' => 2,
         'choice' => f.options.first,
@@ -228,6 +228,19 @@ void main() {
     });
   }
 
+  test('a time without am/pm means when the business is open; outside opening hours is refused', () async {
+    // On a call "7:30" was checked as 07:30 (the restaurant opens at noon) and found "free".
+    final date = ymd(DateTime.now().add(const Duration(days: 21)));
+    final evening = await tool('restaurant', 'check_reservations', {'date': date, 'time': '7:30', 'guests': 2});
+    expect(evening.text, contains('19:30'));
+    final morning = await tool('restaurant', 'check_reservations', {'date': date, 'time': '23:30', 'guests': 2});
+    expect(morning.text, contains('open from'));
+    final s = await spec('restaurant');
+    final add = await tool('restaurant', 'add_reservations', {...await valid('restaurant', s.table('reservations')!, salt: 9), 'date': date, 'time': '23:00'});
+    expect(add.error, true);
+    expect(add.text, contains('open from'));
+  });
+
   group('bookings never clash:', () {
     for (final (app, table, res) in [('restaurant', 'reservations', 'table'), ('barber', 'appointments', 'barber'), ('salon', 'appointments', 'stylist'), ('clinic', 'appointments', 'doctor')]) {
       test('$app: same $res at the same time is refused; none chosen gets a free one; all busy is refused', () async {
@@ -238,7 +251,7 @@ void main() {
         final resources = await d.list(shape.resources.id, manager: true);
         final date = ymd(DateTime.now().add(const Duration(days: 20)));
         final base = await valid(app, t, salt: 7);
-        final one = {...base, 'date': date, 'time': '11:00', res: '${resources.first[shape.resources.labelField]}', 'phone': '07700 100001'};
+        final one = {...base, 'date': date, 'time': '14:00', res: '${resources.first[shape.resources.labelField]}', 'phone': '07700 100001'};
         expect((await tool(app, 'add_$table', one)).error, false);
         if (shape.seatsField != null) {
           // Restaurant tables: on the phone a taken table is swapped for a free one (and the AI is told); the website still refuses.
@@ -253,7 +266,7 @@ void main() {
           expect(clash.error, true);
           expect(clash.text, contains('already booked'));
           // Half an hour later still overlaps (a booking lasts a while).
-          final overlap = await tool(app, 'add_$table', {...one, 'name': 'Third', 'phone': '07700 100003', 'time': '11:15'});
+          final overlap = await tool(app, 'add_$table', {...one, 'name': 'Third', 'phone': '07700 100003', 'time': '14:15'});
           expect(overlap.error, true);
         }
         // No resource chosen: a free one is given, never the taken one.
@@ -263,13 +276,13 @@ void main() {
           expect(r.error, false, reason: r.text);
           rest.add(i);
         }
-        final rows = [for (final r in await d.list(table, manager: true)) if (r[shape.dateField.id] == date && r[shape.timeField.id] == '11:00' && !shape.cancelled(r)) r[res]];
+        final rows = [for (final r in await d.list(table, manager: true)) if (r[shape.dateField.id] == date && r[shape.timeField.id] == '14:00' && !shape.cancelled(r)) r[res]];
         expect(rows.toSet().length, rows.length, reason: 'nobody shares a $res');
         final full = await tool(app, 'add_$table', {...one, 'name': 'Late', 'phone': '07700 300003'}..remove(res));
         expect(full.error, true);
         expect(full.text, contains('nothing is free'));
         // The check tool agrees.
-        final check = await tool(app, 'check_$table', {'date': date, 'time': '11:00', if (shape.guestsField != null) 'guests': 2});
+        final check = await tool(app, 'check_$table', {'date': date, 'time': '14:00', if (shape.guestsField != null) 'guests': 2});
         expect(check.text, contains('Nothing is free'));
         // A cancelled booking frees its slot.
         final first = (await d.list(table, manager: true)).firstWhere((r) => r['phone'] == '07700 100001');
@@ -321,7 +334,7 @@ void main() {
 
   test('what the caller hears once it is saved', () {
     expect(AppState.doneLine('Done. Added to reservations with id 9:\nid 9 · Name: Freya Moreau · Phone: 0772 · Date: Saturday 2026-10-10 · Time: 19:10 · Guests: 2 · Table: 1 · Status: Confirmed'),
-        'That’s all done: Saturday 10 October at 7:10 pm, guests 2, table 1.');
+        'That’s all done: Saturday 10 October at 7:10 pm, for 2, table 1.');
     expect(AppState.doneLine('Cancelled. id 9 · Name: X'), 'That’s cancelled for you.');
   });
 

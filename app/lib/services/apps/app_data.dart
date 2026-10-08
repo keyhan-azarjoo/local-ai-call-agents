@@ -469,6 +469,36 @@ class AppData {
     return (free: free, taken: all.where(takenAt).toList());
   }
 
+  /// Opening hours (minutes from midnight) from the business's hours, if it has them.
+  Future<({int open, int close})?> openingHours() async {
+    for (final t in spec.tables.where((t) => t.single)) {
+      final times = t.fields.where((f) => f.type == 'time').toList();
+      if (times.length < 2) continue;
+      final r = await single(t.id, manager: true);
+      final open = _minutes(r[times[0].id]), close = _minutes(r[times[1].id]);
+      if (open != null && close != null && close > open) return (open: open, close: close);
+    }
+    return null;
+  }
+
+  /// A time as the business means it: "7:30" said without am/pm, to a place open 12:00–22:00, is
+  /// 19:30 (it was checked as 07:30, when it's closed, and found "free").
+  Future<String> inHours(String hhmm) async {
+    final h = await openingHours();
+    final t = _minutes(hhmm);
+    if (h == null || t == null || (t >= h.open && t < h.close)) return hhmm;
+    if (t < 12 * 60 && t + 720 >= h.open && t + 720 < h.close) return _hhmm(t + 720);
+    return hhmm;
+  }
+
+  /// Why [hhmm] can't be booked (outside opening hours), or null.
+  Future<String?> outsideHours(String hhmm) async {
+    final h = await openingHours();
+    final t = _minutes(hhmm);
+    if (h == null || t == null || (t >= h.open && t < h.close)) return null;
+    return 'We\'re open from ${_hhmm(h.open)} to ${_hhmm(h.close)}, so $hhmm isn\'t possible: please choose a time between those.';
+  }
+
   /// The nearest times on [date] when something is free (for "nothing at 12:00 — 11:00 or 13:00?").
   Future<List<String>> nearestFree(BookingShape b, String date, String time, {int guests = 0, int count = 3}) async {
     final at = _minutes(time);
@@ -491,8 +521,11 @@ class AppData {
   bool autoSwap = false;
 
   Future<void> _holdResource(BookingShape b, Map<String, Object?> clean) async {
+    if (clean[b.timeField.id] != null) clean[b.timeField.id] = await inHours('${clean[b.timeField.id]}');
     final date = clean[b.dateField.id], time = clean[b.timeField.id];
     if (date == null || time == null) return;
+    final outside = await outsideHours('$time');
+    if (outside != null) throw AppDataError(outside);
     final guests = (clean[b.guestsField?.id] as num?)?.toInt() ?? 0;
     final a = await availability(b, '$date', '$time', guests: guests);
     final what = b.resources.title.toLowerCase();

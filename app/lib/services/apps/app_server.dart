@@ -663,11 +663,13 @@ class AppServer {
         }
         final b = BookingShape.of(spec, t)!;
         final date = parseDate('${args['date'] ?? ''}') ?? (throw AppDataError('Give the date as YYYY-MM-DD (today is ${withDay(DateTime.now().toIso8601String().substring(0, 10))}).'));
-        final time = parseTime('${args['time'] ?? ''}') ?? (throw AppDataError('Give the time as HH:MM, 24-hour (7pm = 19:00).'));
+        final time = await data.inHours(parseTime('${args['time'] ?? ''}') ?? (throw AppDataError('Give the time as HH:MM, 24-hour (7pm = 19:00).')));
         final guests = (args['guests'] as num?)?.toInt() ?? int.tryParse('${args['guests'] ?? ''}') ?? 0;
         // A holiday or other closed day: say so, rather than "nothing is free".
         final why = await data.closedOn(date);
         if (why != null) return AppData.closedMessage(date, why);
+        final outside = await data.outsideHours(time);
+        if (outside != null) return outside;
         final a = await data.availability(b, date, time, guests: guests);
         final area = b.resources.fields.where((f) => f.type == 'choice').firstOrNull;
         String show(Map<String, Object?> r) => '${r[b.resources.labelField] ?? r['id']}${b.seatsField != null ? ' (${r[b.seatsField!.id]} seats${area != null && r[area.id] != null ? ', ${r[area.id]}' : ''})' : ''}';

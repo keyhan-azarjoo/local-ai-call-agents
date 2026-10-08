@@ -52,18 +52,73 @@ flowchart LR
 
 More in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Getting started
+## Install and run
 
-Requirements: a Mac (Apple silicon recommended, 16 GB+ memory), [Flutter](https://docs.flutter.dev/get-started/install) 3.44+, [Homebrew](https://brew.sh). Windows and Linux hosts are planned.
+### 1. What you need
+
+| | |
+|---|---|
+| Computer | A Mac with Apple silicon (M1 or newer); 16 GB memory or more (more memory = bigger models, more calls at once) |
+| Disk | About 10 GB free for the voice engine, speech and AI models |
+| Tools | [Homebrew](https://brew.sh), [Flutter](https://docs.flutter.dev/get-started/install/macos) 3.44 or newer, Xcode (from the App Store; Flutter needs it to build Mac apps) |
+| For real calls | A [Twilio](https://www.twilio.com) account and phone number (optional: everything else works without it) |
+
+### 2. Install the engines
 
 ```bash
-brew install livekit whisper-cpp llama.cpp uv go redis opus libsoxr pkg-config
+# voice server, speech recognition, the built-in AI engine, Python packaging
+brew install livekit whisper-cpp llama.cpp uv
+# for real phone calls (LiveKit's SIP service is built once by the app)
+brew install go redis opus libsoxr pkg-config
+```
+
+[Ollama](https://ollama.com) is optional: the app can run the AI model itself.
+
+### 3. Get the code and run it
+
+```bash
 git clone https://github.com/keyhan-azarjoo/local-ai-call-agents.git
 cd local-ai-call-agents/app
+flutter pub get
 flutter run -d macos
 ```
 
-On first launch, create the owner account. The app then walks you through the rest: it installs the voice engine, downloads a speech model and an AI model sized for your computer, and offers to set up a business and a team. Full walk-through: **[Getting started](docs/guides/getting-started.md)**.
+To build a standalone app instead, run `flutter build macos --release`. The app is created at `app/build/macos/Build/Products/Release/LocalAILine.app`; drag it into your Applications folder.
+
+### 4. First launch
+
+1. **Create the owner account**: your name, a username and a password.
+2. **Voice engine:** press **Install**. The app sets up its Python voice engine and downloads the speech-recognition and voice models (a few minutes).
+3. **AI model:** in **Settings → AI engine**, choose *Built into LocalAILine* and download the suggested model (Qwen3 4B, 2.5 GB). You can also use Ollama, your own AI server or a cloud provider.
+4. **Try it without a phone line:** open **Talk to Ava** and speak, exactly as a caller would.
+5. **Set up your business:** **Build an app** → pick a template (restaurant, barber, clinic…) → enter your business name. You get a website and a manager page.
+6. **Your team:** **My assistant → Call flow → Set up a team** adds a receptionist, specialists and a person. Turn on **Show all features** to see the Call flow tab.
+7. **Real calls:** **Phone line → Add phone line → Twilio**, enter your Account SID, Auth token and number, then turn on **Answer calls here**. Ring your number. Details: [Phone lines](docs/guides/phone-lines.md).
+
+### 5. Run the tests
+
+```bash
+cd app
+flutter analyze
+flutter test $(ls test/*_test.dart test/scenarios/*_test.dart | grep -v live_test)
+```
+
+The spoken test calls run inside the app: **Calls → Tests → Run test scenarios** ([how they work](docs/TESTING.md)).
+
+## Screenshots
+
+| | |
+|---|---|
+| ![Home](docs/screenshots/app-home.png) **Home:** lines, calls today, latest calls | ![Calls](docs/screenshots/app-calls-live.png) **Calls:** live conversations word by word |
+| ![Call flow](docs/screenshots/app-call-flow.png) **Call flow:** the team and who passes calls to whom | ![My assistant](docs/screenshots/app-assistant.png) **My assistant:** greeting, instructions, voice, skills |
+| ![Build an app](docs/screenshots/app-builder.png) **Build an app:** your apps and the template gallery | ![Phone line](docs/screenshots/app-phone-line.png) **Phone line:** Twilio, landline box, paired phones |
+| ![AI engines](docs/screenshots/app-ai-engines.png) **Settings:** built-in AI engine and models | ![Test runs](docs/screenshots/app-test-runs.png) **Tests:** spoken test calls and their results |
+| ![Restaurant website](docs/screenshots/site-restaurant-home.png) **Website:** a restaurant LocalAILine built | ![Menu](docs/screenshots/site-restaurant-menu.png) **Menu** with dietary labels and prices |
+| ![Booking](docs/screenshots/site-restaurant-booking.png) **Booking:** find a free table | ![Hotel](docs/screenshots/site-hotel-rooms.png) **Hotel:** room finder with the price of the stay |
+| ![Barber](docs/screenshots/site-barber-home.png) **Barber** website | ![Shop](docs/screenshots/site-shop-catalogue.png) **Shop** catalogue |
+| ![Dashboard](docs/screenshots/manage-dashboard.png) **Manager dashboard:** takings, charts, today | ![Board](docs/screenshots/manage-board.png) **Order board:** drag from New to Done |
+| ![Tables](docs/screenshots/manage-table.png) **Reservations:** day plan by table | ![Calendar](docs/screenshots/manage-calendar.png) **Calendar:** a garage's month |
+| ![Customers](docs/screenshots/manage-customers.png) **Customers:** visits, spend, regulars | ![Mobile](docs/screenshots/site-mobile.png) **On a phone** |
 
 ## Guides
 

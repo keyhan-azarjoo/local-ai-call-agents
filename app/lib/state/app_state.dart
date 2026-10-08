@@ -1851,13 +1851,17 @@ class AppState extends ChangeNotifier {
     ];
     final dir = Directory(p.join(p.dirname(db.path), 'test-runs'))..createSync(recursive: true);
     // Already passed in an earlier run: not again (failed ones run again, e.g. after a fix).
+    // (A comparison run — e.g. of models — runs them all: LOCALAILINE_RUN_ALL=1.)
     final passedBefore = <Object?>{
+      if (Platform.environment['LOCALAILINE_RUN_ALL'] != '1')
       for (final f in dir.listSync().whereType<File>().where((f) => p.basename(f.path).startsWith('app-')))
         for (final l in f.readAsLinesSync())
           if (l.contains('"pass":true')) (jsonDecode(l) as Map)['id'],
     };
     final list = [for (final sc in pickScenarios(all, pick, app: app)) if (!passedBefore.contains(sc['id'])) sc];
-    final out = File(p.join(dir.path, 'app-${DateTime.now().toIso8601String().substring(0, 19).replaceAll(':', '-')}.jsonl'));
+    // A model comparison names its file after the model.
+    final tag = Platform.environment['LOCALAILINE_RUN_TAG'];
+    final out = File(p.join(dir.path, '${tag == null ? 'app' : 'bench-$tag'}-${DateTime.now().toIso8601String().substring(0, 19).replaceAll(':', '-')}.jsonl'));
     // Each runner gets its own businesses (no two calls book the same chairs at once).
     final apps = <String>{for (final sc in list) '${sc['app']}'}.toList();
     final workers = parallel.clamp(1, apps.isEmpty ? 1 : apps.length);
@@ -1868,7 +1872,9 @@ class AppState extends ChangeNotifier {
       ..clear()
       ..addAll([
         for (var i = 0; i < workers; i++)
-          ScenarioRunner(this)
+          // The test callers always speak through the same model, so different assistant models are
+          // compared on the same callers.
+          ScenarioRunner(this, callerModel: Platform.environment['LOCALAILINE_CALLER_MODEL'] ?? (installedModels.any((m) => m.name == 'qwen3:4b-instruct') ? 'qwen3:4b-instruct' : null))
             ..liveFile = File(p.join(dir.path, workers == 1 ? 'live.json' : 'live-${i + 1}.json'))
             ..testNumbers = numbers
             ..testNames = names,

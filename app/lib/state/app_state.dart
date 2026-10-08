@@ -2844,12 +2844,18 @@ class AppState extends ChangeNotifier {
           .firstOrNull;
       if (change != null) {
         final r = await mcp.call(change.serverId, change.tool.name, {...args, 'phone': number});
-        if (!r.isError) return (text: r.text, isError: false);
+        if (!r.isError && r.text.startsWith('Done')) return (text: r.text, isError: false);
       }
-      return (text: 'Already saved on this call: ${_savedWith[key]} Not saved again.', isError: false);
+      // (The one saved earlier can't be changed — gone, or not under that name: save it afresh.)
+      _savedWith.remove(key);
     }
     final r = await mcp.call(tool.serverId, tool.tool.name, args);
-    if (!r.isError) _savedWith[key] = r.text.length > 300 ? r.text.substring(0, 300) : r.text;
+    // Saved only when the app says it wrote it ("Done. Added…", "Done. Updated…"): anything else is
+    // not a save, whatever else it says (a call was told "confirmed" and nothing was written).
+    final done = !r.isError && r.text.startsWith('Done');
+    unawaited(log('${done ? 'Saved' : 'Did not save'} with ${tool.serverName} › ${tool.tool.name} on a call: ${r.text.split('\n').first}'));
+    if (!done) return (text: r.isError ? r.text : 'Not saved: ${r.text}', isError: true);
+    _savedWith[key] = r.text.length > 300 ? r.text.substring(0, 300) : r.text;
     return r;
   }
 
@@ -3930,7 +3936,7 @@ class AppState extends ChangeNotifier {
         if (!saved) t = t.split(_appDone).first.replaceFirst(_appDoneStart, ''); // copying the app's "That's all done" without saving
         // "Your booking is confirmed" with nothing saved (it said so twice while the table was
         // taken): held back; the save below says it's done, or what the problem is.
-        if (!saved && mode != 'owner' && !_savedOn.contains(room)) {
+        if (!saved && mode != 'owner') {
           final claim = _claimsDone.firstMatch(t);
           if (claim != null) {
             withheld = t.substring(claim.start);
@@ -4093,6 +4099,14 @@ class AppState extends ChangeNotifier {
       // Said it's done but didn't save it (small models do that): save it now, into the business's
       // app if it has one; if that fails (e.g. the table is taken), say so straight away.
       // (Not when this call already saved something: "your table is booked, see you!" again is no new booking.)
+      // "It's confirmed" again after something was saved earlier on this call: what the app holds,
+      // not the model's version of it (it said "saved in the system" for a booking never written).
+      if (!saved && withheld.isNotEmpty && !gone && _savedOn.contains(room) && !fixing && callerNumber != null) {
+        final held = _savedWith.entries.where((e) => e.key.startsWith('$callerNumber|')).lastOrNull?.value;
+        final line = held == null ? ' Sorry, I can’t see that booking saved. Shall I book it now?' : ' ${doneLine(held)}';
+        chunk({'content': line});
+        sent += line;
+      }
       if (!saved && !refused && !stillMissing && mode != 'owner' && passTo == null && (!_savedOn.contains(room) || fixing)) {
         final c = gone ? null : await commitClaimed(convo, withheld.isEmpty ? sent : '$sent $withheld', scopes, callerNumber: callerNumber, system: messages.first.role == 'system' ? messages.first.content : null).catchError((_) => null);
         if (c == null && withheld.isNotEmpty && !gone) {

@@ -14,7 +14,11 @@ for f in sorted(glob.glob(f'{DATA}/bench-*.jsonl')):
         except ValueError:
             continue
         rows.setdefault(tag, {})[r['id']] = r  # the latest result per scenario
-print(f"{'model':<22}{'calls':>6}{'passed':>8}{'pass %':>8}{'not slow %':>11}   most common problems")
+def med(xs):
+    xs = sorted(xs)
+    return xs[len(xs) // 2] / 1000 if xs else 0
+
+print(f"{'model':<22}{'calls':>6}{'passed':>8}{'pass %':>8}{'right %':>9}{'answer s':>10}{'90% s':>8}{'first words s':>15}   most common problems")
 for tag, rs in rows.items():
     rs = list(rs.values())
     ok = sum(1 for r in rs if r.get('pass'))
@@ -25,4 +29,8 @@ for tag, rs in rows.items():
         for x in r.get('failures') or []:
             k = x.split(': ', 1)[1] if x.startswith('call ') else x
             c[re.sub(r'[\d"]+.*', '', k)[:40]] += 1
-    print(f"{tag:<22}{len(rs):>6}{ok:>8}{100*ok/max(1,len(rs)):>7.0f}%{100*correct/max(1,len(rs)):>10.0f}%   " + '; '.join(f'{k.strip()} ×{v}' for k, v in c.most_common(3)))
+    turns = [t for r in rs for x in r.get('calls', []) for t in x.get('times', []) if t.get('ms')]
+    ms = sorted(t['ms'] for t in turns)
+    p90 = ms[int(len(ms) * .9)] / 1000 if ms else 0
+    first = med([t['first_ms'] for t in turns if t.get('first_ms') is not None])
+    print(f"{tag:<22}{len(rs):>6}{ok:>8}{100*ok/max(1,len(rs)):>7.0f}%{100*correct/max(1,len(rs)):>8.0f}%{med(ms):>10.1f}{p90:>8.1f}{first:>15.1f}   " + '; '.join(f'{k.strip()} ×{v}' for k, v in c.most_common(3)))

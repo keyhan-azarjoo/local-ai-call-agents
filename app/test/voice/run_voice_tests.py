@@ -84,6 +84,23 @@ def build_report(results: list[dict], title: str = "Voice test calls") -> str:
     return "\n".join(lines) + "\n"
 
 
+# The ready-made businesses the test runs set up (Calls → Tests), by the personas' "business".
+BUSINESSES = {"restaurant": "Trattoria Bella", "barber": "Kings Cut Barbers", "salon": "Studio Lumière", "clinic": "Riverside Dental",
+              "hotel": "The Harbour House", "garage": "Precision Motors", "gym": "Forge Fitness", "shop": "Corner Store"}
+
+
+def receptionist(business: str) -> int | None:
+    """The receptionist of that business in the app's data, if it has been set up."""
+    name = BUSINESSES.get(business)
+    db = Path.home() / "Library/Application Support/com.localailine.localailine/localailine.db"
+    if not name or not db.exists():
+        return None
+    import sqlite3
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as c:
+        row = c.execute("SELECT id FROM agents WHERE role = ? ORDER BY id DESC", (f"Receptionist · {name}",)).fetchone()
+    return row[0] if row else None
+
+
 def run_one(persona_file: Path, persona: dict, args, slot: int, log_lock: threading.Lock) -> dict:  # noqa: ANN001
     out = Path(tempfile.mkstemp(prefix="voicecall-", suffix=".json")[1])
     cmd = [str(args.python), str(CALLER), "--persona-file", str(persona_file), "--persona", persona["id"], "--out", str(out),
@@ -91,6 +108,9 @@ def run_one(persona_file: Path, persona: dict, args, slot: int, log_lock: thread
            "--max-seconds", str(args.max_seconds)]
     if args.caller_model:
         cmd += ["--caller-model", args.caller_model]
+    agent = receptionist(persona.get("business", "")) if args.business_line else None
+    if agent:
+        cmd += ["--room-tag", f"ag{agent}"]  # the business's own receptionist answers, as on its own line
     started = time.time()
     with log_lock:
         print(f"[{persona['id']}] calling…", flush=True)
@@ -117,13 +137,15 @@ def run_one(persona_file: Path, persona: dict, args, slot: int, log_lock: thread
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--personas", default=str(HERE / "personas.json"))
+    p.add_argument("--personas", default=str(HERE.parent.parent / "assets/engine/voice_personas.json"))
     p.add_argument("--only", help="comma-separated persona ids")
     p.add_argument("--languages", help="comma-separated languages to run (e.g. en,es)")
     p.add_argument("--parallel", type=int, choices=(1, 2), default=1, help="calls at the same time (keep it light: 1 or 2)")
     p.add_argument("--max-turns", type=int, default=8)
     p.add_argument("--max-seconds", type=float, default=300)
     p.add_argument("--caller-model")
+    p.add_argument("--main-line", dest="business_line", action="store_false",
+                   help="call the main assistant (by default each persona calls its business's receptionist)")
     p.add_argument("--control-port", type=int, default=8925, help="first call's control port (the second uses +1)")
     p.add_argument("--python", default=str(ENGINE_PY if ENGINE_PY.exists() else sys.executable))
     p.add_argument("--out-dir", default=str(HERE / "out"))

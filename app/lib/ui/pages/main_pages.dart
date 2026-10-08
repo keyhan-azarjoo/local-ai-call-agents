@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 
@@ -200,6 +201,12 @@ void showCall(BuildContext context, Map<String, Object?> c) {
               child: Wrap(spacing: 8, children: [
                 if ((c['recording'] as String?)?.isNotEmpty == true && File(c['recording'] as String).existsSync())
                   Btn('Play recording', onPressed: () => Process.run('open', [c['recording'] as String])),
+                Btn('Copy conversation', icon: Icons.copy, onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: [
+                    for (final t in turns) '${switch (t['who']) { 'ai' => 'AI', 'note' => 'Note', _ => 'Caller' }}: ${t['text']}',
+                  ].join('\n')));
+                  if (ctx.mounted) ctx.read<AppState>().toast('Conversation copied');
+                }),
                 Btn('Delete', kind: BtnKind.danger, onPressed: () async {
                   final s = ctx.read<AppState>();
                   await s.db.delete('calls', c['id'] as int);

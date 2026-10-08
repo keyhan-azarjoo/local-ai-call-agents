@@ -1,7 +1,7 @@
 """A pretend phone caller with a real voice, for testing the answering agent end to end.
 
 It joins a NEW LiveKit room named like an incoming phone call on the test line
-(`pstn-in-0-_<number>_vt<random>`) as a SIP participant, so the voice engine answers it exactly
+(`pstn-in-0-_<number>_vt<control port>-<random>`) as a SIP participant, so the voice engine answers it exactly
 as it answers a real call. It speaks with Kokoro (or Piper for languages Kokoro lacks), hears the
 agent's audio, transcribes it with the whisper server, and decides what to say next with a local
 model (Ollama) playing a persona, optionally with tactics meant to confuse the agent.
@@ -10,7 +10,7 @@ Only UK drama/fiction numbers are used (07700 900xxx). No real phone call is eve
 
 Run with the engine's Python:
   ~/Library/Application\\ Support/com.localailine.localailine/engine/.venv/bin/python \\
-      app/assets/engine/voice_caller.py --persona-file app/test/voice/personas.json --persona en_restaurant_delivery \\
+      app/assets/engine/voice_caller.py --persona-file app/assets/engine/voice_personas.json --persona en_restaurant_delivery \\
       --out /tmp/call.json
 
 While it runs, a tiny control server on 127.0.0.1:<--control-port> (default 8925) lets the owner
@@ -675,7 +675,9 @@ class Caller:
         self.number = args.number or f"+447700900{self.rng.randint(100, 999)}"
         if not FICTION_NUMBER.match(self.number):
             raise SystemExit(f"refusing: {self.number} is not a UK fiction number (07700 900xxx)")
-        self.room_name = f"pstn-in-{args.line}-_{self.number}_vt{self.rng.getrandbits(32):08x}"
+        self.room_name = f"pstn-in-{args.line}-_{self.number}_vt{args.control_port}-{self.rng.getrandbits(32):08x}"
+        if getattr(args, "room_tag", None) and re.fullmatch(r"[a-z]{1,8}\d{0,6}", args.room_tag):
+            self.room_name += f"_{args.room_tag}"  # e.g. "ag5": answered by agent 5 (a business's receptionist)
         self.shared = Shared(room=self.room_name)
         self.ear = Ear()
         self.voice = Voice()
@@ -1082,6 +1084,10 @@ class Caller:
         def is_agent(p) -> bool:  # noqa: ANN001
             return (agent_kind is not None and p.kind == agent_kind) or p.identity.startswith("agent")
 
+        def answers(p) -> bool:  # noqa: ANN001
+            """The AI, or the owner who took the call over from it in the app ("owner-…")."""
+            return is_agent(p) or p.identity.startswith("owner-")
+
         streams: list = []
 
         async def listen(track, name: str) -> None:  # noqa: ANN001
@@ -1103,9 +1109,10 @@ class Caller:
         def _on_track(track, pub, participant) -> None:  # noqa: ANN001, ARG001
             log.info("track %s %r from %s (kind %s, agent %s)", track.kind, pub.name, participant.identity, participant.kind, is_agent(participant))
             # The agent's voice (not its background/thinking-sound track: that one is ambience).
-            if track.kind == rtc.TrackKind.KIND_AUDIO and is_agent(participant) and "background" not in (pub.name or ""):
+            if track.kind == rtc.TrackKind.KIND_AUDIO and answers(participant) and "background" not in (pub.name or ""):
                 self.agent_identity = participant.identity
-                self.ear.set_state(participant.attributes.get("lk.agent.state", ""))
+                # (The owner taking over from the AI has no agent state: their turns end on silence.)
+                self.ear.set_state(participant.attributes.get("lk.agent.state", "") if is_agent(participant) else "listening")
                 asyncio.ensure_future(listen(track, pub.name))
 
         @room.on("participant_attributes_changed")
@@ -1115,7 +1122,9 @@ class Caller:
 
         @room.on("participant_disconnected")
         def _on_left(participant) -> None:  # noqa: ANN001
-            if is_agent(participant):
+            # The AI stepping out for the owner (who took over the call) isn't a hang-up; the call
+            # ends when nobody is left to answer it.
+            if answers(participant) and not any(answers(p) for p in room.remote_participants.values() if p.identity != participant.identity):
                 self.agent_ended = True
                 self.disconnected.set()
 
@@ -1267,6 +1276,7 @@ def parse_args(argv: list[str] | None = None):  # noqa: ANN201
     p.add_argument("--out", help="where to write the JSON result (default: print it)")
     p.add_argument("--number", help="caller number (UK fiction numbers only: +447700900xxx)")
     p.add_argument("--line", type=int, default=0, help="line id in the room name (0 = the test line)")
+    p.add_argument("--room-tag", help="added to the room name: 'ag<agent id>' = that agent answers (the test line only)")
     p.add_argument("--max-turns", type=int, default=10)
     p.add_argument("--max-seconds", type=float, default=300)
     p.add_argument("--answer-timeout", type=float, default=30.0, help="seconds to wait for the agent to start answering")

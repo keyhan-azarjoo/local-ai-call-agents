@@ -77,6 +77,8 @@ void main() {
     expect(CallMonitor.callerPort('pstn-in-0-_+447700900999_vt8931'), 8931);
     expect(CallMonitor.callerPort('pstn-in-0-_+447700900999_vt-8931_x'), 8931);
     expect(CallMonitor.callerPort('pstn-in-0-_+447700900999_vt0099'), 8925);
+    expect(CallMonitor.callerPort('pstn-in-0-_+447700900999_vt8926-1a2b3c4d'), 8926); // as voice_caller.py names it
+    expect(CallMonitor.callerPort('pstn-in-0-_+447700900999_vt12345abc'), 8925); // random hex, not a port
   });
 
   test('the test caller control server: takeover, handback, state', () async {

@@ -410,6 +410,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _snapTimer?.cancel();
+    stopVoiceTests();
     _builtin?.stopNow();
     try {
       knowledge.stopEmbedServer();
@@ -594,6 +595,29 @@ class AppState extends ChangeNotifier {
         }())
           t,
     ];
+  }
+
+  /// Of several businesses' tools, those of the one the caller has named (or, failing that, whose
+  /// things they mentioned: "a table", "a haircut"); none if it isn't clear yet (the assistant asks).
+  Future<List<ToolBinding>> _appTalkedAbout(List<ToolBinding> tools, List<ChatMessage> messages) async {
+    final said = [for (final m in messages) if (m.role == 'user') callerWords(m.content).toLowerCase()].join(' ');
+    String stem(String w) => w.endsWith('ies') ? '${w.substring(0, w.length - 3)}y' : w.endsWith('s') ? w.substring(0, w.length - 1) : w;
+    final words = {for (final w in RegExp(r'[a-z]{4,}').allMatches(said)) stem(w.group(0)!)};
+    final servers = {for (final s in await mcp.servers()) s.id: s};
+    final byName = <int, int>{}, byThings = <int, int>{};
+    for (final id in {for (final t in tools) t.serverId}) {
+      final name = (servers[id]?.name ?? '').toLowerCase();
+      if (name.isNotEmpty && said.contains(name)) byName[id] = name.length;
+      final things = {
+        for (final t in tools.where((t) => t.serverId == id))
+          for (final w in t.tool.name.replaceFirst(RegExp(r'^(add|check|find_my|change_my|cancel_my|list|get)_'), '').split('_')) if (w.length >= 4) stem(w),
+      }..removeAll(const {'opening', 'hour', 'item', 'review', 'voucher', 'closure', 'setting'});
+      final hits = things.where(words.contains).length;
+      if (hits > 0) byThings[id] = hits;
+    }
+    int? best(Map<int, int> m) => m.isEmpty ? null : (m.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key;
+    final pick = best(byName) ?? best(byThings);
+    return pick == null ? const [] : [for (final t in tools) if (t.serverId == pick) t];
   }
 
   /// A built app's customer tools (only ever what customers may see or do, and their own bookings).
@@ -1056,9 +1080,13 @@ class AppState extends ChangeNotifier {
     // Some models (e.g. the multilingual one) can't use tools well: they answer from documents and data snapshots.
     // An app built here (e.g. the restaurant's website) is where bookings and orders belong:
     // agents that take them use its tools, even if their own tool list leaves it out.
-    final appTools = useTools && (callerNumber != null || abilities.any(const {'booking', 'order'}.contains))
+    var appTools = useTools && (callerNumber != null || abilities.any(const {'booking', 'order'}.contains))
         ? await _callFocus(await builtAppTools(scopes, number: callerNumber), messages)
         : <ToolBinding>[];
+    // Several businesses' apps (the main assistant answering for all of them): only the one the
+    // caller is talking about. Every app's tools at once is far more than a small model's context
+    // holds (a turn then never comes back), and it mixes up businesses.
+    if (callerNumber != null && {for (final t in appTools) t.serverId}.length > 1) appTools = await _appTalkedAbout(appTools, messages);
     final own = useTools ? await toolsFor(scopes, access: access, number: callerNumber) : <ToolBinding>[];
     // A business with its own app keeps its bookings and orders there: the main app only takes messages for the manager.
     final abilityTools = useTools ? Abilities.bindings(abilities.where((a) => appTools.isEmpty ? !_appCovers(appTools, a) : a == 'message')) : <ToolBinding>[];
@@ -1405,6 +1433,7 @@ class AppState extends ChangeNotifier {
     _notFound.remove('${b['number'] ?? ''}');
     _savedOn.remove(room);
     roomAgent.remove(room);
+    if (scenarioRuns.isEmpty) callApp.remove('${b['number'] ?? ''}'); // (a test run keeps its own)
     final turns = [
       for (final t in (b['transcript'] as List? ?? []).cast<Map>())
         {'who': switch (t['role']) { 'user' => 'them', 'note' => 'note', _ => 'ai' }, 'text': '${t['text']}'},
@@ -1966,6 +1995,76 @@ class AppState extends ChangeNotifier {
       liveEnded(room);
     }
     notifyListeners();
+  }
+
+  // ---------- voice test calls: a simulated caller with a real voice (assets/engine/voice_caller.py) ----------
+
+  /// The test callers running now (control port → the caller's process). Each rings the test line
+  /// like a phone call, so the call can be listened to, taken over, or continued as the caller.
+  final voiceTests = <int, Process>{};
+
+  /// The test callers to choose from (assets/engine/voice_personas.json).
+  Future<List<Map<String, dynamic>>> voicePersonas() async {
+    final j = jsonDecode(await rootBundle.loadString('assets/engine/voice_personas.json')) as Map;
+    return [for (final x in j['personas'] as List) (x as Map).cast<String, dynamic>()];
+  }
+
+  /// Rings the test line with the simulated caller [persona] (never a real phone call).
+  Future<void> startVoiceTest(String persona, {int? agentId}) async {
+    final v = voice;
+    if (v == null || !v.ready) return toast('Start live voice first (Settings → Voice & hearing).');
+    if (!File(v.python).existsSync()) return toast('The voice engine isn’t installed yet.');
+    final port = [for (var i = 8925; i < 8945; i++) i].where((i) => !voiceTests.containsKey(i)).firstOrNull;
+    if (port == null) return toast('Too many test calls at once.');
+    try {
+      final script = File(p.join(v.engineDir, 'voice_caller.py'))..writeAsStringSync(await rootBundle.loadString('assets/engine/voice_caller.py'));
+      final personas = File(p.join(v.engineDir, 'voice_personas.json'))..writeAsStringSync(await rootBundle.loadString('assets/engine/voice_personas.json'));
+      final runs = Directory(p.join(v.dataDir, 'test-runs'))..createSync(recursive: true);
+      final stamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.').first;
+      final proc = await Process.start(
+        v.python,
+        [script.path, '--persona-file', personas.path, '--persona', persona, '--control-port', '$port', if (agentId != null) ...['--room-tag', 'ag$agentId'], '--out', p.join(runs.path, 'voice-$stamp-$persona.json')],
+        workingDirectory: v.engineDir,
+      );
+      voiceTests[port] = proc;
+      final logFile = File(p.join(runs.path, 'voice-$stamp-$persona.log')).openWrite();
+      proc.stdout.pipe(logFile).ignore();
+      proc.stderr.listen(logFile.add, onError: (_) {});
+      notifyListeners();
+      unawaited(log('Started a voice test call ($persona)'));
+      unawaited(proc.exitCode.then((code) {
+        voiceTests.remove(port);
+        notifyListeners();
+        if (code != 0) toast('The voice test caller stopped (code $code): see test-runs/voice-$stamp-$persona.log');
+      }));
+    } catch (e) {
+      toast('Couldn’t start the voice test call: $e');
+    }
+  }
+
+  /// A voice test call for one business (`pstn-in-0-…_ag<agent id>`, from [startVoiceTest]):
+  /// answered by that agent. Only on the test line (line 0), which real calls never come in on.
+  Future<void> _voiceTestBusiness(String room) async {
+    if (!room.startsWith('pstn-in-0-') || roomAgent.containsKey(room)) return;
+    final id = int.tryParse(RegExp(r'_ag(\d+)(?:-|$)').firstMatch(room)?.group(1) ?? '');
+    if (id == null) return;
+    final agent = (await db.all('agents', where: 'id = ?', args: [id])).firstOrNull;
+    if (agent == null) return;
+    roomAgent[room] = id; // (and its business's app only: see _callAgent)
+  }
+
+  /// Who can answer a voice test call: the main assistant, and each business's receptionist.
+  Future<List<({int id, String label})>> voiceTestAgents() async => [
+        for (final a in await db.all('agents', orderBy: 'id'))
+          if (a['enabled'] != 0 && (a['handles'] == 'incoming' || '${a['role'] ?? ''}'.startsWith('Receptionist · ')))
+            (id: a['id'] as int, label: a['handles'] == 'incoming' ? '${a['name']} (main assistant)' : '${a['name']} · ${'${a['role']}'.split(' · ').skip(1).join(' · ')}'),
+      ];
+
+  /// Hangs up every simulated test caller.
+  void stopVoiceTests() {
+    for (final proc in voiceTests.values) {
+      proc.kill();
+    }
   }
 
   /// The owner speaks as the caller on a voice test call ([by] null: the simulated caller is back).
@@ -2544,6 +2643,7 @@ class AppState extends ChangeNotifier {
   static final _appDone = RegExp(r"\s*That[’']s all done\b");
 
   static final _yes = RegExp(r"^\W*(yes|yeah|yep|yup|sure|ok(ay)?|please do|please|go ahead|correct|that'?s (right|correct|fine|perfect|great|it)|book it|perfect|sounds (good|great)|absolutely|definitely|do it|confirm(ed)?|lovely|great)\b", caseSensitive: false);
+  static final _yesEnd = RegExp(r"\b(all|that'?s( all)?|it'?s|everything'?s?|everything is|yes,?) (all )?(correct|right|good|fine|perfect)\W*$", caseSensitive: false);
   static final _proposal = RegExp(
       r"\b(book|reserve|confirm|proceed|place (the|your|this) order|go ahead|save (it|that)|shall i|should i|would you like me to|want me to|"
       r"sign(ing)? (you |them |him |her )?up|enrol\w*|register\w*|can i (take|put|place|save|book)|"
@@ -2563,7 +2663,8 @@ class AppState extends ChangeNotifier {
     final aboutCancel = cancelling || RegExp(r'\bcancel', caseSensitive: false).hasMatch(convo[convo.length - 2].content);
     final notYes = RegExp(aboutCancel ? r"\b(no|not|but|instead|wait|actually)\b" : r"\b(no|not|but|instead|wait|actually|cancel)\b", caseSensitive: false);
     final parts = yes.split(RegExp(r'(?<=[.!?])\s+'));
-    final agreed = parts.where(_yes.hasMatch).toList();
+    // ("…table four inside, phone 07700 900123. All correct.": a yes at the end, after the details.)
+    final agreed = parts.where((p) => _yes.hasMatch(p) || _yesEnd.hasMatch(p)).toList();
     final offer0 = convo[convo.length - 2].content.trim();
     // "I'll cancel that for you now." — "Thank you.": agreeing to what it said it would do.
     if (agreed.isEmpty && _promisedAction.hasMatch(offer0) && !offer0.endsWith('?') && thanksOnly(yes)) agreed.add(yes);
@@ -2732,7 +2833,13 @@ class AppState extends ChangeNotifier {
 
   Future<AgentAccess?> accessOf(Map<String, Object?> agent) async {
     final skillSource = {for (final k in await db.all('skills', where: 'source_id IS NOT NULL')) k['id'] as int: k['source_id'] as int};
-    return AgentAccess.parse(agent['access'] as String?, skillSource: skillSource);
+    final a = AgentAccess.parse(agent['access'] as String?, skillSource: skillSource);
+    // A business's own agent ("Receptionist · Trattoria Bella") knows that business: its skills and
+    // app, and only the documents it was given — not every shared one (another restaurant's menu).
+    if ('${agent['role'] ?? ''}'.contains(' · ') && a?.docs == null) {
+      return AgentAccess(tools: a?.tools, skills: a?.skills, docs: const {}, skillDocs: a?.skillDocs ?? const {});
+    }
+    return a;
   }
 
   /// The agent on this call, and the extra instructions for passing it on.
@@ -2741,6 +2848,7 @@ class AppState extends ChangeNotifier {
     final team = await callTeam();
     if (team.isEmpty) return null;
     final now = _onCall[room];
+    await _voiceTestBusiness(room);
     // Which agent answers: the one linked to the line the call came in on (call flow), else the main one.
     int? lineAgent;
     final lm = RegExp(r'^pstn-in-(\d+)-').firstMatch(room);
@@ -2755,6 +2863,13 @@ class AppState extends ChangeNotifier {
         team.where((a) => a['id'] == lineAgent).firstOrNull ??
         (mode.startsWith('outbound#') ? null : team.firstWhere((a) => a['handles'] == 'incoming', orElse: () => team.first));
     if (agent == null) return null;
+    // A business's own receptionist (or teammate): only that business's app on this call.
+    final business = '${agent['role'] ?? ''}'.split(' · ').skip(1).join(' · ');
+    final number = RegExp(r'^pstn-in-\d+-_(\+?\d{6,})_').firstMatch(room)?.group(1);
+    if (business.isNotEmpty && number != null) {
+      final app = (await apps.apps()).where((a) => a.name == business).firstOrNull;
+      if (app != null) callApp[number] = app.id;
+    }
     // Who this agent may pass calls to: the links drawn in the call flow (or everyone, if none drawn).
     final links = (() {
       try {
@@ -3159,7 +3274,8 @@ class AppState extends ChangeNotifier {
   static String spokenText(String t) {
     t = t.split('CALL_TASK').first;
     // (Held back while it may still turn into markup: a list, bold, CALL_TASK, a tool written out as "[take_message:{…".)
-    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z_]*|\[[a-z_]+:\s*\{[^\]]*|\[[a-z]+_[a-z_]+:[^\]]*|\s+)$');
+    // (…and while a date, time or number may still be coming: it is said as a whole, see below.)
+    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z_]*|\[[a-z_]+:\s*\{[^\]]*|\[[a-z]+_[a-z_]+:[^\]]*|\[[A-Z][^\]]*|\+(4(4\s?(7\d{0,3}\s?\d{0,5})?)?)?|\b20\d\d(-\d{0,2}(-\d?)?)?|\b\d{1,2}:\d?|\s+)$');
     for (var held = t.replaceFirst(pending, ''); held != t; held = t.replaceFirst(pending, '')) {
       t = held;
     }
@@ -3170,7 +3286,24 @@ class AppState extends ChangeNotifier {
         .replaceAll(RegExp(r'[ \t]*\n\s*'), ' ')
         .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]*\]'), '') // a tool's name written out instead of called
         .replaceAll(RegExp(r'\s*\[[a-z_]+:\s*\{[^\]]*\}?\]?'), '') // …or with its details: "[take_message:{"name":…}]"
-        .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]+:[^\]]*\]?'), ''); // …or "[check_appointments: date="…"]"
+        .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]+:[^\]]*\]?'), '') // …or "[check_appointments: date="…"]"
+        // Details written as data ("[Name: Sam, Phone: +447700900258, Date: 2026-10-09, Time: 20:30]"): said as people say them.
+        .replaceAllMapped(RegExp(r'\[((?:[A-Z][A-Za-z ]{0,20}:\s*[^,\]]+,?\s*)+)\]'),
+            (m) => m[1]!.replaceAllMapped(RegExp(r'([A-Z][A-Za-z ]{0,20}):\s*'), (k) => '${k[1]!.toLowerCase()} ').trim())
+        .replaceAllMapped(RegExp(r'\b(20\d\d)-(\d\d)-(\d\d)\b'), (m) {
+          final d = DateTime.tryParse(m[0]!);
+          if (d == null) return m[0]!;
+          const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+          const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+          return '${days[d.weekday - 1]} ${d.day} ${months[d.month - 1]}';
+        })
+        .replaceAllMapped(RegExp(r'(?<![\d£$€.:])\b([01]?\d|2[0-3]):([0-5]\d)\b(?![:\d]|\s*(?:[ap]\.?m\b|[ap]\.m\.))', caseSensitive: false), (m) {
+          final h = int.parse(m[1]!), min = m[2]!;
+          if (h >= 1 && h <= 11 && !m[1]!.startsWith('0')) return m[0]!; // "7:30" as said: leave it
+          final h12 = h % 12 == 0 ? 12 : h % 12;
+          return '$h12${min == '00' ? '' : ':$min'} ${h < 12 ? 'am' : 'pm'}';
+        })
+        .replaceAllMapped(RegExp(r'\+44\s?7(\d{3})\s?(\d{6})\b'), (m) => '07${m[1]} ${m[2]}');
   }
 
   Future<void> _engineRequest(HttpRequest req, String path) async {

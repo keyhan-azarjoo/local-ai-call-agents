@@ -97,4 +97,18 @@ void main() {
     expect(AppState.spokenText('Let me check. [check_appointments: date="2026-10-15", time="10:00"] It is free.'), 'Let me check. It is free.');
     expect(AppState.spokenText('Let me check. [check_appointments: date="2026'), 'Let me check.');
   });
+
+  test('details written as data are said as people say them', () {
+    // Heard on a voice test call: "Phone plus 447.700.900.258, date 2.026-10-09, time 20.30".
+    final t = AppState.spokenText('Let me confirm that. [Name: Sam Carter, Phone: +447700900258, Date: 2026-10-09, Time: 20:30, Guests: 2, Table: 4 (Inside)]. Is that correct?');
+    expect(t, 'Let me confirm that. name Sam Carter, phone 07700 900258, date Friday 9 October, time 8:30 pm, guests 2, table 4 (Inside). Is that correct?');
+    expect(AppState.spokenText('Your table is at 7:30 pm on 2026-10-09.'), 'Your table is at 7:30 pm on Friday 9 October.');
+    expect(AppState.spokenText('We open at 09:00 and close at 22:00.'), 'We open at 9 am and close at 10 pm.');
+    expect(AppState.spokenText('A skin fade is £21.50, ready at 7:30.'), 'A skin fade is £21.50, ready at 7:30.');
+    // While a date, time or number is still being written, it isn't said yet (it's said whole).
+    expect(AppState.spokenText('Your booking is on 2026-10'), 'Your booking is on');
+    expect(AppState.spokenText('Your number is +44770090'), 'Your number is');
+    expect(AppState.spokenText('See you at 20:'), 'See you at');
+    expect(AppState.spokenText('Table 4'), 'Table 4');
+  });
 }

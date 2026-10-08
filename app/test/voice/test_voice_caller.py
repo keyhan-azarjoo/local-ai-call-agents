@@ -248,7 +248,7 @@ class AnalysisTests(unittest.TestCase):
 
 class RunnerTests(unittest.TestCase):
     def test_personas_file(self):
-        personas = runner.load_personas(HERE / "personas.json")
+        personas = runner.load_personas(HERE.parent.parent / "assets/engine/voice_personas.json")
         self.assertGreaterEqual(len(personas), 12)
         ids = [p["id"] for p in personas]
         self.assertEqual(len(ids), len(set(ids)))

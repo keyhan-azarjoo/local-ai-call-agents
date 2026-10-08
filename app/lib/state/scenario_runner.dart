@@ -56,12 +56,12 @@ class ScenarioRunner {
       final want = {for (final x in (t.spec['tables'] as List).cast<Map>()) '${x['id']}'};
       int? id;
       if (!isolated) {
-        for (final a in await s.apps.apps()) {
-          if (want.difference({for (final x in a.spec.tables) x.id}).isEmpty) {
-            id = a.id;
-            break;
-          }
-        }
+        // Made from this template: it has the template's name (the newest one, if several), or
+        // all its tables. (Names, not shared tables: a barber's and a salon's are nearly the same;
+        // an older version of the template is brought up to date, not made again.)
+        final mine = [for (final a in await s.apps.apps()) if (!appIds.containsValue(a.id)) a];
+        id = mine.where((a) => a.name == t.spec['name']).firstOrNull?.id ??
+            mine.where((a) => want.difference({for (final x in a.spec.tables) x.id}).isEmpty).firstOrNull?.id;
         if (id != null) await s.apps.upgradeFromTemplate(id, t);
       }
       id ??= await s.apps.createFromTemplate(t);

@@ -46,6 +46,26 @@ Run them from the app: **Calls → Tests → Run test scenarios**. Choose a quic
 
 No test ever places a real phone call: all test numbers are from ranges reserved for drama.
 
+## Voice test calls (on the line, like a real call)
+
+The scenarios above run inside the app, so they have no call audio to listen to. A **voice test call** rings the test line through the voice engine exactly like a phone call. Start one with **Calls → Voice test call**:
+
+1. Pick a caller: 14 personas in [`voice_personas.json`](../app/assets/engine/voice_personas.json). They cover English, Spanish, French, Italian, German, Persian, Arabic, Portuguese and Japanese, and some use confusing tactics (changing their mind, rambling, interrupting, prompt injection, pretending to be someone else).
+2. The caller ([`voice_caller.py`](../app/assets/engine/voice_caller.py)) speaks with a real voice, hears the AI and decides what to say next with a local model.
+
+While the call is on, the live view offers:
+
+| Button | What happens |
+|---|---|
+| **Listen** | The call plays on this computer's speakers. Nobody on the call can see you. |
+| **Take over** | Your microphone joins and the AI leaves in under a second. The caller stays on the line with you. **Hand back to AI** brings it back. |
+| **Speak as the caller** | You replace the simulated caller mid-call and talk to the AI yourself. **Hand back** gives the caller's side back to it. |
+| **Copy** | Copies the conversation as text. This also works on recent conversations and on any call in the history. |
+
+Listen, Take over and Copy also work on real calls. Results and logs go to `test-runs/voice-*.json` / `.log`. To run a batch without the app, use [`app/test/voice/run_voice_tests.py`](../app/test/voice/run_voice_tests.py).
+
+The controls are checked live by [`integration_test/call_monitor_live_test.dart`](../app/integration_test/call_monitor_live_test.dart).
+
 ## Results
 
 From 1,800+ spoken calls run during development:

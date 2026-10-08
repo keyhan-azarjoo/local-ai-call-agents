@@ -11,6 +11,7 @@
 /// Env: SCEN_FILE (default scenarios.json), SCEN_ONLY (comma ids or app names), SCEN_FROM/SCEN_TO (1-based range),
 /// SCEN_OUT (results file, default out/results.jsonl; finished ids are skipped, so a run can resume),
 /// SCEN_MODEL (the assistant's model, default qwen3:4b-instruct), SCEN_CALLER_MODEL (the caller's).
+@Tags(['live'])
 library;
 
 import 'dart:convert';
@@ -34,6 +35,7 @@ void main() {
       .setMockMethodCallHandler(const MethodChannel('plugins.flutter.io/path_provider'), (c) async => support);
 
   test('scenarios', () async {
+    if (env['SCEN'] != '1') return markTestSkipped('live calls: run with SCEN=1');
     var all = [
       for (final name in (env['SCEN_FILE'] ?? 'scenarios.json,journeys.json,challenges.json').split(','))
         ...(jsonDecode(File('${Directory.current.path}/assets/scenarios/$name').readAsStringSync()) as List).cast<Map<String, dynamic>>(),

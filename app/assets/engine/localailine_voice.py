@@ -430,7 +430,7 @@ class WhisperStreamingSTT(stt.STT):
         frame = rtc.combine_audio_frames(buffer)
         pcm = np.frombuffer(frame.data, dtype=np.int16)
         text, lang = await self.transcribe(pcm, frame.sample_rate, final=True)
-        return stt.SpeechEvent(type=stt.SpeechEventType.FINAL_TRANSCRIPT, alternatives=[stt.SpeechData(language=lang, text=text)])
+        return stt.SpeechEvent(type=stt.SpeechEventType.FINAL_TRANSCRIPT, alternatives=[stt.SpeechData(language=lang, text=tidy_heard(text))])
 
     def stream(self, *, language: NotGivenOr[str] = NOT_GIVEN, conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS):
         return _WhisperStream(stt_=self, conn_options=conn_options)
@@ -481,7 +481,7 @@ class _WhisperStream(stt.RecognizeStream):
                         last_text = text
                         self._event_ch.send_nowait(stt.SpeechEvent(
                             type=stt.SpeechEventType.INTERIM_TRANSCRIPT,
-                            alternatives=[stt.SpeechData(language=lang, text=text)]))
+                            alternatives=[stt.SpeechData(language=lang, text=tidy_heard(text))]))
             except Exception as e:  # noqa: BLE001
                 log.debug("interim failed: %s", e)
             finally:
@@ -525,7 +525,7 @@ class _WhisperStream(stt.RecognizeStream):
                         self._s.learn_level(pcm)
                     self._event_ch.send_nowait(stt.SpeechEvent(
                         type=stt.SpeechEventType.FINAL_TRANSCRIPT,
-                        alternatives=[stt.SpeechData(language=lang, text=text)]))
+                        alternatives=[stt.SpeechData(language=lang, text=tidy_heard(text))]))
                     self._event_ch.send_nowait(stt.SpeechEvent(type=stt.SpeechEventType.END_OF_SPEECH))
 
         vad_task = asyncio.create_task(read_vad())
@@ -676,6 +676,15 @@ class _PiperChunked(tts.ChunkedStream):
         output_emitter.flush()
 
 
+# Times as speech recognition writes them: "7, 30pm" / "7 30 p.m." / "7.30pm" -> "7:30 pm" (else the
+# model takes "7, 30pm" for 7 pm).
+_HEARD_TIME = __import__("re").compile(r"\b(1[0-2]|0?[1-9])(?:,\s*|\s+|\.)([0-5]\d)\s*([ap])\.?\s?m\b\.?", __import__("re").IGNORECASE)
+
+
+def tidy_heard(text: str) -> str:
+    return _HEARD_TIME.sub(lambda m: f"{m[1]}:{m[2]} {m[3].lower()}m", text) if text else text
+
+
 _CLAUSE = __import__("re").compile(r"(?<=[,;:.!?…—])\s+")
 _MONEY = __import__("re").compile(r"([£$€])(\d+)(?:\.(\d{2}))?")
 _MONEY_NAMES = {"£": ("pounds", "p"), "$": ("dollars", "cents"), "€": ("euros", "cents")}
@@ -689,7 +698,29 @@ def speakable(text: str) -> str:
             return f"{m[2]} {unit} {int(m[3])}" if m[1] == "£" else f"{m[2]} {unit} and {int(m[3])} {small}"
         return f"{m[2]} {unit}"
     text = _MONEY.sub(money, text).replace(" – ", ", ").replace(" — ", ", ")
+    text = _PHONE.sub(phone_digits, text)
     return __import__("re").sub(r"\s*&\s*", " and ", text)
+
+
+# A phone number (7+ digits, maybe spaced): said digit by digit in its groups ("07700 900123" ->
+# "0 7 7 0 0, 9 0 0, 1 2 3"); as a number it comes out as "nine hundred thousand…" and is misheard.
+_PHONE = __import__("re").compile(r"(?<![\d.,£$€])\+?\d(?:[\d -]{5,}\d)(?![\d.,]\d)")
+
+
+def phone_digits(m) -> str:  # noqa: ANN001
+    raw = m[0]
+    if sum(c.isdigit() for c in raw) < 7:
+        return raw
+    groups = [g for g in __import__("re").split(r"[ -]+", raw.lstrip("+")) if g]
+    if len(groups) == 1 and raw.startswith("+44") and len(groups[0]) == 12:  # +44 7700 900 258
+        g = groups[0]
+        groups = ["44", g[2:6], g[6:9], g[9:]]
+    elif len(groups) == 1 and groups[0].startswith("0") and len(groups[0]) == 11:  # 07700 900 123
+        g = groups[0]
+        groups = [g[:5], g[5:8], g[8:]]
+    # Long groups in threes ("900123" -> "900, 123"): easier to say and to hear.
+    groups = [x for g in groups for x in ([g] if len(g) <= 5 or g.startswith("0") else [g[i:i + 3] for i in range(0, len(g), 3)])]
+    return ("plus " if raw.startswith("+") else "") + ", ".join(" ".join(g) for g in groups if g)
 
 
 _FA_ONES = ["صفر", "یک", "دو", "سه", "چهار", "پنج", "شش", "هفت", "هشت", "نه"]
@@ -1085,14 +1116,18 @@ async def app_config(mode: str, lang: str = "auto", room: str = "") -> dict:
     base = os.environ.get("LL_APP_URL")
     if not base:
         return {}
-    try:
-        async with aiohttp.ClientSession() as h:
-            async with h.get(f"{base}/api/voice-config", params={"mode": mode, "lang": lang, "room": room}, headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"},
-                             timeout=aiohttp.ClientTimeout(total=3)) as r:
-                return await r.json(content_type=None)
-    except Exception as e:  # noqa: BLE001
-        log.warning("no app config: %s", e)
-        return {}
+    # (The app can be slow to answer right after it starts, or while it loads the model: without
+    # its answer the call would be greeted as nobody in particular. A few tries, then go on.)
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession() as h:
+                async with h.get(f"{base}/api/voice-config", params={"mode": mode, "lang": lang, "room": room}, headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"},
+                                 timeout=aiohttp.ClientTimeout(total=4)) as r:
+                    return await r.json(content_type=None)
+        except Exception as e:  # noqa: BLE001
+            log.warning("no app config (try %d): %s", attempt + 1, e)
+            await asyncio.sleep(0.5)
+    return {}
 
 
 async def entrypoint(ctx: JobContext) -> None:
@@ -1277,7 +1312,13 @@ async def entrypoint(ctx: JobContext) -> None:
 
     async def leave_to_owner() -> None:
         await asyncio.sleep(0.3)
-        ctx.shutdown("taken over by the owner")  # the room (and the caller) stay
+        # Leave the room properly first, so everyone sees the AI gone at once (a process that just
+        # exits stays "in the call" for ~20 s); the room and the caller stay.
+        try:
+            await ctx.room.disconnect()
+        except Exception as e:  # noqa: BLE001
+            log.warning("leaving the room: %s", e)
+        ctx.shutdown("taken over by the owner")
 
     def on_data(packet) -> None:  # noqa: ANN001
         p = getattr(packet, "participant", None)
@@ -1290,8 +1331,29 @@ async def entrypoint(ctx: JobContext) -> None:
         if by:
             step_out(by)
 
+    def on_joined(participant) -> None:  # noqa: ANN001
+        # The owner's app may join with the take-over already set (its first message can be lost
+        # while its connection is still opening).
+        by = takeover_by_attributes(dict(participant.attributes), participant.identity)
+        if by:
+            step_out(by)
+
     ctx.room.on("data_received", on_data)
     ctx.room.on("participant_attributes_changed", on_attributes)
+    ctx.room.on("participant_connected", on_joined)
+
+    async def watch_for_owner() -> None:
+        # Events before the handlers above were set (the greeting, say) are missed: whoever is
+        # already in the call, and once a second after, in case a change was lost.
+        while not taken["by"]:
+            for p in list(ctx.room.remote_participants.values()):
+                by = takeover_by_attributes(dict(p.attributes), p.identity)
+                if by:
+                    step_out(by)
+                    return
+            await asyncio.sleep(1.0)
+
+    asyncio.create_task(watch_for_owner())
 
     async def hang_up() -> None:
         await asyncio.sleep(1.0)  # let the goodbye finish on their side

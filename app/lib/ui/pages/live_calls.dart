@@ -1,10 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 
 import '../../state/app_state.dart';
 import '../../state/call_monitor.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
+
+/// A conversation as plain text ("Caller: …", "AI: …"), to paste somewhere.
+String conversationText(List<LiveLine> lines) => [
+  for (final l in lines)
+    if (l.text.trim().isNotEmpty)
+      '${l.who == 'note'
+          ? 'Note'
+          : l.name?.isNotEmpty == true
+          ? l.name
+          : l.who == 'caller'
+          ? 'Caller'
+          : 'AI'}: ${l.text.trim()}',
+].join('\n');
+
+Future<void> copyConversation(BuildContext context, List<LiveLine> lines) async {
+  final s = context.read<AppState>();
+  await Clipboard.setData(ClipboardData(text: conversationText(lines)));
+  s.toast('Conversation copied');
+}
 
 /// The calls going on right now: how many lines are busy, who is speaking on each, and what is
 /// being said, word by word as it is said. Finished conversations stay below for a while.
@@ -17,13 +37,7 @@ class LiveCallsPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final s = context.watch<AppState>();
-    final calls = s.liveCalls.entries
-        .where(
-          (e) =>
-              DateTime.now().difference(e.value.at) <
-              const Duration(minutes: 2),
-        )
-        .toList();
+    final calls = s.liveCalls.entries.where((e) => DateTime.now().difference(e.value.at) < const Duration(minutes: 2)).toList();
     if (calls.isEmpty && !always) return const SizedBox.shrink();
     final speaking = calls.where((e) => e.value.agent == 'speaking').length;
     final thinking = calls.where((e) => e.value.agent == 'thinking').length;
@@ -36,23 +50,23 @@ class LiveCallsPanel extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.call,
-                  size: 18,
-                  color: calls.isEmpty ? context.c.muted : context.c.greenInk,
-                ),
+                Icon(Icons.call, size: 18, color: calls.isEmpty ? context.c.muted : context.c.greenInk),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    calls.isEmpty
-                        ? 'No calls right now'
-                        : '${calls.length} call${calls.length == 1 ? '' : 's'} on the line now',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
+                    calls.isEmpty ? 'No calls right now' : '${calls.length} call${calls.length == 1 ? '' : 's'} on the line now',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
                   ),
                 ),
+                if (always && s.voice != null) ...[
+                  Btn(
+                    s.voiceTests.isEmpty ? 'Voice test call' : 'Voice test call (${s.voiceTests.length} on)',
+                    icon: Icons.record_voice_over_outlined,
+                    small: true,
+                    onPressed: () => showVoiceTestDialog(context),
+                  ),
+                  const SizedBox(width: 10),
+                ],
                 if (calls.isNotEmpty)
                   Flexible(
                     flex: 2,
@@ -61,18 +75,9 @@ class LiveCallsPanel extends StatelessWidget {
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        Pill(
-                          'AI speaking $speaking',
-                          tone: speaking > 0 ? Tone.green : Tone.neutral,
-                        ),
-                        Pill(
-                          'Thinking $thinking',
-                          tone: thinking > 0 ? Tone.amber : Tone.neutral,
-                        ),
-                        Pill(
-                          'Callers speaking $callers',
-                          tone: callers > 0 ? Tone.blue : Tone.neutral,
-                        ),
+                        Pill('AI speaking $speaking', tone: speaking > 0 ? Tone.green : Tone.neutral),
+                        Pill('Thinking $thinking', tone: thinking > 0 ? Tone.amber : Tone.neutral),
+                        Pill('Callers speaking $callers', tone: callers > 0 ? Tone.blue : Tone.neutral),
                       ],
                     ),
                   ),
@@ -85,30 +90,21 @@ class LiveCallsPanel extends StatelessWidget {
                 number: e.value.number.isEmpty ? e.key : e.value.number,
                 state: switch ((e.value.agent, e.value.caller)) {
                   (_, 'speaking') => s.callerAs[e.key] != null ? '${s.callerAs[e.key]} (as caller) is speaking' : 'caller is speaking',
-                  _ when s.takenOver[e.key] != null => s.ownerSpeaking.contains(e.key) ? '${s.takenOver[e.key]} is speaking' : '${s.takenOver[e.key]} is on the call',
+                  _ when s.takenOver[e.key] != null =>
+                    s.ownerSpeaking.contains(e.key) ? '${s.takenOver[e.key]} is speaking' : '${s.takenOver[e.key]} is on the call',
                   ('speaking', _) => 'AI is speaking',
                   ('thinking', _) => 'AI is thinking',
                   _ => 'listening',
                 },
-                test: s
-                    .scenarioRuns
-                    .isNotEmpty, // (tests never place or take real calls)
+                test: s.scenarioRuns.isNotEmpty, // (tests never place or take real calls)
                 lines: s.liveText[e.key] ?? const [],
               ),
             ],
             if (always && s.recentLive.isNotEmpty) ...[
               const SizedBox(height: 18),
-              const Text(
-                'Recent conversations',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
-              ),
+              const Text('Recent conversations', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5)),
               const SizedBox(height: 4),
-              for (final r in s.recentLive)
-                _RecentCall(
-                  r.number.isEmpty ? r.room : r.number,
-                  r.ended,
-                  r.lines,
-                ),
+              for (final r in s.recentLive) _RecentCall(r.number.isEmpty ? r.room : r.number, r.ended, r.lines),
             ],
           ],
         ),
@@ -119,13 +115,7 @@ class LiveCallsPanel extends StatelessWidget {
 
 /// One call on the line: its conversation so far, newest at the bottom.
 class _LiveCall extends StatelessWidget {
-  const _LiveCall({
-    required this.room,
-    required this.number,
-    required this.state,
-    required this.test,
-    required this.lines,
-  });
+  const _LiveCall({required this.room, required this.number, required this.state, required this.test, required this.lines});
   final String room, number, state;
   final bool test;
   final List<LiveLine> lines;
@@ -143,12 +133,16 @@ class _LiveCall extends StatelessWidget {
         Row(
           children: [
             Flexible(child: Muted(number, mono: true, size: 12.5)),
-            if (test || CallMonitor.isVoiceTest(room)) ...[
-              const SizedBox(width: 8),
-              const Pill('test call', tone: Tone.neutral),
-            ],
+            if (test || CallMonitor.isVoiceTest(room)) ...[const SizedBox(width: 8), const Pill('test call', tone: Tone.neutral)],
             const Spacer(),
             Muted(state, size: 12.5),
+            if (lines.isNotEmpty)
+              IconButton(
+                tooltip: 'Copy conversation',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.copy, size: 15),
+                onPressed: () => copyConversation(context, lines),
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -160,11 +154,7 @@ class _LiveCall extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxHeight: 300),
             // Reversed: it stays scrolled to the newest words as they arrive.
-            child: ListView(
-              reverse: true,
-              shrinkWrap: true,
-              children: [for (final l in lines.reversed) LiveBubble(l)],
-            ),
+            child: ListView(reverse: true, shrinkWrap: true, children: [for (final l in lines.reversed) LiveBubble(l)]),
           ),
       ],
     ),
@@ -199,7 +189,13 @@ class CallControls extends StatelessWidget {
               MonitorMode.off => Btn('Listen', icon: Icons.headphones, small: true, onPressed: () => m.listen(room)),
               MonitorMode.connecting => Btn('Connecting…', icon: Icons.headphones, small: true, kind: BtnKind.ghost, onPressed: () => m.stop(room)),
               MonitorMode.listening => Btn('Stop listening', icon: Icons.headset_off, small: true, kind: BtnKind.ghost, onPressed: () => m.stop(room)),
-              MonitorMode.takenOver => Btn(m.mutedOn(room) ? 'Unmute' : 'Mute', icon: m.mutedOn(room) ? Icons.mic_off : Icons.mic, small: true, kind: BtnKind.ghost, onPressed: () => m.toggleMute(room)),
+              MonitorMode.takenOver => Btn(
+                m.mutedOn(room) ? 'Unmute' : 'Mute',
+                icon: m.mutedOn(room) ? Icons.mic_off : Icons.mic,
+                small: true,
+                kind: BtnKind.ghost,
+                onPressed: () => m.toggleMute(room),
+              ),
               MonitorMode.handingBack => const Btn('Handing back…', icon: Icons.smart_toy_outlined, small: true, kind: BtnKind.ghost),
             },
             if (mode == MonitorMode.off || mode == MonitorMode.listening)
@@ -210,21 +206,28 @@ class CallControls extends StatelessWidget {
             ],
             if (voiceTest && mode != MonitorMode.takenOver && mode != MonitorMode.handingBack)
               asCaller
-                  ? Btn(busy ? 'Handing back…' : 'Hand back', icon: Icons.person_off_outlined, small: true, onPressed: busy ? null : () => m.speakAsCaller(room, back: true))
-                  : Btn(busy ? 'Switching…' : 'Speak as the caller', icon: Icons.person_outline, small: true, onPressed: busy ? null : () => m.speakAsCaller(room)),
+                  ? Btn(
+                      busy ? 'Handing back…' : 'Hand back',
+                      icon: Icons.person_off_outlined,
+                      small: true,
+                      onPressed: busy ? null : () => m.speakAsCaller(room, back: true),
+                    )
+                  : Btn(
+                      busy ? 'Switching…' : 'Speak as the caller',
+                      icon: Icons.person_outline,
+                      small: true,
+                      onPressed: busy ? null : () => m.speakAsCaller(room),
+                    ),
             if (on) _Level(level: m.levelOf(room), muted: m.mutedOn(room)),
             if (on)
-              Muted(
-                switch ((mode, m.speakingOn(room))) {
-                  (MonitorMode.takenOver, 'owner') => 'You’re speaking',
-                  (MonitorMode.takenOver, 'caller') => 'The caller is speaking',
-                  (MonitorMode.takenOver, _) => m.mutedOn(room) ? 'On the call · microphone off' : 'On the call as $owner · microphone on',
-                  (_, 'caller') => 'Listening · the caller is speaking',
-                  (_, 'agent') => 'Listening · the AI is speaking',
-                  _ => 'Listening on this computer’s speakers',
-                },
-                size: 12,
-              ),
+              Muted(switch ((mode, m.speakingOn(room))) {
+                (MonitorMode.takenOver, 'owner') => 'You’re speaking',
+                (MonitorMode.takenOver, 'caller') => 'The caller is speaking',
+                (MonitorMode.takenOver, _) => m.mutedOn(room) ? 'On the call · microphone off' : 'On the call as $owner · microphone on',
+                (_, 'caller') => 'Listening · the caller is speaking',
+                (_, 'agent') => 'Listening · the AI is speaking',
+                _ => 'Listening on this computer’s speakers',
+              }, size: 12),
             if (asCaller && mode != MonitorMode.takenOver) Muted('You’re the caller (your microphone, through the test caller)', size: 12),
           ],
         );
@@ -280,24 +283,37 @@ class _RecentCallState extends State<_RecentCall> {
     final first = widget.lines.where((l) => l.who == 'caller').firstOrNull?.text ?? '';
     final e = widget.ended;
     final t = '${e.hour.toString().padLeft(2, '0')}:${e.minute.toString().padLeft(2, '0')}';
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      InkWell(
-        onTap: () => setState(() => open = !open),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Row(children: [
-            Icon(open ? Icons.expand_less : Icons.expand_more, size: 18, color: context.c.muted),
-            const SizedBox(width: 6),
-            Muted(widget.number, mono: true, size: 12.5),
-            const SizedBox(width: 10),
-            Expanded(child: Text(first, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
-            const SizedBox(width: 10),
-            Muted('ended $t · ${widget.lines.where((l) => l.who != 'note').length} lines', size: 12),
-          ]),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => open = !open),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Icon(open ? Icons.expand_less : Icons.expand_more, size: 18, color: context.c.muted),
+                const SizedBox(width: 6),
+                Muted(widget.number, mono: true, size: 12.5),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(first, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+                ),
+                const SizedBox(width: 10),
+                Muted('ended $t · ${widget.lines.where((l) => l.who != 'note').length} lines', size: 12),
+                IconButton(
+                  tooltip: 'Copy conversation',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.copy, size: 15),
+                  onPressed: () => copyConversation(context, widget.lines),
+                ),
+              ],
+            ),
+          ),
         ),
-      ),
-      if (open) ...[for (final l in widget.lines) LiveBubble(l), const SizedBox(height: 8)],
-    ]);
+        if (open) ...[for (final l in widget.lines) LiveBubble(l), const SizedBox(height: 8)],
+      ],
+    );
   }
 }
 
@@ -309,8 +325,7 @@ class LiveBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final at =
-        '${line.at.hour.toString().padLeft(2, '0')}:${line.at.minute.toString().padLeft(2, '0')}:${line.at.second.toString().padLeft(2, '0')}';
+    final at = '${line.at.hour.toString().padLeft(2, '0')}:${line.at.minute.toString().padLeft(2, '0')}:${line.at.second.toString().padLeft(2, '0')}';
     if (line.who == 'note') {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -324,10 +339,7 @@ class LiveBubble extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 560),
         margin: const EdgeInsets.symmetric(vertical: 3),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-        decoration: BoxDecoration(
-          color: caller ? context.c.blueSoft : context.c.greenSoft,
-          borderRadius: BorderRadius.circular(LL.rSm),
-        ),
+        decoration: BoxDecoration(color: caller ? context.c.blueSoft : context.c.greenSoft, borderRadius: BorderRadius.circular(LL.rSm)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -344,9 +356,7 @@ class LiveBubble extends StatelessWidget {
               line.done ? line.text : '${line.text} ▍',
               style: TextStyle(
                 fontSize: 13.5,
-                fontStyle: caller && !line.done
-                    ? FontStyle.italic
-                    : FontStyle.normal,
+                fontStyle: caller && !line.done ? FontStyle.italic : FontStyle.normal,
                 color: caller && !line.done ? context.c.muted : context.c.ink,
               ),
             ),
@@ -355,4 +365,78 @@ class LiveBubble extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Rings the test line with a simulated caller who speaks (a real voice, never a real phone call):
+/// the call shows above like any other, to listen to, take over, or continue as the caller.
+Future<void> showVoiceTestDialog(BuildContext context) async {
+  final s = context.read<AppState>();
+  final personas = await s.voicePersonas();
+  final answerers = await s.voiceTestAgents();
+  if (!context.mounted || personas.isEmpty) return;
+  var pick = personas.first['id'] as String;
+  // Each caller rings its own kind of business (its receptionist), else the main assistant.
+  const businesses = {'restaurant': 'Trattoria Bella', 'barber': 'Kings Cut Barbers', 'salon': 'Studio Lumière', 'clinic': 'Riverside Dental', 'hotel': 'The Harbour House'};
+  int? answererFor(String persona) {
+    final b = businesses['${personas.firstWhere((p) => p['id'] == persona)['business']}'];
+    return answerers.where((a) => b != null && a.label.endsWith(' · $b')).firstOrNull?.id ?? answerers.firstOrNull?.id;
+  }
+  var agent = answererFor(pick);
+  await showDialog<void>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, set) => AlertDialog(
+        title: const Text('Voice test call'),
+        content: SizedBox(
+          width: 520,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Muted(
+                'A pretend caller rings your test line and talks to your assistant out loud. No real phone call is made. '
+                'Once it’s on the line: Listen, Take over (you replace the AI), or Speak as the caller (you replace the caller).',
+              ),
+              const SizedBox(height: 14),
+              DropdownButton<String>(
+                isExpanded: true,
+                value: pick,
+                items: [
+                  for (final p in personas)
+                    DropdownMenuItem(
+                      value: p['id'] as String,
+                      child: Text(
+                        '${p['name']} · ${p['business']} · ${(p['language'] as String).toUpperCase()}${(p['tactics'] as List?)?.isNotEmpty == true ? ' · tricky' : ''}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (v) => set(() => pick = v ?? pick),
+              ),
+              const SizedBox(height: 8),
+              Muted('${personas.firstWhere((p) => p['id'] == pick)['goal']}', size: 12.5),
+            ],
+          ),
+        ),
+        actions: [
+          if (s.voiceTests.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                s.stopVoiceTests();
+                Navigator.pop(ctx);
+              },
+              child: const Text('Hang up test calls'),
+            ),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              s.startVoiceTest(pick, agentId: agent);
+            },
+            child: const Text('Ring the test line'),
+          ),
+        ],
+      ),
+    ),
+  );
 }

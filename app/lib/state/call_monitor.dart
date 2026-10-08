@@ -57,9 +57,9 @@ class CallMonitor extends ChangeNotifier {
   /// A call from the voice test caller (it can hand the caller's side to the owner).
   static bool isVoiceTest(String room) => room.contains('_vt');
 
-  /// The test caller's control port: in the room name (`…_vt8926…`), else 8925.
+  /// The test caller's control port: in the room name (`…_vt8926-<random>`), else 8925.
   static int callerPort(String room) {
-    final p = int.tryParse(RegExp(r'_vt[-_:]?(\d{4,5})(?!\d)').firstMatch(room)?.group(1) ?? '');
+    final p = int.tryParse(RegExp(r'_vt[-_:]?(\d{4,5})(?![0-9a-fA-F])').firstMatch(room)?.group(1) ?? '');
     return p != null && p >= 1024 && p <= 65535 ? p : defaultCallerPort;
   }
 

@@ -945,7 +945,7 @@ class AppState extends ChangeNotifier {
             return Future.value((text: 'Their number is withheld, so no booking can be looked up, changed or cancelled on this call. Tell them to call back from the number they booked with.', isError: true));
           }
           final said = [for (final m in messages) if (m.role == 'user') callerWords(m.content)].join(' ');
-          final name = '${args['name'] ?? ''}'.trim().isNotEmpty ? '${args['name']}' : (_verifiedName[callerNumber] ?? saidName(said) ?? '');
+          final name = '${args['name'] ?? ''}'.trim().isNotEmpty ? '${args['name']}' : (_verifiedName[callerNumber] ?? callerName(messages) ?? '');
           if (name.isNotEmpty && !sameName(name, said) && _verifiedName[callerNumber] != name) {
             return Future.value((text: 'The caller has not said the name "$name". Ask them for the name it is booked under; never suggest one.', isError: true));
           }
@@ -1584,6 +1584,29 @@ class AppState extends ChangeNotifier {
 
   /// How many times a caller's own booking was looked for and not found on this call (by their number).
   final _notFound = <String, int>{};
+
+  /// What was said on the call, as the model should read it back: a hand-over shown as
+  /// "… ⏸ (on hold) Tessa: Hi, I'm Tessa…" (or with its engine tag) keeps only the new agent's words —
+  /// otherwise the model copies the whole hand-over again, word for word, every turn.
+  static String handedOver(String said) {
+    final m = RegExp(r'(?:⏸\s*\(on hold\)|→|\[voice:[^\]]*\|)\s*([^:\]\n]{1,30})[:\]]\s*').allMatches(said).lastOrNull;
+    return m == null ? said : said.substring(m.end).trim();
+  }
+
+  /// The caller's name from the call: given in a sentence ("my name is …"), or said on its own just
+  /// after being asked for it ("What name is it under?" — "Victoria Stone.").
+  static String? callerName(List<ChatMessage> convo) {
+    for (var i = convo.length - 1; i >= 0; i--) {
+      if (convo[i].role != 'user') continue;
+      final words = callerWords(convo[i].content);
+      final asked = i > 0 && convo[i - 1].role == 'assistant' && RegExp(r'\bname\b', caseSensitive: false).hasMatch(convo[i - 1].content);
+      final bare = RegExp(r"^\W*(?:it'?s |it is |under )?([A-Z][a-zA-Z'’-]+(?:\s+[A-Z][a-zA-Z'’-]+){0,2})\W*$").firstMatch(words.trim());
+      if (asked && bare != null) return bare.group(1);
+      final n = saidName(words);
+      if (n != null) return n;
+    }
+    return null;
+  }
 
   /// The name the caller gave ("my name is Hugo Khan", "it's under Patel", "this is Sara").
   static String? saidName(String said) {
@@ -2234,8 +2257,7 @@ class AppState extends ChangeNotifier {
   /// Does what the caller agreed to with [tool]: a cancel by their own number, or the booking/order from the call.
   Future<({bool ok, String text})?> _runYes(ToolBinding tool, List<ChatMessage> convo, String? callerNumber, {String? system}) async {
     if (tool.tool.name.startsWith('cancel_my_')) {
-      final said = [for (final m in convo) if (m.role == 'user') callerWords(m.content)].join(' ');
-      final name = callerNumber == null ? null : _verifiedName[callerNumber] ?? saidName(said);
+      final name = callerNumber == null ? null : _verifiedName[callerNumber] ?? callerName(convo);
       if (name == null) return (ok: false, text: 'First ask the caller for the name it is booked under.');
       final r = await mcp.call(tool.serverId, tool.tool.name, {'phone': callerNumber, 'name': name});
       return (ok: !r.isError, text: r.text);
@@ -2928,7 +2950,7 @@ class AppState extends ChangeNotifier {
       for (final (i, m) in convo.indexed)
         i == convo.length - 1 && m.role == 'user' && '$number${noRepeat(lastSaid)}${dayNote(m.content)}$stay$own'.isNotEmpty
             ? ChatMessage('user', '${m.content}\n\n(System note:$number${noRepeat(lastSaid)}${dayNote(m.content)}$stay$own)')
-            : m.role == 'assistant' ? ChatMessage('assistant', m.content.replaceFirst(_fillerStart, '')) : m,
+            : m.role == 'assistant' ? ChatMessage('assistant', handedOver(m.content.replaceFirst(_fillerStart, ''))) : m,
     ];
     // Live: this call's assistant is working on an answer (the voice engine also says when it speaks).
     if (room.isNotEmpty && mode != 'owner') {
@@ -3103,8 +3125,7 @@ class AppState extends ChangeNotifier {
         if (find != null) {
           try {
             // Only with the name it is under, said by the caller: else ask for it first (no details before that).
-            final said = [for (final m in convo) if (m.role == 'user') callerWords(m.content)].join(' ');
-            final name = _verifiedName[callerNumber] ?? saidName(said);
+            final name = _verifiedName[callerNumber] ?? callerName(convo);
             final last = messages.removeLast();
             if (name == null) {
               messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: before saying anything about their booking, ask for the name it is booked under (their number is the one they are calling from). Give no details until then.)'));

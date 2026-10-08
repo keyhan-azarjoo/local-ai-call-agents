@@ -940,7 +940,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -1012,8 +1013,8 @@
   "expect": {
    "table": "appointments",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -2009,7 +2010,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -2079,8 +2081,8 @@
   "expect": {
    "table": "appointments",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -3021,7 +3023,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -3085,8 +3088,8 @@
   "expect": {
    "table": "tickets",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -4137,7 +4140,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -4215,8 +4219,8 @@
   "expect": {
    "table": "bookings",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -5187,7 +5191,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -5255,8 +5260,8 @@
   "expect": {
    "table": "signups",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -6309,7 +6314,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -6387,8 +6393,8 @@
   "expect": {
    "table": "bookings",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -7359,7 +7365,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -7427,8 +7434,8 @@
   "expect": {
    "table": "viewings",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -8418,7 +8425,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -8488,8 +8496,8 @@
   "expect": {
    "table": "reservations",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -9508,7 +9516,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -9580,8 +9589,8 @@
   "expect": {
    "table": "appointments",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -10744,7 +10753,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -10842,8 +10852,8 @@
   "expect": {
    "table": "orders",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",
@@ -11823,7 +11833,8 @@
   "goal": "Cancel your booking. You booked with the number you are calling from.",
   "facts": [
    "Your name: Victoria Stone",
-   "You booked with this number"
+   "You booked with this number",
+   "When they read your booking back, that is the right one: say yes, cancel it"
   ],
   "wrong": null,
   "seed": [
@@ -11889,8 +11900,8 @@
   "expect": {
    "table": "enrolments",
    "new": 0,
-   "seed_status": {
-    "0": "Confirmed"
+   "seed_not_status": {
+    "0": "Cancelled"
    },
    "not_mention": [
     "9460555",

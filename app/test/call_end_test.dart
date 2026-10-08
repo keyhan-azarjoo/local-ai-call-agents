@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:localailine/services/ollama.dart';
 import 'package:localailine/state/app_state.dart';
 
 void main() {
@@ -74,5 +75,21 @@ void main() {
     expect(AppState.spokenText('Sure. [take_message:{"name":"Gre'), 'Sure.');
     // The engine's own tags stay (they are removed later, by the voice engine).
     expect(AppState.spokenText('Passing you over. [voice:af_bella|Mia] Hi'), contains('[voice:af_bella|Mia]'));
+  });
+
+  test('the model reads a hand-over back as only the new agent\'s words', () {
+    expect(AppState.handedOver('I\'ll check that. ⏸ (on hold) Tessa: Hi, this is Tessa. Which booking?'), 'Hi, this is Tessa. Which booking?');
+    expect(AppState.handedOver('Passing you over. [voice:af_bella|Mia] Hi, it\'s Mia.'), 'Hi, it\'s Mia.');
+    expect(AppState.handedOver('Your table is booked for 7pm.'), 'Your table is booked for 7pm.');
+  });
+
+  test('a name said on its own after "what name is it under?" is their name', () {
+    final convo = [
+      ChatMessage('assistant', 'Could you tell me the name it is booked under?'),
+      ChatMessage('user', 'Victoria Stone.'),
+    ];
+    expect(AppState.callerName(convo), 'Victoria Stone');
+    expect(AppState.callerName([ChatMessage('assistant', 'What time?'), ChatMessage('user', 'Seven.')]), isNull);
+    expect(AppState.callerName([ChatMessage('user', 'Hi, my name is Hugo Khan, cancel please')]), 'Hugo Khan');
   });
 }

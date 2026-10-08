@@ -31,10 +31,129 @@ class _CallFlowPageState extends State<CallFlowPage> {
   Offset? linkEnd;
   int? setMax; // null: the suggestion for this computer
 
+  // Zoom and move around the flow: pinch or scroll to zoom, drag the background to move.
+  final zoom = TransformationController();
+  var tall = false; // a taller canvas for big teams
+  Size view = const Size(1000, 640);
+  double get scale => zoom.value.getMaxScaleOnAxis();
+
+  @override
+  void dispose() {
+    zoom.dispose();
+    super.dispose();
+  }
+
+  /// Everything on the canvas (cards and phone lines), to fit it on screen.
+  Rect get _bounds {
+    var r = Rect.fromLTWH(20, 40, 170, max(52, lines.length * 110.0));
+    for (final o in pos.values) {
+      r = r.expandToInclude(Rect.fromLTWH(o.dx, o.dy, _cardW, _cardH));
+    }
+    return r.inflate(40);
+  }
+
+  void _zoomBy(double f, [Offset? at]) {
+    final c = at ?? Offset(view.width / 2, view.height / 2);
+    final s2 = (scale * f).clamp(0.25, 2.5) / scale;
+    zoom.value = Matrix4.identity()
+      ..translateByDouble(c.dx, c.dy, 0, 1)
+      ..scaleByDouble(s2, s2, 1, 1)
+      ..translateByDouble(-c.dx, -c.dy, 0, 1)
+      ..multiply(zoom.value);
+    setState(() {});
+  }
+
+  /// The whole flow on screen.
+  void _fit() {
+    final b = _bounds;
+    final k = min(1.2, min(view.width / b.width, view.height / b.height));
+    zoom.value = Matrix4.identity()
+      ..translateByDouble((view.width - b.width * k) / 2 - b.left * k, (view.height - b.height * k) / 2 - b.top * k, 0, 1)
+      ..scaleByDouble(k, k, 1, 1);
+    setState(() {});
+  }
+
+  /// One agent in the middle of the screen (found by name).
+  void _show(Map<String, Object?> a) {
+    final o = pos['${a['id']}']!;
+    final k = max(scale, 1.0);
+    zoom.value = Matrix4.identity()
+      ..translateByDouble(view.width / 2 - (o.dx + _cardW / 2) * k, view.height / 2 - (o.dy + _cardH / 2) * k, 0, 1)
+      ..scaleByDouble(k, k, 1, 1);
+    setState(() {});
+  }
+
+  /// Cards set out neatly: who answers on the left, then each step a call can be passed along in
+  /// its own column; people last.
+  Future<void> _tidy() async {
+    // (No agent set to answer yet: start from the first AI agent.)
+    final entry = agents.where((a) => a['handles'] == 'incoming').firstOrNull ?? agents.where((a) => a['handles'] != 'human').firstOrNull;
+    final depth = <int, int>{};
+    if (entry != null) {
+      depth[entry['id'] as int] = 0;
+      var front = [entry];
+      while (front.isNotEmpty) {
+        final next = <Map<String, Object?>>[];
+        for (final a in front) {
+          for (final to in _links(a)) {
+            if (depth.containsKey(to) || agents.any((x) => x['id'] == to && x['handles'] == 'human')) continue;
+            depth[to] = depth[a['id'] as int]! + 1;
+            final b = agents.where((x) => x['id'] == to).firstOrNull;
+            if (b != null) next.add(b);
+          }
+        }
+        front = next;
+      }
+    }
+    final cols = <int, List<Map<String, Object?>>>{};
+    final last = (depth.values.fold<int>(0, max)) + 1;
+    for (final a in agents) {
+      final d = a['handles'] == 'human' ? last : (depth[a['id'] as int] ?? last);
+      (cols[d] ??= []).add(a);
+    }
+    setState(() {
+      for (final e in cols.entries) {
+        final col = e.value;
+        final top = max(20.0, 320 - col.length * 75.0);
+        for (final (i, a) in col.indexed) {
+          pos['${a['id']}'] = Offset(270 + e.key * 300.0, top + i * 150.0);
+        }
+      }
+    });
+    await _saveLayout();
+    _fit();
+  }
+
+  Future<void> _find() async {
+    final a = await showDialog<Map<String, Object?>>(
+      context: context,
+      builder: (c) => SimpleDialog(
+        title: const Text('Go to an agent'),
+        children: [
+          for (final a in agents)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(c, a),
+              child: Row(children: [
+                Icon(a['handles'] == 'human' ? Icons.person_outline : Icons.smart_toy_outlined, size: 18),
+                const SizedBox(width: 8),
+                Text('${a['name']}'),
+                const SizedBox(width: 8),
+                Expanded(child: Muted('${a['role'] ?? ''}', size: 12)),
+              ]),
+            ),
+        ],
+      ),
+    );
+    if (a != null) _show(a);
+  }
+
   @override
   void initState() {
     super.initState();
-    _load();
+    // Opened: the whole flow on screen.
+    _load().then((_) => WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && agents.isNotEmpty) _fit();
+        }));
   }
 
   Future<void> _load() async {
@@ -147,7 +266,7 @@ class _CallFlowPageState extends State<CallFlowPage> {
   Widget _dot({required VoidCallback onStart, required Future<void> Function() onEnd}) => GestureDetector(
         behavior: HitTestBehavior.opaque,
         onPanStart: (_) => onStart(),
-        onPanUpdate: (d) => setState(() => linkEnd = (linkEnd ?? Offset.zero) + d.delta),
+        onPanUpdate: (d) => setState(() => linkEnd = (linkEnd ?? Offset.zero) + d.delta / scale),
         onPanEnd: (_) => onEnd(),
         child: SizedBox(
           width: 44,
@@ -203,7 +322,7 @@ class _CallFlowPageState extends State<CallFlowPage> {
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       PageHead('Call flow',
-          description: 'Who answers each line, and who a call can be passed to. Drag a card to move it. Drag from an orange + dot onto another card to connect them. Tap a line between cards to remove it.',
+          description: 'Who answers each line, and who a call can be passed to. Drag a card to move it. Drag from an orange + dot onto another card to connect them. Tap a line between cards to remove it. Zoom with the buttons, a pinch or the mouse wheel; "Tidy up" sets everything out neatly.',
           actions: [
             Btn('Set up a team', icon: Icons.auto_awesome, kind: BtnKind.amber, onPressed: _setupTeam),
             Btn('Add AI agent', icon: Icons.smart_toy_outlined, onPressed: _pickRole),
@@ -223,14 +342,23 @@ class _CallFlowPageState extends State<CallFlowPage> {
       ),
       const SizedBox(height: 12),
       Container(
-        height: 640,
+        height: tall ? max(640, MediaQuery.of(context).size.height - 140) : 640,
         decoration: BoxDecoration(color: c.canvas, borderRadius: BorderRadius.circular(LL.r), border: Border.all(color: c.line)),
         clipBehavior: Clip.antiAlias,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
+        child: LayoutBuilder(builder: (context, box) {
+          view = box.biggest;
+          final b = _bounds;
+          return Stack(children: [
+            InteractiveViewer(
+          transformationController: zoom,
+          constrained: false,
+          minScale: 0.25,
+          maxScale: 2.5,
+          boundaryMargin: const EdgeInsets.all(600),
+          onInteractionUpdate: (_) => setState(() {}),
           child: SizedBox(
-            width: max(1300, (pos.values.fold<double>(0, (m, o) => max(m, o.dx)) + _cardW + 60)),
-            height: 640,
+            width: max(1300, b.right + 300),
+            height: max(640, b.bottom + 300),
             child: GestureDetector(
               onTapUp: (d) => _tapEdge(d.localPosition, edges),
               child: Stack(children: [
@@ -254,7 +382,37 @@ class _CallFlowPageState extends State<CallFlowPage> {
               ]),
             ),
           ),
-        ),
+            ),
+            // Zoom and tidy, always in the corner.
+            Positioned(
+              right: 12,
+              top: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  color: c.panel,
+                  borderRadius: BorderRadius.circular(LL.rSm),
+                  border: Border.all(color: c.line),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .06), blurRadius: 8)],
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  IconButton(tooltip: 'Zoom out', icon: const Icon(Icons.remove, size: 18), onPressed: () => _zoomBy(1 / 1.25)),
+                  SizedBox(width: 44, child: Center(child: Text('${(scale * 100).round()}%', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)))),
+                  IconButton(tooltip: 'Zoom in', icon: const Icon(Icons.add, size: 18), onPressed: () => _zoomBy(1.25)),
+                  IconButton(tooltip: 'Fit everything on screen', icon: const Icon(Icons.fit_screen_outlined, size: 18), onPressed: _fit),
+                  IconButton(tooltip: 'Tidy up: set the cards out neatly', icon: const Icon(Icons.auto_fix_high_outlined, size: 18), onPressed: agents.isEmpty ? null : _tidy),
+                  IconButton(tooltip: 'Go to an agent', icon: const Icon(Icons.search, size: 18), onPressed: agents.isEmpty ? null : _find),
+                  IconButton(
+                    tooltip: tall ? 'Smaller canvas' : 'Taller canvas',
+                    icon: Icon(tall ? Icons.close_fullscreen : Icons.open_in_full, size: 18),
+                    onPressed: () => setState(() => tall = !tall),
+                  ),
+                ]),
+              ),
+            ),
+            Positioned(left: 12, bottom: 10, child: Muted('Pinch or scroll to zoom · drag the background to move around', size: 11)),
+          ]);
+        }),
       ),
       const SizedBox(height: 8),
       const Muted('Each agent only uses the tools, skills and documents you give it (tap a card), so it stays fast and focused. People are rung on their phone; the agent briefs them, then leaves the call to them.'),
@@ -273,7 +431,7 @@ class _CallFlowPageState extends State<CallFlowPage> {
       left: o.dx,
       top: o.dy,
       child: GestureDetector(
-        onPanUpdate: (d) => setState(() => pos[k] = Offset(max(0, o.dx + d.delta.dx), max(0, o.dy + d.delta.dy).toDouble())),
+        onPanUpdate: (d) => setState(() => pos[k] = Offset(max(0, o.dx + d.delta.dx / scale), max(0, o.dy + d.delta.dy / scale).toDouble())),
         onPanEnd: (_) => _saveLayout(),
         onTap: () => _edit(a),
         child: Container(
@@ -295,21 +453,25 @@ class _CallFlowPageState extends State<CallFlowPage> {
                 if (a['enabled'] != 1) const Pill('Off'),
               ]),
               const SizedBox(height: 4),
-              Text(
+              Flexible(
+                child: Text(
                 entry ? 'Answers every call' : (('${a['transfer_when'] ?? ''}').trim().isEmpty ? 'Tap to say when calls come here' : 'When: ${a['transfer_when']}'),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 12, color: c.muted),
               ),
+              ),
               const Spacer(),
-              Muted(
+              Text(
                 human
                     ? [if (acc['device'] != null) 'Rings their app', if ('${acc['number'] ?? ''}'.isNotEmpty) 'Rings ${acc['number']}'].join(' · ').ifEmpty('Add a number or paired phone')
                     : [
                         ...[for (final ab in (acc['abilities'] is List ? acc['abilities'] as List : (entry ? ['message'] : const []))) Abilities.labels[ab]?.split(' ').skip(1).join(' ')].nonNulls,
                         count('tools', 'system'),
                       ].join(' · '),
-                size: 11,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 11, color: c.muted),
               ),
             ]),
             if (!human)
@@ -454,7 +616,7 @@ class _Start extends StatelessWidget {
         child: const Row(children: [
           Icon(Icons.call, color: LL.amber, size: 18),
           SizedBox(width: 8),
-          Text('A call comes in', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13)),
+          Flexible(child: Text('A call comes in', overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13))),
         ]),
       );
 }

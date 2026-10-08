@@ -763,6 +763,9 @@ class ScenarioRunner {
         final want = (st['status'] as num?)?.toInt() ?? 200;
         if (res.code != want) failures.add('step ${si + 1} website ${st['table']}: got ${res.code} ${res.body}, wanted $want');
         calls.add({'web': st['table'], 'code': res.code, 'body': res.body});
+        // Saved by this scenario's own website step: part of it, never cleared away before its calls.
+        final saved = RegExp(r'"id":(\d+)').firstMatch(res.body)?.group(1);
+        if (saved != null) _keep.add(int.parse(saved));
         continue;
       }
       // A phone call.

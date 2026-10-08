@@ -14,7 +14,7 @@ import '../services/auth.dart';
 import '../services/abilities.dart';
 import '../services/agent_loop.dart';
 import '../services/agent_templates.dart';
-import '../services/apps/app_data.dart' show parseDate, spokenDates, withDay;
+import '../services/apps/app_data.dart' show AppData, BookingShape, parseDate, spokenDates, withDay;
 import '../services/apps/apps_manager.dart';
 import '../services/apps/app_server.dart' show sameName;
 import '../services/catalog.dart';
@@ -438,6 +438,46 @@ class AppState extends ChangeNotifier {
       }
     }
     return out;
+  }
+
+  /// The business's tools a call needs: its bookings or orders, what they're of (services, menu,
+  /// rooms…) and its hours — the rest (gift vouchers, private events, reviews…) only once the caller
+  /// mentions them. A small model given every tool picks the wrong one, or none, more often.
+  Future<List<ToolBinding>> _callFocus(List<ToolBinding> tools, List<ChatMessage> messages) async {
+    if (tools.length <= 14) return tools;
+    final said = [for (final m in messages) if (m.role == 'user') callerWords(m.content).toLowerCase()].join(' ');
+    final servers = {for (final s in await mcp.servers()) s.id: s};
+    final core = <int, Set<String>>{};
+    for (final id in {for (final t in tools) t.serverId}) {
+      final appId = servers[id]?.secret['app'];
+      final a = appId is int ? await apps.app(appId) : null;
+      if (a == null) continue;
+      final spec = a.spec;
+      // What customers book or order: it points at something they can see (a course, a class, a room,
+      // the menu), or it has a booking's day and time.
+      bool seeTable(String? id) => spec.tables.any((x) => x.id == id && x.access.see && !x.single);
+      final main = [
+        for (final t in spec.tables)
+          if (t.access.add && !t.single && (BookingShape.of(spec, t) != null || AppData.stayOf(t) != null || t.fields.any((f) => f.qty || (f.link != null && seeTable(f.link))))) t,
+      ];
+      core[id] = {
+        for (final t in main) t.id,
+        for (final t in main) for (final f in t.fields) if (f.link != null) f.link!,
+        for (final t in spec.tables) if (t.single) t.id,
+      };
+    }
+    String stem(String w) => w.endsWith('ies') ? '${w.substring(0, w.length - 3)}y' : w.endsWith('s') ? w.substring(0, w.length - 1) : w;
+    final words = {for (final w in RegExp(r'[a-z]{4,}').allMatches(said)) stem(w.group(0)!)};
+    return [
+      for (final t in tools)
+        if (() {
+          final table = t.tool.name.replaceFirst(RegExp(r'^(add|check|find_my|change_my|cancel_my|list|get)_'), '');
+          if (core[t.serverId]?.contains(table) ?? true) return true;
+          // Mentioned: "a gift voucher", "private event", "reviews".
+          return table.split('_').map(stem).any((w) => w.length >= 4 && words.contains(w)) || (table.contains('voucher') && said.contains('gift'));
+        }())
+          t,
+    ];
   }
 
   /// A built app's customer tools (only ever what customers may see or do, and their own bookings).
@@ -900,7 +940,9 @@ class AppState extends ChangeNotifier {
     // Some models (e.g. the multilingual one) can't use tools well: they answer from documents and data snapshots.
     // An app built here (e.g. the restaurant's website) is where bookings and orders belong:
     // agents that take them use its tools, even if their own tool list leaves it out.
-    final appTools = useTools && (callerNumber != null || abilities.any(const {'booking', 'order'}.contains)) ? await builtAppTools(scopes, number: callerNumber) : <ToolBinding>[];
+    final appTools = useTools && (callerNumber != null || abilities.any(const {'booking', 'order'}.contains))
+        ? await _callFocus(await builtAppTools(scopes, number: callerNumber), messages)
+        : <ToolBinding>[];
     final own = useTools ? await toolsFor(scopes, access: access, number: callerNumber) : <ToolBinding>[];
     // A business with its own app keeps its bookings and orders there: the main app only takes messages for the manager.
     final abilityTools = useTools ? Abilities.bindings(abilities.where((a) => appTools.isEmpty ? !_appCovers(appTools, a) : a == 'message')) : <ToolBinding>[];

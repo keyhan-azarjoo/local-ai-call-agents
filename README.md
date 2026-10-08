@@ -1,3 +1,8 @@
+<!-- myotgo-master-index -->
+> **Part of the MyOTGO project.** The project was mothballed on 2026-10-08.
+> **[📍 MASTER_INDEX — every MyOTGO repository, what it does, and where it ran](https://github.com/keyhan-azarjoo/MyOTGO-Project-Docs/blob/development/MASTER_INDEX.md)**
+> Read that first: it is the only complete list, and it records what to do before restarting.
+
 # LocalAILine: local AI call agents
 
 [![CI](https://github.com/keyhan-azarjoo/local-ai-call-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/keyhan-azarjoo/local-ai-call-agents/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) ![Flutter](https://img.shields.io/badge/Flutter-3.44-02569B?logo=flutter) ![macOS](https://img.shields.io/badge/host-macOS-black?logo=apple)

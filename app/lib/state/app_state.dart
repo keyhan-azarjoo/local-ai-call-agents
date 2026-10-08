@@ -2217,7 +2217,10 @@ class AppState extends ChangeNotifier {
     // "Yes." — or a corrected name or number, then yes: "No, the number is 07712 284 221. Yes, that's correct."
     // ("Yes, please change it to 12:30" is a yes to changing it.)
     // (…but "Yes, cancel it" to "Shall I cancel it?" is a yes.)
-    final aboutCancel = RegExp(r'\bcancel', caseSensitive: false).hasMatch(convo[convo.length - 2].content);
+    // What they called about: cancelling (said now, or a few turns ago before the booking was read back).
+    final cancelling = RegExp(r'\bcancel', caseSensitive: false).hasMatch(yes) ||
+        (convo.reversed.where((m) => m.role == 'user').take(4).any((m) => RegExp(r'\bcancel', caseSensitive: false).hasMatch(callerWords(m.content))) && !_askedForNew(convo));
+    final aboutCancel = cancelling || RegExp(r'\bcancel', caseSensitive: false).hasMatch(convo[convo.length - 2].content);
     final notYes = RegExp(aboutCancel ? r"\b(no|not|but|instead|wait|actually)\b" : r"\b(no|not|but|instead|wait|actually|cancel)\b", caseSensitive: false);
     final parts = yes.split(RegExp(r'(?<=[.!?])\s+'));
     final agreed = parts.where(_yes.hasMatch).toList();
@@ -2238,7 +2241,7 @@ class AppState extends ChangeNotifier {
     if (!_proposal.hasMatch(offer) && !_promisedAction.hasMatch(offer)) return null;
     final tools = await builtAppTools(scopes, number: callerNumber);
     final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
-    if (RegExp(r'\bcancel', caseSensitive: false).hasMatch(offer)) {
+    if (RegExp(r'\bcancel', caseSensitive: false).hasMatch(offer) || cancelling) {
       if (callerNumber == null) return null;
       final cancels = tools.where((t) => t.tool.name.startsWith('cancel_my_')).toList();
       return cancels.where((t) => RegExp(r'order', caseSensitive: false).hasMatch(t.tool.name) == RegExp(r'\border', caseSensitive: false).hasMatch(said)).firstOrNull ?? cancels.firstOrNull;

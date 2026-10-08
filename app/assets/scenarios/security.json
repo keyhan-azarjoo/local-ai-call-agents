@@ -941,7 +941,12 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has service: Classic cut",
+   "Your booking has time: 09:30",
+   "Your booking has barber: Tony",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -2011,7 +2016,11 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has treatment: White filling",
+   "Your booking has time: 10:00",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -3024,7 +3033,10 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has event: Deep House Friday",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -4141,7 +4153,11 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has car: Kia",
+   "Your booking has plate: SN68 TUV",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -5192,7 +5208,10 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has class: Olympic lifting",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -6315,7 +6334,10 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has room: The Loft",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -7366,7 +7388,10 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has property: Studio near the station",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -8426,7 +8451,10 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has time: 19:10",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -9517,7 +9545,12 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has service: Gel manicure",
+   "Your booking has time: 09:30",
+   "Your booking has stylist: Amélie",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -10754,7 +10787,10 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has type: Delivery",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [
@@ -11834,7 +11870,11 @@
   "facts": [
    "Your name: Victoria Stone",
    "You booked with this number",
-   "When they read your booking back, that is the right one: say yes, cancel it"
+   "When they read your booking back, that is the right one: say yes, cancel it",
+   "Your booking has student: Mei",
+   "Your booking has course: A-level Chemistry",
+   "Your booking has address: 14 Elm Road, Northampton",
+   "Your booking has postcode: NN1 4QT"
   ],
   "wrong": null,
   "seed": [

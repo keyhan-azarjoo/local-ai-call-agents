@@ -18,6 +18,10 @@ def med(xs):
     xs = sorted(xs)
     return xs[len(xs) // 2] / 1000 if xs else 0
 
+# Only scenarios every model ran, so they're compared on the same calls (the "bench" set).
+common = set.intersection(*[set(r) for r in rows.values()]) if rows else set()
+rows = {tag: {i: r for i, r in rs.items() if i in common} for tag, rs in rows.items()}
+print(f"Compared on the {len(common)} calls every model ran.")
 print(f"{'model':<22}{'calls':>6}{'passed':>8}{'pass %':>8}{'right %':>9}{'answer s':>10}{'90% s':>8}{'first words s':>15}   most common problems")
 for tag, rs in rows.items():
     rs = list(rs.values())

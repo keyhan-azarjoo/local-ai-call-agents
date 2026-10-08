@@ -1083,7 +1083,7 @@ class ScenarioRunner {
 
 
 /// Which scenarios to run from the app.
-enum ScenarioPick { quick, app, journeys, challenges, security, all }
+enum ScenarioPick { quick, app, journeys, challenges, security, bench, all }
 
 /// Loads the scenarios shipped with the app: [quick] = one of each kind per app.
 List<Map<String, dynamic>> pickScenarios(List<Map<String, dynamic>> all, ScenarioPick pick, {String? app}) {
@@ -1097,6 +1097,10 @@ List<Map<String, dynamic>> pickScenarios(List<Map<String, dynamic>> all, Scenari
       return [for (final s in all) if (s['steps'] != null) s];
     case ScenarioPick.challenges:
       return [for (final s in all) if ('${s['id']}'.startsWith('challenge-')) s];
+    case ScenarioPick.bench:
+      // For comparing models: one single call of each kind for every business (the same every time).
+      final seen = <String>{};
+      return [for (final s in all) if (RegExp(r'^[a-z]+-\d+$').hasMatch('${s['id']}') && seen.add('${s['app']} ${s['intent']}')) s];
     case ScenarioPick.security:
       // Business by business in turn, so a short run already covers every app.
       final sec = [for (final s in all) if ('${s['id']}'.startsWith('security-')) s];

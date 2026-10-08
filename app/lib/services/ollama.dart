@@ -83,6 +83,9 @@ class Ollama {
         'OLLAMA_NUM_PARALLEL': '${lines + 1}',
         'OLLAMA_FLASH_ATTENTION': '1',
         'OLLAMA_KV_CACHE_TYPE': 'q8_0',
+        // Its store of earlier prompts in memory: 8 GB unless told (it pushed an 18 GB Mac into
+        // swap, and every answer slowed). Calls reuse their prompts in their own slots anyway.
+        'LLAMA_ARG_CACHE_RAM': '${512 * lines}',
       };
 
   /// Makes Ollama run for [lines] calls at once. On a Mac, Ollama's app reads these from launchd;

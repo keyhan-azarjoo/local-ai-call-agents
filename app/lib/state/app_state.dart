@@ -468,7 +468,7 @@ class AppState extends ChangeNotifier {
 
   /// The AI said a booking/order is done but didn't save it (small models do that):
   /// save it now with the app's own tool. null = nothing to do; else whether it worked and what the app said.
-  Future<({bool ok, String text})?> commitClaimed(List<ChatMessage> convo, String reply, Set<String> scopes, {String? callerNumber}) async {
+  Future<({bool ok, String text})?> commitClaimed(List<ChatMessage> convo, String reply, Set<String> scopes, {String? callerNumber, String? system}) async {
     // A promise while still asking for details ("I'll book it — what's your name?") isn't a save yet.
     final stillAsking = RegExp(r'\b(name|number|phone|postcode|address|email|time|day|date)\b[^.?!]*\?', caseSensitive: false).hasMatch(reply);
     // "The Loft is already booked" / "sorry, all rooms are booked": a refusal, not a save.
@@ -481,7 +481,7 @@ class AppState extends ChangeNotifier {
         : _appToolFor(tools, 'booking') ?? _appToolFor(tools, 'order');
     if (tool == null) return null;
     return commitWith(toolLoop, modelTarget, tool, [...convo, ChatMessage('assistant', reply)], _notAgentName(tool),
-        callerNumber: callerNumber, checked: callerNumber == null ? null : _lastCheck[callerNumber]);
+        callerNumber: callerNumber, checked: callerNumber == null ? null : _lastCheck[callerNumber], system: system);
   }
 
   /// The phone number the caller said last (small models save the number of the call instead).
@@ -534,8 +534,10 @@ class AppState extends ChangeNotifier {
   }
 
   /// Has the model call [tool] once with what was agreed in [convo].
+  /// [system]: the call's own system prompt — the model has it read already (cached), so saving
+  /// starts at once instead of reading a whole new prompt (seconds, more with calls in parallel).
   static Future<({bool ok, String text})?> commitWith(ToolLoop loop, ModelTarget target, ToolBinding tool, List<ChatMessage> convo,
-      Future<({String text, bool isError})> Function(Map<String, dynamic>) run, {String? callerNumber, String? checked}) async {
+      Future<({String text, bool isError})> Function(Map<String, dynamic>) run, {String? callerNumber, String? checked, String? system}) async {
     ({String text, bool isError})? result;
     var tries = 0;
     final today = DateTime.now();
@@ -543,12 +545,19 @@ class AppState extends ChangeNotifier {
       target: target,
       builtins: false,
       maxTokens: 200, // one tool call; small models sometimes run on in it (36 s) — cut off, it retries short
-      messages: [
+      messages: system != null
+          ? [
+              ChatMessage('system', system),
+              for (final m in convo) if (m.role == 'user' || m.role == 'assistant') m,
+              ChatMessage('user', '(System note: save what was agreed now: call ${tool.fnName} exactly once with the details from this call — only what was said, short values'
+                  '${callerNumber == null ? '' : '; no phone number said? use $callerNumber'}. Then reply with one short sentence.)'),
+            ]
+          : [
         ChatMessage('system', 'You save what was agreed on a phone call into ${tool.serverName}. Call ${tool.fnName} exactly once with the details from the call. '
             'Dates as YYYY-MM-DD (today is ${today.toIso8601String().substring(0, 10)}), times as HH:MM (7pm = 19:00).'
             '${callerNumber == null ? '' : ' If no phone number was said, use the caller\'s number: $callerNumber.'}${calendar(today)}  Only fields that were said, short values; notes only for a special request, in a few words. Then reply with one short sentence.'),
         ChatMessage('user', '${convo.where((m) => m.role == 'user' || m.role == 'assistant').map((m) => '${m.role == 'user' ? 'Caller' : 'Assistant'}: ${m.content}').join('\n')}\n\nSave it now.'),
-      ],
+            ],
       tools: [tool],
       approve: (_, _) async => true,
       runTool: (b, args) async {
@@ -2223,7 +2232,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Does what the caller agreed to with [tool]: a cancel by their own number, or the booking/order from the call.
-  Future<({bool ok, String text})?> _runYes(ToolBinding tool, List<ChatMessage> convo, String? callerNumber) async {
+  Future<({bool ok, String text})?> _runYes(ToolBinding tool, List<ChatMessage> convo, String? callerNumber, {String? system}) async {
     if (tool.tool.name.startsWith('cancel_my_')) {
       final said = [for (final m in convo) if (m.role == 'user') callerWords(m.content)].join(' ');
       final name = callerNumber == null ? null : _verifiedName[callerNumber] ?? saidName(said);
@@ -2231,7 +2240,7 @@ class AppState extends ChangeNotifier {
       final r = await mcp.call(tool.serverId, tool.tool.name, {'phone': callerNumber, 'name': name});
       return (ok: !r.isError, text: r.text);
     }
-    return commitWith(toolLoop, modelTarget, tool, convo, _notAgentName(tool), callerNumber: callerNumber, checked: callerNumber == null ? null : _lastCheck[callerNumber]);
+    return commitWith(toolLoop, modelTarget, tool, convo, _notAgentName(tool), callerNumber: callerNumber, checked: callerNumber == null ? null : _lastCheck[callerNumber], system: system);
   }
 
   /// Saves with [tool], but never under an agent's own name (small models put "Ava" in as the customer).
@@ -3241,7 +3250,7 @@ class AppState extends ChangeNotifier {
       // Not when this call already saved one (a duplicate), nor while the model is asking for a missing detail.
       if (yesTool != null && !saved && !gone && (!_savedOn.contains(room) || fixing) &&
           !RegExp(r'\b(name|number|phone|postcode|address|email|time|date)\b[^.?!]*\?', caseSensitive: false).hasMatch(full)) {
-        final pre = await _runYes(yesTool, convo, callerNumber).catchError((_) => null);
+        final pre = await _runYes(yesTool, convo, callerNumber, system: messages.first.content).catchError((_) => null);
         if (pre != null) {
           if (pre.ok) saved = true;
           final line = ' ${pre.ok ? doneLine(pre.text) : _problemForCaller(pre.text)}';
@@ -3260,7 +3269,7 @@ class AppState extends ChangeNotifier {
       // app if it has one; if that fails (e.g. the table is taken), say so straight away.
       // (Not when this call already saved something: "your table is booked, see you!" again is no new booking.)
       if (!saved && !refused && !stillMissing && mode != 'owner' && passTo == null && (!_savedOn.contains(room) || fixing)) {
-        final c = gone ? null : await commitClaimed(convo, sent, scopes, callerNumber: callerNumber).catchError((_) => null);
+        final c = gone ? null : await commitClaimed(convo, sent, scopes, callerNumber: callerNumber, system: messages.first.role == 'system' ? messages.first.content : null).catchError((_) => null);
         if (c == null) {
           // Not while asking them something (e.g. the name the app needs first): judged on what was said, not the draft.
           if (flow != null && !_waitsForCaller.hasMatch(sent.trim())) unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', sent)], '${flow.agent['name']}', number: callerNumber));

@@ -470,6 +470,7 @@ class ScenarioRunner {
     final a = (await s.apps.app(appIds[app]!))!;
     final rq = await http.postUrl(Uri.parse('http://127.0.0.1:${a.port}/api/t/$table'));
     rq.headers.contentType = ContentType.json;
+    rq.headers.set('x-key', ''); // as the website's own page sends it (other sites can't)
     rq.write(jsonEncode(values));
     final rs = await rq.close();
     return (code: rs.statusCode, body: await utf8.decodeStream(rs));

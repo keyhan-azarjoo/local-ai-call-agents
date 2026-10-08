@@ -676,7 +676,10 @@ class LinesPage extends StatelessWidget {
                   if (l['provider'] == 'twilio') _InboundSwitch(line: l),
                 ]),
                 trailing: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  Pill(l['status'] == 'verified' ? 'Account verified · call engine coming next' : 'Saved · call engine coming next',
+                  Pill(
+                      l['provider'] == 'twilio'
+                          ? (l['status'] == 'verified' ? 'Account verified' : 'Saved')
+                          : 'Saved · connecting it comes next',
                       tone: l['status'] == 'verified' ? Tone.blue : Tone.neutral),
                   Btn('', icon: Icons.delete_outline, small: true, kind: BtnKind.ghost, onPressed: () async {
                     await s.db.delete('lines', l['id'] as int);
@@ -693,7 +696,9 @@ class LinesPage extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('What works today', style: TextStyle(fontWeight: FontWeight.w600)),
           SizedBox(height: 6),
-          Muted('Lines are saved and Twilio/Telnyx accounts can be checked. Answering and placing real phone calls arrives with the LocalAILine phone gateway in the next milestone.'),
+          Muted('Twilio lines answer and make calls through this computer: turn on "Answer calls here" and calls to the number come to your assistant. '
+              'Telnyx, other SIP providers and landline boxes are saved now; connecting them comes next. '
+              'To use a landline today, forward it to your Twilio number (most phone companies offer call forwarding).'),
         ]),
       ),
     ]);

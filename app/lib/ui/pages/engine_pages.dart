@@ -11,6 +11,7 @@ import '../../services/system.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
 import '../widgets.dart';
+import 'ai_engines_section.dart';
 import 'live_talk.dart';
 
 Tone fitTone(Fit f) => switch (f) {
@@ -39,7 +40,9 @@ class EngineSetupPanel extends StatefulWidget {
 class _EngineSetupPanelState extends State<EngineSetupPanel> {
   SpeechStatus? sp;
   bool starting = false;
-  bool _pickCloud = false;
+
+  /// A choice that still needs setting up (cloud or own server), before it is switched to.
+  String? _pick;
 
   @override
   void initState() {
@@ -139,16 +142,34 @@ class _EngineSetupPanelState extends State<EngineSetupPanel> {
     final source = Align(
       alignment: Alignment.centerLeft,
       child: Segmented(
-        value: s.llmSource,
-        options: const {'local': 'On this computer · private', 'cloud': 'Cloud AI · OpenAI, Azure, Google, Claude'},
-        onChanged: (v) => v == 'cloud' && s.cloud == null ? setState(() => _pickCloud = true) : s.setLlmSource(v),
+        value: _pick ?? s.llmSource,
+        options: const {
+          'builtin': 'Built into LocalAILine · recommended',
+          'local': 'Ollama',
+          'openai': 'Your AI server · vLLM, LM Studio…',
+          'cloud': 'Cloud AI · OpenAI, Azure, Google, Claude',
+        },
+        onChanged: (v) {
+          // Switched to only once it can answer: until then the choice is shown for setting up.
+          if ((v == 'cloud' && s.cloud == null) || (v == 'openai' && s.aiServer == null) || (v == 'builtin' && s.builtinModelPath == null)) {
+            return setState(() => _pick = v);
+          }
+          setState(() => _pick = null);
+          s.setLlmSource(v);
+        },
       ),
     );
-    if (s.usingCloud || _pickCloud) {
+    void done() => setState(() => _pick = null);
+    final shown = _pick ?? s.llmSource;
+    if (shown != 'local') {
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         source,
         const SizedBox(height: 12),
-        CloudPanel(onCancel: () => setState(() => _pickCloud = false), onSaved: () => setState(() => _pickCloud = false)),
+        switch (shown) {
+          'cloud' => CloudPanel(onCancel: done, onSaved: done),
+          'openai' => AiServerPanel(onCancel: done, onSaved: done),
+          _ => const BuiltinPanel(),
+        },
         const SizedBox(height: 12),
         Panel(padding: EdgeInsets.zero, child: Column(children: [hearing, voice])),
       ]);
@@ -503,13 +524,17 @@ class _ModelsPageState extends State<ModelsPage> {
                       }
                     })
               else if (r.name == 'Ollama')
-                const Pill('In use', tone: Tone.amber)
+                Pill(s.usingOllama ? 'In use' : 'Running', tone: s.usingOllama ? Tone.amber : Tone.neutral)
               else if (r.state == EngineState.missing && r.name == 'LM Studio')
                 Btn('Download', small: true, onPressed: () => openExternal('https://lmstudio.ai/download'))
               else if (r.state == EngineState.missing && r.name == 'llama.cpp')
                 Btn('Download', small: true, onPressed: () => openExternal('https://github.com/ggml-org/llama.cpp/releases'))
               else
-                Pill(r.state == EngineState.unsupported ? 'Not available here' : 'Coming soon'),
+                Pill(r.state == EngineState.unsupported
+                    ? 'Not available here'
+                    : r.name == 'llama.cpp'
+                        ? (s.usingBuiltin ? 'In use · built in' : 'Use it: Built into LocalAILine')
+                        : 'Use it: Your AI server'),
             ]),
           ),
       ]),

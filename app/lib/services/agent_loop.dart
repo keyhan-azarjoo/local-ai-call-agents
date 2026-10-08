@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'cloud_llm.dart';
 import 'mcp/mcp_client.dart';
 import 'ollama.dart' show ChatMessage;
+import 'openai_compat.dart';
 import 'tool_args.dart';
 import 'tool_results.dart';
 
@@ -181,8 +182,28 @@ class OrderQuote {
   /// First price on a line ("Fish & chips … £16.00 …" → 16.0).
   static double? priceOf(String line) => double.tryParse((_price.firstMatch(line)?.group(1) ?? '').replaceAll(RegExp(r'\s'), ''));
 
-  static Future<String?> quote(http.Client c, LocalTarget t, List<ChatMessage> conversation, List<String> priceLines) async {
-    if (priceLines.isEmpty) return null;
+  static const _schema = {
+    'type': 'object',
+    'properties': {
+      'is_order': {'type': 'boolean'},
+      'lines': {
+        'type': 'array',
+        'items': {
+          'type': 'object',
+          'properties': {
+            'line': {'type': 'integer'},
+            'quantity': {'type': 'number'},
+          },
+          'required': ['line', 'quantity'],
+        },
+      },
+    },
+    'required': ['is_order', 'lines'],
+  };
+
+  /// [t]: a local model (Ollama or an OpenAI-compatible server such as the built-in engine).
+  static Future<String?> quote(http.Client c, ModelTarget t, List<ChatMessage> conversation, List<String> priceLines) async {
+    if (priceLines.isEmpty || !t.isLocal) return null;
     final numbered = [for (var i = 0; i < priceLines.length; i++) '${i + 1}. ${priceLines[i]}'].join('\n');
     final talk = conversation
         .where((m) => m.role == 'user' || m.role == 'assistant')
@@ -193,45 +214,41 @@ class OrderQuote {
         .reversed
         .map((m) => '${m.role == 'user' ? 'Customer' : 'Assistant'}: ${m.content.contains('\n\nQuestion: ') ? m.content.substring(m.content.lastIndexOf('\n\nQuestion: ') + 12) : m.content}')
         .join('\n');
-    final r = await c
-        .post(Uri.parse('${t.base}/api/chat'),
-            body: jsonEncode({
-              'model': t.model,
-              'stream': false,
-              'keep_alive': -1,
-              'think': ?(t.disableThinking ? false : null),
-              'options': {'num_ctx': t.maxCtx < 16384 ? t.maxCtx : 16384, 'temperature': 0},
-              'format': {
-                'type': 'object',
-                'properties': {
-                  'is_order': {'type': 'boolean'},
-                  'lines': {
-                    'type': 'array',
-                    'items': {
-                      'type': 'object',
-                      'properties': {
-                        'line': {'type': 'integer'},
-                        'quantity': {'type': 'number'},
-                      },
-                      'required': ['line', 'quantity'],
-                    },
-                  },
-                },
-                'required': ['is_order', 'lines'],
-              },
-              'messages': [
-                {
-                  'role': 'system',
-                  'content': 'Match what the customer is ordering to the numbered price list. For each thing they order, give the line '
-                      'number and quantity. Include a delivery or other fee line only if it applies to them (for example their postcode is '
-                      'in that delivery zone). If they are not ordering, set is_order to false and lines to [].'
-                },
-                {'role': 'user', 'content': 'Price list:\n$numbered\n\nConversation:\n$talk'},
-              ],
-            }))
-        .timeout(const Duration(seconds: 30));
-    if (r.statusCode != 200) return null;
-    final j = jsonDecode((jsonDecode(r.body) as Map)['message']['content'] as String) as Map<String, dynamic>;
+    final messages = <Map<String, Object?>>[
+      {
+        'role': 'system',
+        'content': 'Match what the customer is ordering to the numbered price list. For each thing they order, give the line '
+            'number and quantity. Include a delivery or other fee line only if it applies to them (for example their postcode is '
+            'in that delivery zone). If they are not ordering, set is_order to false and lines to [].'
+      },
+      {'role': 'user', 'content': 'Price list:\n$numbered\n\nConversation:\n$talk'},
+    ];
+    String content;
+    switch (t) {
+      case LocalTarget t:
+        final r = await c
+            .post(Uri.parse('${t.base}/api/chat'),
+                body: jsonEncode({
+                  'model': t.model,
+                  'stream': false,
+                  'keep_alive': -1,
+                  'think': ?(t.disableThinking ? false : null),
+                  'options': {'num_ctx': t.maxCtx < 16384 ? t.maxCtx : 16384, 'temperature': 0},
+                  'format': _schema,
+                  'messages': messages,
+                }))
+            .timeout(const Duration(seconds: 30));
+        if (r.statusCode != 200) return null;
+        content = (jsonDecode(r.body) as Map)['message']['content'] as String;
+      case OpenAiTarget t:
+        final r = await OpenAiCompat(client: c)
+            .send(t.server, OpenAiCompat.body(t.server, messages, schema: _schema, temperature: 0, maxTokens: 400, stream: false))
+            .timeout(const Duration(seconds: 30));
+        content = r.answer;
+      case CloudTarget _:
+        return null;
+    }
+    final j = jsonDecode(content) as Map<String, dynamic>;
     if (j['is_order'] != true) return null;
     final picked = (j['lines'] as List? ?? []).cast<Map>().toList();
     // Delivery: add the zone line that names the caller's postcode area, if the model missed it.
@@ -273,15 +290,43 @@ typedef Approver = Future<bool> Function(ToolBinding b, Map<String, dynamic> arg
 typedef ToolRunner = Future<({String text, bool isError})> Function(ToolBinding b, Map<String, dynamic> args);
 
 /// Where the model runs.
-sealed class ModelTarget {}
+sealed class ModelTarget {
+  /// A model on this computer (or the owner's own server), not a cloud provider: prompts are kept
+  /// short and few tools offered (small models), order totals are worked out by the app, and the
+  /// instructions are read ahead of a question (warm-up).
+  bool get isLocal;
 
+  /// Largest context the model can hold for one request.
+  int get maxCtx;
+}
+
+/// A model run by Ollama.
 class LocalTarget extends ModelTarget {
   LocalTarget(this.model, {this.base = 'http://127.0.0.1:11434', this.disableThinking = false, this.maxCtx = 32768});
   final String model, base;
   final bool disableThinking;
 
   /// Largest context this computer can hold for the model.
+  @override
   final int maxCtx;
+
+  @override
+  bool get isLocal => true;
+}
+
+/// A model on an OpenAI-compatible server: LocalAILine's own built-in engine, or the owner's
+/// vLLM, LM Studio, llama.cpp, MLX, LocalAI, Jan… Treated like a local model.
+class OpenAiTarget extends ModelTarget {
+  OpenAiTarget(this.server);
+  final OpenAiServer server;
+
+  String get model => server.model;
+
+  @override
+  int get maxCtx => server.maxCtx;
+
+  @override
+  bool get isLocal => true;
 }
 
 /// Picks the few tools that matter for a question, so small local models
@@ -371,6 +416,12 @@ class ToolSelector {
 class CloudTarget extends ModelTarget {
   CloudTarget(this.config);
   final CloudConfig config;
+
+  @override
+  bool get isLocal => false;
+
+  @override
+  int get maxCtx => 128000;
 }
 
 /// Runs the model, executes the tools it asks for, and loops until it answers.
@@ -378,6 +429,7 @@ class ToolLoop {
   ToolLoop({http.Client? client}) : _c = client ?? http.Client();
   final http.Client _c;
   http.Client get client => _c;
+  late final compat = OpenAiCompat(client: _c);
 
   static const maxRounds = 12;
 
@@ -415,11 +467,8 @@ class ToolLoop {
     final byName = {for (final t in tools) t.fnName: t};
 
     // Only the most relevant tools are offered; find_tools reaches the rest.
-    final limit = target is LocalTarget ? 6 : 40;
-    final resultLimit = switch (target) {
-      LocalTarget t => t.maxCtx >= 16384 ? 14000 : 7000,
-      CloudTarget _ => 40000,
-    };
+    final limit = target.isLocal ? 6 : 40;
+    final resultLimit = !target.isLocal ? 40000 : target.maxCtx >= 16384 ? 14000 : 7000;
     {
       final now = DateTime.now();
       const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -698,10 +747,19 @@ class ToolLoop {
           });
         } catch (_) {}
       }
+      if (target is OpenAiTarget) {
+        // The server reads the instructions and tools now and keeps them for the question
+        // (llama.cpp and vLLM reuse the start of a request they have already read).
+        final fns = offered.map(_fn).toList();
+        try {
+          await compat.send(target.server, OpenAiCompat.body(target.server, [for (final m in messages) m.toJson()], tools: fns, maxTokens: 1, stream: false));
+        } catch (_) {}
+      }
       return '';
     }
     return switch (target) {
       LocalTarget t => _ollama(t, messages, offered, exec, nudge, onText, maxTokens),
+      OpenAiTarget t => _compat(t.server, messages, offered, exec, nudge, onText, maxTokens),
       CloudTarget t => switch (t.config.provider) {
           CloudProvider.openai || CloudProvider.azure => _openai(t.config, messages, offered, exec, nudge),
           CloudProvider.anthropic => _anthropic(t.config, messages, offered, exec, nudge),
@@ -874,6 +932,74 @@ class ToolLoop {
   }
 
   static String _stripThink(String s) => s.replaceAll(RegExp(r'<think>[\s\S]*?</think>'), '').trim();
+
+  // ---------------- OpenAI-compatible (built-in engine, vLLM, LM Studio, llama.cpp…) ----------------
+  /// Like the Ollama loop: streams each turn (the answer shows as it is written), runs the tools the
+  /// model asks for, and goes round until it answers. Messages are only ever added at the end, so
+  /// the server can reuse everything it has already read.
+  Future<String> _compat(OpenAiServer s, List<ChatMessage> messages, List<ToolBinding> tools,
+      Future<(String, bool)> Function(String, Map<String, dynamic>) exec, String? Function() nudge,
+      void Function(String)? onText, [int maxTokens = 1500]) async {
+    final msgs = <Map<String, Object?>>[for (final m in messages) m.toJson()];
+    var brokenCalls = 0;
+    Future<StreamedReply> turn({bool withTools = true}) async {
+      final fns = withTools ? tools.map(_fn).toList() : const <Object?>[];
+      try {
+        return await compat.send(s, OpenAiCompat.body(s, msgs, tools: fns, maxTokens: maxTokens, temperature: 0.4), onPiece: (_, so) {
+          if (so.toolCalls.isEmpty) onText?.call(so.answer);
+        });
+      } on CloudError catch (e) {
+        if (RegExp(r'context|too long|exceed', caseSensitive: false).hasMatch(e.message) && !e.message.contains('tool')) {
+          throw CloudError('This is more than the model can hold at once. Start a new chat, or use a bigger model or a cloud AI.');
+        }
+        rethrow;
+      }
+    }
+
+    for (var round = 0; round < maxRounds; round++) {
+      final r = await turn();
+      final calls = r.toolCalls.where((c) => '${(c['function'] as Map)['name']}'.isNotEmpty).toList();
+      if (calls.isNotEmpty) onText?.call(''); // text before a tool call isn't the answer
+      if (calls.isEmpty) {
+        final n = nudge();
+        if (n == null) return r.answer;
+        msgs.add({'role': 'assistant', 'content': r.text.toString()});
+        msgs.add({'role': 'user', 'content': n});
+        continue;
+      }
+      // A tool call the model never finished (cut off at the length cap): ask once more, simply.
+      final args = [for (final c in calls) _argsOrNull((c['function'] as Map)['arguments'])];
+      if (r.cutOff && args.any((a) => a == null) && brokenCalls++ < 2) {
+        msgs.add({'role': 'user', 'content': 'Your call to ${(calls.first['function'] as Map)['name']} was cut off. Call it again now with short, plain values — only the fields you know, no long text.'});
+        continue;
+      }
+      msgs.add({'role': 'assistant', 'content': r.text.isEmpty ? null : r.text.toString(), 'tool_calls': calls});
+      for (var i = 0; i < calls.length; i++) {
+        final name = (calls[i]['function'] as Map)['name'] as String;
+        final (text, _) = await exec(name, args[i] ?? {});
+        msgs.add({'role': 'tool', 'tool_call_id': calls[i]['id'], 'content': text});
+      }
+    }
+    // Out of rounds: answer from what was found instead of giving up.
+    msgs.add({
+      'role': 'user',
+      'content': 'Stop using tools now. Give the best answer you can from the results above, '
+          'and say briefly what you could not find.'
+    });
+    return (await turn(withTools: false)).answer;
+  }
+
+  /// The model's tool inputs, or null when they aren't readable (cut off half way).
+  static Map<String, dynamic>? _argsOrNull(Object? a) {
+    if (a is Map) return a.cast<String, dynamic>();
+    if (a is String) {
+      if (a.trim().isEmpty) return {};
+      try {
+        return (jsonDecode(a) as Map).cast<String, dynamic>();
+      } catch (_) {}
+    }
+    return null;
+  }
 
   // ---------------- OpenAI / Azure ----------------
   Future<String> _openai(CloudConfig c, List<ChatMessage> messages, List<ToolBinding> tools,

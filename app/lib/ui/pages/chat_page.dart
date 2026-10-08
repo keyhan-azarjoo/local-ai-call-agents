@@ -174,7 +174,7 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> _send() async {
     final text = input.text.trim();
-    final m = s.usingCloud ? null : (model ?? s.llmModel);
+    final m = s.usingOllama ? (model ?? s.llmModel) : null;
     if (text.isEmpty || busy) return;
     if (!s.llmReady) return s.toast('Set up the AI first (Settings).');
     input.clear();
@@ -330,7 +330,7 @@ class _ChatPageState extends State<ChatPage> {
               Pill('$toolCount tools', tone: Tone.green),
               const SizedBox(width: 8),
             ],
-            if (st.usingCloud)
+            if (!st.usingOllama)
               Pill(st.llmLabel, tone: Tone.blue)
             else if (models.isNotEmpty)
               SizedBox(

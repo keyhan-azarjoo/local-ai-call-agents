@@ -29,9 +29,28 @@ A booking made on the phone and one made on the website land in the same place a
 
 Give it your business name, phone and address, and it's ready. Your website runs at a local address shown in the app.
 
-## Or describe your business
+## Or describe your business, and the local AI builds it
 
-Choose **Something else** and describe what you do. The builder asks a few questions, proposes a plan (tables, pages, look), and builds it when you agree. You can keep changing it in plain words: "add a page for gift vouchers", "make the menu darker".
+You don't need a template. Choose **Build an app → Something else** and tell it, in your own words, what your business is and what customers do. For example:
+
+> "We're a dog-grooming salon with three groomers. Customers book a wash, a trim or a full groom for their dog; we also sell shampoo and treats. We're closed on Mondays."
+
+The local AI model then:
+
+1. **Asks a few questions** you might not have thought of: how long a full groom takes, whether customers choose a groomer, what details you need about the dog.
+2. **Proposes a plan:** the tables (services, groomers, bookings, products, orders), what customers may see or do, the pages of the website, and the look. You can change anything before it builds.
+3. **Builds it:** a public website, a management website and the MCP tools for your call agents, all from the same description.
+
+From then on your call agents can, on the phone:
+
+- answer questions about services and prices;
+- check what's free and book;
+- take orders;
+- find, change or cancel a caller's own booking.
+
+All of this follows the rules the app enforces: availability, opening hours, stock, and whose booking is whose. Keep changing it in plain words ("add a page for gift vouchers", "customers can pick their groomer", "make it darker").
+
+The same privacy rules apply to apps the AI builds as to templates. However the description is worded, customers' phone numbers, emails and notes are never public, and callers only reach their own bookings.
 
 ## The manager page
 

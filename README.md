@@ -21,12 +21,34 @@
 
 - **Answers real phone calls.** Connect a Twilio number in a few clicks; LocalAILine sets up the SIP trunk, registers this computer and answers. Keep your landline by forwarding it to that number.
 - **Works as a team.** A receptionist answers and passes calls to specialists (bookings, sales, customer service) or rings a real person. The hold music plays, then the next agent speaks in their own voice, with a short brief so the caller never repeats themselves.
-- **Builds your business app.** Restaurant, barber, salon, dental clinic, hotel, garage, gym, shop, tutoring, events or estate agent: each comes with a public website (booking, ordering with delivery, room finder, timetable…) and a manager page (dashboard, sortable tables, order board, calendars, customers). The AI uses the same app through MCP tools, so a phone booking and a website booking land in one place.
+- **Builds your business from a description.** Tell it what your business is, in your own words ("a dog-grooming salon with three groomers; customers book a wash or a full groom, and we sell shampoo"), and the local AI model designs and builds it: the tables for your bookings, orders and customers, a public website, a management website, and the MCP tools your call agents use to check, book, order, change and cancel by phone. You keep changing it in plain words ("add gift vouchers", "make the menu darker").
+- **Or start from a template.** Restaurant, barber, salon, dental clinic, hotel, garage, gym, shop, tutoring, events or estate agent: each comes with a public website (booking, ordering with delivery, room finder, timetable…) and a manager page (dashboard, sortable tables, order board, calendars, customers). The AI uses the same app through MCP tools, so a phone booking and a website booking land in one place.
 - **Knows your business.** Add documents and skills (a PDF of your menu, your policies); agents answer from them, each limited to what you give it.
 - **Shows everything live.** See how many lines are busy, who is speaking, and each conversation word by word, as the caller is heard and as the AI answers. Calls can be recorded (callers are told).
 - **Handles several calls at once.** The AI model, speech recognition and the voice all run in parallel, sized by one "Calls at the same time" setting for the computer it runs on.
 - **Runs the AI where you choose.** Built into the app (llama.cpp, models downloaded for you), Ollama, any OpenAI-compatible server (vLLM, LM Studio, MLX, LocalAI, Jan), or a cloud provider.
 - **Keeps people's data private.** A caller only ever reaches their own booking, checked by the number they call from *and* the name it's under; nothing about anyone else is ever read out. [Security model →](docs/SECURITY.md)
+
+## Describe your business, get your system
+
+```mermaid
+flowchart LR
+  you((You)) -->|"We're a dog-grooming salon…"| builder[Local AI model<br/>the app builder]
+  builder --> spec[Your business, described:<br/>tables · fields · rules · pages · look]
+  spec --> site[Public website<br/>book · order · see prices]
+  spec --> manage[Management website<br/>dashboard · tables · board · calendar · customers]
+  spec --> mcp[MCP tools<br/>check · book · order · change · cancel]
+  mcp --> agents[Your call agents<br/>answer the phone]
+```
+
+1. In **Build an app → Something else**, describe your business. The local model asks a few questions (what customers book or order, opening hours, who works there) and proposes a plan.
+2. When you agree, it builds the app. The same description becomes three things that always agree:
+   - **a public website** where customers book and order;
+   - **a management website** where you run the day;
+   - **MCP tools** your call agents use on the phone.
+3. Your agents start using it straight away. A caller who books by phone and a customer who books on the website land in the same calendar, under the same rules: no double-booking, opening hours, stock and capacity. Callers can only ever reach their own booking.
+
+All of it runs on your computer, with your local model. Nothing about your business is sent anywhere.
 
 ## How it works
 

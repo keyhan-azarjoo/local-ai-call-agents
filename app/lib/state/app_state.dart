@@ -571,6 +571,9 @@ class AppState extends ChangeNotifier {
         return result!;
       },
     ).catchError((Object e) => e is Cancelled ? '' : throw e);
+    // With the call's own prompt the model sometimes just answers instead of saving: then save with
+    // the prompt made for saving (slower, but it saves).
+    if (result == null && system != null) return commitWith(loop, target, tool, convo, run, callerNumber: callerNumber, checked: checked);
     return result == null ? null : (ok: !result!.isError, text: result!.text);
   }
 

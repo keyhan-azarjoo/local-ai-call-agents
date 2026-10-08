@@ -755,6 +755,10 @@ class ScenarioRunner {
         continue;
       }
       if (what == 'web') {
+        // Its time free of earlier test bookings (as before a call), when this step should save.
+        if (((st['status'] as num?)?.toInt() ?? 200) == 200 && si == steps.indexWhere((x) => x['do'] == 'web')) {
+          await _makeRoom(curApp, {'table': st['table'], 'new': 1, 'fields': {for (final e in (st['values'] as Map).entries) '${e.key}': e.value}}, numbers);
+        }
         final res = await sitePost(curApp, '${st['table']}', {for (final e in (st['values'] as Map).entries) '${e.key}': resolve(e.value, numbers)});
         final want = (st['status'] as num?)?.toInt() ?? 200;
         if (res.code != want) failures.add('step ${si + 1} website ${st['table']}: got ${res.code} ${res.body}, wanted $want');

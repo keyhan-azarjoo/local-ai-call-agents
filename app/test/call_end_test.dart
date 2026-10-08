@@ -66,4 +66,13 @@ void main() {
     }
     expect(AppState.ownNumber('My number is 07700 900123'), isFalse);
   });
+
+  test('a tool written out instead of called is never said aloud', () {
+    const t = 'I\'ll take a message. Can I have your name? [take_message:{"name":"Greta","phone":"+441174960708","message":"call back"}]';
+    expect(AppState.spokenText(t), 'I\'ll take a message. Can I have your name?');
+    // While it is still coming in, the start of it is held back.
+    expect(AppState.spokenText('Sure. [take_message:{"name":"Gre'), 'Sure.');
+    // The engine's own tags stay (they are removed later, by the voice engine).
+    expect(AppState.spokenText('Passing you over. [voice:af_bella|Mia] Hi'), contains('[voice:af_bella|Mia]'));
+  });
 }

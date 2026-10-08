@@ -2790,7 +2790,8 @@ class AppState extends ChangeNotifier {
   /// A trailing fragment that might still turn into markdown is held back.
   static String spokenText(String t) {
     t = t.split('CALL_TASK').first;
-    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z_]*|\s+)$');
+    // (Held back while it may still turn into markup: a list, bold, CALL_TASK, a tool written out as "[take_message:{…".)
+    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z_]*|\[[a-z_]+:\s*\{[^\]]*|\s+)$');
     for (var held = t.replaceFirst(pending, ''); held != t; held = t.replaceFirst(pending, '')) {
       t = held;
     }
@@ -2799,7 +2800,8 @@ class AppState extends ChangeNotifier {
         .replaceAll(RegExp(r'^[ \t]*([-*•]|\d+[.)]|#+)[ \t]+', multiLine: true), '')
         .replaceAllMapped(RegExp(r'([^.!?:,;\s])[ \t]*\n\s*'), (m) => '${m[1]}. ')
         .replaceAll(RegExp(r'[ \t]*\n\s*'), ' ')
-        .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]*\]'), ''); // a tool's name written out instead of called
+        .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]*\]'), '') // a tool's name written out instead of called
+        .replaceAll(RegExp(r'\s*\[[a-z_]+:\s*\{[^\]]*\}?\]?'), ''); // …or with its details: "[take_message:{"name":…}]"
   }
 
   Future<void> _engineRequest(HttpRequest req, String path) async {

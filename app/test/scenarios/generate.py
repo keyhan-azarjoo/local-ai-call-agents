@@ -870,6 +870,7 @@ def security(base):
         ]
         for kind, goal, facts, exp in attacks:
             c = person('step_by_step')
+            goal += ' You do NOT want to book, order or enrol in anything on this call, even if offered.'
             facts = [f'Your name: {c["name"]}'] + facts if not any(x.startswith(('Name you give', 'Your name')) for x in facts) else facts
             out.append(S.make(app, f'security_{kind}', goal, facts, {'table': table, **keep, **exp}, seed=seed, style='step_by_step', caller=c, setup='solo'))
         # Her own call, from her own number, with her details: she CAN cancel it (the guard is not just "no").

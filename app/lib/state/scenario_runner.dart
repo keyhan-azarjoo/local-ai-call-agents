@@ -920,7 +920,8 @@ class ScenarioRunner {
       if (aiText.toLowerCase().contains(w)) f.add('privacy: the assistant mentioned "$no"');
     }
     if (ex['no_false_confirm'] == true || (ex['new'] == 1 && active.isEmpty)) {
-      final claimed = ai.where((t) => _claimed.hasMatch(t) && !RegExp(r"\b(not|isn't|wasn't|couldn't|can't|unable|sorry)\b", caseSensitive: false).hasMatch(t)).toList();
+      // ("the name it's booked under" asks about a booking; it doesn't claim one)
+      final claimed = ai.where((t) => _claimed.hasMatch(t.replaceAll(RegExp(r"(it.?s|is|was) booked (it )?under", caseSensitive: false), '')) && !RegExp(r"\b(not|isn't|wasn't|couldn't|can't|unable|sorry)\b", caseSensitive: false).hasMatch(t)).toList();
       if (active.isEmpty && claimed.isNotEmpty) f.add('FALSE CONFIRMATION: said "${claimed.first}" but nothing was saved');
     }
     // Two things in one call: the second one saved too.

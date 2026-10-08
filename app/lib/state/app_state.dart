@@ -1419,6 +1419,11 @@ class AppState extends ChangeNotifier {
   /// The voice agent reports a finished phone call: keep it in Calls and report back on the task.
   Future<void> _callEnded(Map<String, dynamic> b) async {
     final room = '${b['room'] ?? ''}';
+    // The caller's number, if the engine didn't have it any more: from the room's name.
+    if ('${b['number'] ?? ''}'.isEmpty) {
+      final n = RegExp(r'^pstn-in-\d+-_(\+?\d{6,15})_').firstMatch(room)?.group(1);
+      if (n != null) b = {...b, 'number': n};
+    }
     // The owner took over: the AI has left, but the call goes on (it stays on the live view and
     // keeps its line until the owner ends it). What was said so far is kept now.
     final takenBy = '${b['taken_over_by'] ?? ''}'.trim();
@@ -2120,8 +2125,24 @@ class AppState extends ChangeNotifier {
     _liveState(room, agent: 'speaking');
   }
 
-  /// The AI has finished this answer.
+  /// Calls whose AI words arrive as they are heard (the voice engine times them to its voice).
+  final _spokenSync = <String>{};
+
+  /// The AI's words as the caller hears them, word by word ([done]: that answer has been said).
+  void liveAiSpoken(String room, String delta, {bool done = false}) {
+    if (room.isEmpty) return;
+    _spokenSync.add(room);
+    if (delta.isNotEmpty) liveAi(room, delta);
+    if (done) {
+      final last = liveText[room]?.lastOrNull;
+      if (last != null && last.who == 'ai') last.done = true;
+      _liveState(room, agent: 'listening');
+    }
+  }
+
+  /// The AI has finished writing this answer (on calls timed to its voice: once it has been said).
   void liveAiDone(String room) {
+    if (_spokenSync.contains(room)) return;
     final last = liveText[room]?.lastOrNull;
     if (last != null && last.who == 'ai') last.done = true;
     _liveState(room);
@@ -2130,6 +2151,7 @@ class AppState extends ChangeNotifier {
   /// The call is over: keep its conversation with the recent ones.
   void liveEnded(String room) {
     _liveWho.remove(room);
+    _spokenSync.remove(room);
     takenOver.remove(room);
     callerAs.remove(room);
     ownerSpeaking.remove(room);
@@ -2634,6 +2656,7 @@ class AppState extends ChangeNotifier {
   /// The app's own "let me check" lines at the start of an answer: the model copies them from the history.
   static final _fillerStart = RegExp(r"^\s*(?:(?:Sure, let me sort that out|Okay, on it|Right, let me do that|Hmm, let me see|Let me check that for you|Okay, one sec, let me look|One moment, let me check that)\.\s*)+");
 
+  static final _fillerLine = RegExp(r"^(sure|okay|ok|right|hmm|mm|one moment|one sec|let me (check|see|look)|i'?ll check)\b[^.!?]*[.!?]?$", caseSensitive: false);
   static const _sameAgain = {'en': 'Sorry, I didn\'t quite follow — could you say that another way?'};
 
   /// The caller asked for a second booking or order in the same call.
@@ -3024,6 +3047,7 @@ class AppState extends ChangeNotifier {
         'The person’s words come from speech recognition and may contain mis-heard words: work out what they most likely meant and answer that; never repeat their words back. '
         'Names are often mis-heard (“Shivorn” or “Sha von” for “Siobhan”): if a name sounds like one you know, use that person — don’t say they don’t exist. '
         'Only state facts you were given; if you don’t know, say you will check and take a message. '
+        '${mode == 'owner' ? '' : 'Never make up prices, fees, discounts or rules (no “no delivery fee when paying by card”): only what the app or your notes say. You can’t send texts, emails or payment links: never offer to. '}'
         'You have already said a short “let me check” when needed: go straight to the answer, don’t start with fillers.'
         '${mode == 'owner' ? await _capabilities(_voiceScopes(mode)) : ''}'
         '${speak == null ? ' Always reply in the language the person speaks.' : ' The person is speaking $speak: reply only in $speak${lang == 'en' ? '' : ', and say names of dishes, products and places in $speak too (translate or write them in $speak script), because the voice can only read $speak'}.'}';
@@ -3052,6 +3076,40 @@ class AppState extends ChangeNotifier {
 
   /// Names the hearing should expect (people, the assistant, users in connected systems),
   /// so "Siobhan" isn't heard as "Shivorn".
+  /// Words hearing should expect on this call (a prompt for speech recognition, which only reads
+  /// its first ~200 words): the business that answers, its team, and what customers ask for by
+  /// name (menu, services, rooms…), then the general names. Without them "Giulia" was heard as
+  /// "Jailia" and "margherita" as "margarita".
+  Future<String> _callVocabulary(Map<String, Object?>? agent) async {
+    final general = await _vocabulary();
+    final business = '${agent?['role'] ?? ''}'.split(' · ').skip(1).join(' · ');
+    if (business.isEmpty) return general;
+    final words = <String>{business, if (agent?['name'] != null) '${agent!['name']}'};
+    for (final a in await db.all('agents', orderBy: 'id')) {
+      if ('${a['role'] ?? ''}'.endsWith(' · $business')) words.add('${a['name']}');
+    }
+    final app = (await apps.apps()).where((a) => a.name == business).firstOrNull;
+    if (app != null) {
+      final d = AppData(db, app.id, app.spec);
+      for (final t in app.spec.tables.where((t) => t.access.see && !t.single)) {
+        final label = t.fields.where((f) => f.type == 'text').firstOrNull?.id;
+        if (label == null) continue;
+        try {
+          for (final r in (await d.list(t.id)).take(40)) {
+            final v = '${r[label] ?? ''}'.trim();
+            if (v.isNotEmpty && v.length <= 40) words.add(v);
+          }
+        } catch (_) {}
+      }
+    }
+    var out = words.join(', ');
+    for (final g in general.split(', ')) {
+      if (out.length > 700) break;
+      if (!words.contains(g)) out += ', $g';
+    }
+    return out;
+  }
+
   Future<String> _vocabulary() async {
     final names = <String>{};
     void add(Object? v) {
@@ -3345,7 +3403,7 @@ class AppState extends ChangeNotifier {
       // Recorded calls say so at the start (phone calls only).
       final recorded = recordCalls && callRoom.startsWith('pstn');
       final hello = task != null ? await _openingLine(task, '${agent?['name'] ?? 'Ava'}') : Persona.greeting(agent);
-      return json(200, {'record': recorded, 'greeting': recorded ? '$hello ${_recordedNote[l] ?? _recordedNote['en']!}' : hello, 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _vocabulary(), 'agentVoice': agent?['voice']});
+      return json(200, {'record': recorded, 'greeting': recorded ? '$hello ${_recordedNote[l] ?? _recordedNote['en']!}' : hello, 'name': agent?['name'] ?? 'Ava', 'language': voiceLanguage, 'voices': voiceChoice, 'thinking': thinkingSound, 'ambient': ambientSound, 'vocabulary': await _callVocabulary(agent), 'agentVoice': agent?['voice']});
     }
     if (path == '/api/connect') {
       return json(200, await _connectHuman(req.uri.queryParameters['room'] ?? ''));
@@ -3372,7 +3430,11 @@ class AppState extends ChangeNotifier {
     if (path == '/api/call-text') {
       // The voice engine: the caller's words while they speak (final: hearing has settled).
       final b = jsonDecode(await utf8.decodeStream(req)) as Map<String, dynamic>;
-      liveCaller('${b['room'] ?? ''}', '${b['text'] ?? ''}', done: b['final'] == true);
+      if (b['who'] == 'ai') {
+        liveAiSpoken('${b['room'] ?? ''}', '${b['text'] ?? ''}', done: b['final'] == true);
+      } else {
+        liveCaller('${b['room'] ?? ''}', '${b['text'] ?? ''}', done: b['final'] == true);
+      }
       return json(200, {'ok': true});
     }
     if (path == '/api/call-ended') {
@@ -3522,7 +3584,11 @@ class AppState extends ChangeNotifier {
       })}\n\n',
     );
     void chunk(Map<String, Object?> delta, {String? finish}) {
-      if (mode != 'owner' && delta['content'] is String) liveAi(room, delta['content'] as String);
+      if (mode != 'owner' && delta['content'] is String) {
+        // Calls whose words come as they are spoken (see liveAiSpoken): only the hold / hang-up marks from here.
+        final c = delta['content'] as String;
+        liveAi(room, _spokenSync.contains(room) ? [for (final m in RegExp(r'\[(voice|connect)[^\]]*\]|\[hangup\]').allMatches(c)) m[0]].join() : c);
+      }
       send(delta, finish: finish);
     }
 
@@ -3763,7 +3829,19 @@ class AppState extends ChangeNotifier {
         mark('save_on_yes');
       }
       if (stuck && sent.trim().isEmpty && !gone) {
-        final line = _sameAgain[lang] ?? _sameAgain['en']!;
+        // The same answer again, and nothing new came: they likely said the same again too ("I need
+        // 10am." — still taken). Say it once more, short, rather than claiming not to follow them.
+        final again = [
+          for (final x in spokenText(full).split(RegExp(r'(?<=[.!?])\s+')))
+            if (x.trim().isNotEmpty && !_fillerLine.hasMatch(x.trim())) x.trim(),
+        ];
+        final short = again.length <= 2 ? again.join(' ') : '${again.first} ${again.last}';
+        // ("Thanks, Lily." needs no new answer: they're welcome; the goodbye follows if they're done.)
+        final line = (thanksOnly(question) || ending) && lang == 'en'
+            ? 'You’re welcome.'
+            : lang == 'en' && callerWords(question).split(RegExp(r'\s+')).length >= 3 && short.isNotEmpty
+                ? 'As I said, ${short[0].toLowerCase()}${short.substring(1)}'
+                : _sameAgain[lang] ?? _sameAgain['en']!;
         chunk({'content': line});
         sent = line;
       }
@@ -3824,7 +3902,9 @@ class AppState extends ChangeNotifier {
       // The call goes to a teammate: they pick up straight away, in their own voice.
       mark('safety_net');
       if (saved && room.isNotEmpty) _savedOn.add(room);
-      final target = passTo == null ? null : (await callTeam()).where((a) => '${a['name']}'.toLowerCase() == passTo!.name.toLowerCase()).firstOrNull;
+      // The teammate of THIS business by that name (two businesses can each have a "Lily": a call
+      // to Trattoria Bella was booked into Pasargad's app by the other one).
+      final target = passTo == null ? null : (flow?.others ?? const []).where((a) => '${a['name']}'.toLowerCase() == passTo!.name.toLowerCase()).firstOrNull;
       if (target != null && target['handles'] == 'human' && flow != null && !gone) {
         // A real person: the voice agent puts the caller on hold and rings them (see /api/connect).
         _pendingConnect[room] = (agentId: target['id'] as int, brief: passTo!.brief, from: '${flow.agent['name']}');

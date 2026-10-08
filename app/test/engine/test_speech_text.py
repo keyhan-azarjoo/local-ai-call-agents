@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[2] / "assets" / "engine" / "localailine_voice.py"
-WANTED = {"_MONEY", "_MONEY_NAMES", "_PHONE", "_HEARD_TIME", "speakable", "phone_digits", "tidy_heard"}
+WANTED = {"_MONEY", "_MONEY_NAMES", "_PHONE", "_SAY_AS", "_SAY_AS_RE", "_HEARD_TIME", "speakable", "phone_digits", "tidy_heard"}
 
 
 def _load() -> dict:
@@ -39,6 +39,10 @@ class Speakable(unittest.TestCase):
     def test_other_numbers_stay(self) -> None:
         self.assertEqual(V["speakable"]("It is £21.50 for 2 people"), "It is 21 pounds 50 for 2 people")
         self.assertEqual(V["speakable"]("Room 101 in 2026, at 7:30 pm"), "Room 101 in 2026, at 7:30 pm")
+
+
+    def test_names_said_as_they_sound(self) -> None:
+        self.assertEqual(V["speakable"]("This is Giulia at Trattoria Bella."), "This is Julia at Trattoria Bella.")
 
 
 class Heard(unittest.TestCase):

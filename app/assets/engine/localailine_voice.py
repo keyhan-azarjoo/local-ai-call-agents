@@ -35,6 +35,7 @@ import aiohttp
 import httpx
 import numpy as np
 from livekit import api, rtc
+from livekit.agents.voice import io as lk_io
 from livekit.agents import (
     APIConnectOptions,
     Agent,
@@ -699,7 +700,13 @@ def speakable(text: str) -> str:
         return f"{m[2]} {unit}"
     text = _MONEY.sub(money, text).replace(" – ", ", ").replace(" — ", ", ")
     text = _PHONE.sub(phone_digits, text)
+    text = _SAY_AS_RE.sub(lambda m: _SAY_AS[m[0]], text)
     return __import__("re").sub(r"\s*&\s*", " and ", text)
+
+
+# Names the English voices say wrongly, spelled as they sound ("Giulia" came out as "Jellelia").
+_SAY_AS = {"Giulia": "Julia"}  # (checked by voicing each and hearing it back: the others come out right)
+_SAY_AS_RE = __import__("re").compile(r"\b(" + "|".join(_SAY_AS) + r")\b")
 
 
 # A phone number (7+ digits, maybe spaced): said digit by digit in its groups ("07700 900123" ->
@@ -1080,6 +1087,47 @@ class Ava(Agent):
             reader.cancel()
 
 
+class SpokenText(lk_io.TextOutput):
+    """The AI's words as the caller hears them (timed to its voice, word by word), for the app's
+    live view: the model writes faster than it speaks, so its text alone ran ahead of the voice."""
+
+    def __init__(self, room: str) -> None:
+        super().__init__(label="LocalAILineSpoken", next_in_chain=None)
+        self._room = room
+        self._q: asyncio.Queue = asyncio.Queue()
+        self._task: asyncio.Task | None = None
+
+    async def capture_text(self, text: str) -> None:
+        self._put(text, False)
+
+    def flush(self) -> None:
+        self._put("", True)
+
+    def _put(self, text: str, final: bool) -> None:
+        self._q.put_nowait((text, final))
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self._send())
+
+    async def _send(self) -> None:
+        base = os.environ.get("LL_APP_URL")
+        if not base:
+            return
+        async with aiohttp.ClientSession() as h:
+            while True:
+                text, final = await self._q.get()
+                while not final and not self._q.empty():  # (what came meanwhile, in one go)
+                    more, final = self._q.get_nowait()
+                    text += more
+                text = _re.sub(r"\[[^\]]*\]?", "", text)  # control tags ([hangup], [voice:…]) aren't heard
+                if not text and not final:
+                    continue
+                try:
+                    await h.post(f"{base}/api/call-text", json={"room": self._room, "who": "ai", "text": text, "final": final},
+                                 headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=3))
+                except Exception:  # noqa: BLE001
+                    pass
+
+
 def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool = False, room: str = "") -> AgentSession:
     llm = (AppLLM if os.environ.get("LL_APP_URL") else openai.LLM)(
         base_url=os.environ.get("LL_LLM_BASE", "http://127.0.0.1:11434/v1"),
@@ -1177,10 +1225,11 @@ async def entrypoint(ctx: JobContext) -> None:
     # Sent back in by the owner ("Hand back to AI"): talk to the caller, not to the owner still in the room.
     handback = handback_of(getattr(ctx.job, "metadata", "") or "")
     caller_id = next((p.identity for p in ctx.room.remote_participants.values() if not is_app_listener(p.identity)), None) if handback else None
+    spoken = room_io.TextOutputOptions(next_in_chain=SpokenText(ctx.room.name)) if phone_call else True
     if caller_id:
-        await session.start(agent=ava, room=ctx.room, room_options=room_io.RoomOptions(participant_identity=caller_id))
+        await session.start(agent=ava, room=ctx.room, room_options=room_io.RoomOptions(participant_identity=caller_id, text_output=spoken))
     else:
-        await session.start(agent=ava, room=ctx.room)
+        await session.start(agent=ava, room=ctx.room, room_options=room_io.RoomOptions(text_output=spoken))
     # The app's "Interrupt" button (its mic is off while Ava speaks, so she can't hear herself).
     async def _interrupt(_data) -> str:  # noqa: ANN001
         await session.interrupt(force=True)
@@ -1251,12 +1300,20 @@ async def entrypoint(ctx: JobContext) -> None:
     asyncio.create_task(warm_phrases())
     session.on("user_state_changed", sync_sound)
     # When the call ends: the conversation goes back to the app (Calls, and the call's result).
+    known_number = {"n": ""}
+
     def caller_number() -> str:
+        # (Kept once seen: when the call is reported the caller has usually left already. Else the
+        # number the phone service put in the room's name, "pstn-in-<line>-_<number>_…".)
         for p in ctx.room.remote_participants.values():
             n = p.attributes.get("sip.phoneNumber")
             if n:
+                known_number["n"] = n
                 return n
-        return ""
+        if not known_number["n"]:
+            m = _re.match(r"^pstn-in-\d+-_(\+?\d{6,15})_", ctx.room.name)
+            known_number["n"] = m[1] if m else ""
+        return known_number["n"]
 
     async def report() -> None:
         base = os.environ.get("LL_APP_URL")

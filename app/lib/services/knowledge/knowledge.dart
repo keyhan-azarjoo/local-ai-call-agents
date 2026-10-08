@@ -51,6 +51,7 @@ class KnowledgeService extends ChangeNotifier {
   /// Starts that Ollama (same models folder, one model, one request at a time) and uses it.
   Future<void> startEmbedServer(String? ollamaBinary) async {
     _embedBinary = ollamaBinary;
+    _killRunners(); // model processes orphaned by an earlier run
     final url = 'http://127.0.0.1:$embedPort';
     Future<bool> up() async {
       try {
@@ -81,6 +82,13 @@ class KnowledgeService extends ChangeNotifier {
   /// Stuck anyway: start it again (it serves nothing else, so no call notices).
   Future<void> _restartEmbedServer() async {
     if (_embedServer == null) return;
+    // Slow under load is not stuck: only start again when it no longer answers at all.
+    try {
+      final v = await _c.get(Uri.parse('http://127.0.0.1:$embedPort/api/version')).timeout(const Duration(seconds: 3));
+      if (v.statusCode == 200 && ++_embedFails < 3) return;
+    } catch (_) {}
+    _embedFails = 0;
+    _killRunners(_embedServer!.pid);
     _embedServer!.kill();
     _embedServer = null;
     embedBase = null;
@@ -88,8 +96,25 @@ class KnowledgeService extends ChangeNotifier {
   }
 
   String? _embedBinary;
+  var _embedFails = 0;
+
+  /// The model processes an Ollama server started: stopped with it (else each stays, ~0.6 GB, and
+  /// a night of restarts filled the memory). Also any left without their server by an earlier run.
+  static void _killRunners([int? serverPid]) {
+    if (Platform.isWindows) return;
+    try {
+      final ps = Process.runSync('ps', ['-axo', 'pid,ppid,command']).stdout.toString();
+      for (final l in const LineSplitter().convert(ps)) {
+        final m = RegExp(r'^\s*(\d+)\s+(\d+)\s+(.*)$').firstMatch(l);
+        if (m == null || !m.group(3)!.contains('llama-server')) continue;
+        final ppid = int.parse(m.group(2)!);
+        if (ppid == 1 || ppid == serverPid) Process.killPid(int.parse(m.group(1)!));
+      }
+    } catch (_) {}
+  }
 
   void stopEmbedServer() {
+    if (_embedServer != null) _killRunners(_embedServer!.pid);
     _embedServer?.kill();
     _embedServer = null;
   }

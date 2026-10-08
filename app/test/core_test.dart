@@ -39,14 +39,14 @@ void main() {
     test('create owner, sign in, wrong password fails', () async {
       final auth = AuthService(db);
       expect(await auth.hasOwner(), isFalse);
-      final u = await auth.createUser(name: 'Keyhan Azarjoo', username: 'Keyhan', password: 'supersecret1', role: Role.owner);
-      expect(u.username, 'keyhan');
-      expect(u.initials, 'KA');
+      final u = await auth.createUser(name: 'Alex Morgan', username: 'Alex', password: 'correct-horse-42', role: Role.owner);
+      expect(u.username, 'alex');
+      expect(u.initials, 'AM');
       expect(await auth.hasOwner(), isTrue);
-      final s = await auth.signIn('KEYHAN', 'supersecret1');
+      final s = await auth.signIn('ALEX', 'correct-horse-42');
       expect(s.role, Role.owner);
-      expect(() => auth.signIn('keyhan', 'nope-nope-nope'), throwsA(isA<AuthError>()));
-      expect(() => auth.signIn('nobody', 'supersecret1'), throwsA(isA<AuthError>()));
+      expect(() => auth.signIn('alex', 'nope-nope-nope'), throwsA(isA<AuthError>()));
+      expect(() => auth.signIn('nobody', 'correct-horse-42'), throwsA(isA<AuthError>()));
     });
     test('validation', () async {
       final auth = AuthService(db);
@@ -65,12 +65,12 @@ void main() {
 
   group('database', () {
     test('seeds defaults once', () async {
-      await db.seedDefaults('Keyhan Azarjoo');
-      await db.seedDefaults('Keyhan Azarjoo');
+      await db.seedDefaults('Alex Morgan');
+      await db.seedDefaults('Alex Morgan');
       expect(await db.count('agents'), 2);
       final ava = (await db.all('agents', orderBy: 'id')).first;
       expect(ava['name'], 'Ava');
-      expect(ava['greeting'] as String, contains('Keyhan'));
+      expect(ava['greeting'] as String, contains('Alex'));
       expect(await db.count('skills'), greaterThan(3));
     });
     test('settings round-trip', () async {

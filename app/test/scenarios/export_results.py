@@ -15,9 +15,10 @@ REPO = Path(__file__).resolve().parents[3]
 OUT = REPO / 'docs' / 'evaluations' / 'runs'
 OUT.mkdir(parents=True, exist_ok=True)
 
-# The owner's own details (from early manual tests) never leave this computer.
-PRIVATE = [
-]
+# The owner's own details (from early manual tests) never leave this computer. What to replace is
+# kept outside the repository, in ~/.localailine-scrub.json: [["regex", "replacement"], ...].
+_scrub = Path.home() / '.localailine-scrub.json'
+PRIVATE = [(re.compile(rx, re.I), repl) for rx, repl in (json.loads(_scrub.read_text()) if _scrub.exists() else [])]
 
 
 def clean(text: str) -> str:

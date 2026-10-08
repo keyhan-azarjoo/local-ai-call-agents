@@ -1,7 +1,9 @@
-"""Automated test caller: joins a LiveKit room, speaks WAV files like a person,
-and measures how fast the agent answers (end of speech → first audio).
+"""Latency probe: joins a LiveKit room as a caller, speaks WAV files like a person, and measures
+how fast the agent answers (end of speech -> first audio).
 
-  python test_call.py question1.wav [question2.wav …]
+  LIVEKIT_API_KEY=... LIVEKIT_API_SECRET=... python latency_probe.py question1.wav [question2.wav ...]
+
+The key and secret are the voice engine's (see voice-engine.secret in the app's data folder).
 """
 from __future__ import annotations
 
@@ -15,8 +17,8 @@ import numpy as np
 from livekit import api, rtc
 
 URL = os.environ.get("LIVEKIT_URL", "ws://127.0.0.1:7880")
-KEY = os.environ.get("LIVEKIT_API_KEY", "devkey")
-SECRET = os.environ.get("LIVEKIT_API_SECRET", "secret")
+KEY = os.environ["LIVEKIT_API_KEY"]
+SECRET = os.environ["LIVEKIT_API_SECRET"]
 
 
 def read_wav(path: str) -> tuple[np.ndarray, int]:

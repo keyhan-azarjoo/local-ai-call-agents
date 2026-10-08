@@ -17,7 +17,7 @@ R = random.Random(20261006)
 
 FIRST = ['Dana', 'Idris', 'Ivy', 'Liam', 'Greta', 'Kwame', 'Mei', 'Jakub', 'Aisha', 'Noah', 'Elena', 'Ravi', 'Esme', 'Mateo', 'Chloe',
          'Yusuf', 'Alice', 'Arjun', 'Freya', 'Kenji', 'Zara', 'Ben', 'Leila', 'Callum', 'Nadia', 'Oscar', 'Ines', 'Samir', 'Ruby', 'Hugo',
-         'Amara', 'Rory', 'Layla', 'Dmitri', 'Erin', 'Tariq', 'Maya', 'Joel', 'Siobhan', 'Keyhan']
+         'Amara', 'Rory', 'Layla', 'Dmitri', 'Erin', 'Tariq', 'Maya', 'Joel', 'Siobhan', 'Arjun']
 LAST = ['Lee', 'Haddad', 'Patel', 'Murphy', 'Rossi', 'Mensah', 'Chen', 'Nowak', 'Khan', 'Baker', 'Petrova', 'Sharma', 'Clarke', 'Garcia',
         'Dubois', 'Demir', 'Okafor', 'Singh', 'Walsh', 'Tanaka', 'Ahmed', 'Hughes', 'Rahimi', 'Fraser', 'Ali', 'Novak', 'Silva', 'Karimi',
         'Evans', 'Moreau']

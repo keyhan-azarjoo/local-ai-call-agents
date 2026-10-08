@@ -26,7 +26,7 @@ void main() {
     final s = AppState(dbPath: '${dir.path}/s.db');
     await s.init();
     await s.startHost(port: 0);
-    await s.completeSetup(await s.auth.createUser(name: 'Keyhan', username: 'owner', password: 'password-123', role: Role.owner));
+    await s.completeSetup(await s.auth.createUser(name: 'Alex', username: 'owner', password: 'password-123', role: Role.owner));
     await s.setLlmModel(model!);
     await s.refreshEngine();
     // Like Pasargad: made from the older restaurant template (orders to a table only).

@@ -1,3 +1,5 @@
+> **Historical:** the design plan written before implementation (October 2026). Some choices changed while building; see [ARCHITECTURE.md](../ARCHITECTURE.md) for how it works now.
+
 # LocalAILine — Architecture & Plan
 
 > Your computer answers your phone. A private, self-hosted AI receptionist: local LLM, local speech-to-text and text-to-speech, a built-in LiveKit voice server, and phone lines from Twilio, Telnyx, any SIP provider, or a real landline. No LocalAILine cloud, no accounts, no telemetry.

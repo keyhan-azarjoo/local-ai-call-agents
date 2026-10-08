@@ -95,13 +95,13 @@ void main() {
   test('18:44 call: what time is my booking, then cancel it', () async {
     final a = await setUpApp();
     final today = DateTime.now().toIso8601String().substring(0, 10);
-    await a.data.add('reservations', {'name': 'Keyhan', 'phone': '07700 900124', 'date': today, 'time': '20:30', 'guests': 2}, via: 'website');
-    final base = '${Persona.outboundSystem('Ava', 'Keyhan', 'Keyhan', 'ask for confirmation for the reservation')} '
+    await a.data.add('reservations', {'name': 'Alex', 'phone': '07700 900124', 'date': today, 'time': '20:30', 'guests': 2}, via: 'website');
+    final base = '${Persona.outboundSystem('Ava', 'Alex', 'Alex', 'ask for confirmation for the reservation')} '
         'This is a live voice conversation: answer in one to three short spoken sentences.${AppState.appRulesText(a.tools)}';
-    final convo = [ChatMessage('assistant', 'Hello, this is Ava, an AI assistant calling on behalf of Keyhan. I just wanted to confirm your reservation for tonight.')];
+    final convo = [ChatMessage('assistant', 'Hello, this is Ava, an AI assistant calling on behalf of Alex. I just wanted to confirm your reservation for tonight.')];
     final loop = ToolLoop();
     final replies = <String>[];
-    for (final heard in ['What time is my booking?', 'No, cancel it.', 'My name is Keyhan and my number is 07700 900124.', 'Yes, cancel it please.']) {
+    for (final heard in ['What time is my booking?', 'No, cancel it.', 'My name is Alex and my number is 07700 900124.', 'Yes, cancel it please.']) {
       print('PERSON: $heard');
       final r = await turn(loop, a.mcp, a.tools, base, convo..add(ChatMessage('user', heard)));
       replies.add(r);

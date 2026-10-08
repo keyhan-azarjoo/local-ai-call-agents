@@ -1,0 +1,8 @@
+LocalAILine
+Copyright 2026 Keyhan Azarjoo
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It uses open-source components under their own licences, including Flutter (BSD-3-Clause),
+LiveKit and LiveKit Agents (Apache-2.0), whisper.cpp and llama.cpp (MIT), Kokoro (Apache-2.0),
+Piper (MIT) and Silero VAD (MIT). Models downloaded at run time are covered by their own licences.

@@ -1,8 +1,6 @@
 .DS_Store
-REUSE_NOTES.md
 *.log
 build/
 .dart_tool/
 __pycache__/
 .venv/
-.claude/worktrees/

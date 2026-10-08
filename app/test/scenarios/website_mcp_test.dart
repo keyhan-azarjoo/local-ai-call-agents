@@ -349,7 +349,7 @@ void main() {
         tool('restaurant', 'add_reservations', {'name': name, 'phone': phone, 'date': date, 'time': '13:00', 'guests': 2, '_heard': heard});
     expect((await add('Birthday Group', ['A table for two please', 'yes'], '07700 701001')).error, true);
     expect((await add('Siobhan Nguyen', ['It is S-I-O-B-H-A-N, N-G-U-Y-E-N'], '07700 701002')).error, false);
-    expect((await add('Keyhan Azarjoo', ['my name is Kehan Azarjo'], '07700 701003')).error, false, reason: 'speech-to-text spelling');
+    expect((await add('Rhiannon Gallagher', ['my name is Rianon Galagher'], '07700 701003')).error, false, reason: 'speech-to-text spelling');
     expect((await add('Dana Lee', ['Dana Lee, two people at 1pm'], '07700 701004')).error, false);
   });
 

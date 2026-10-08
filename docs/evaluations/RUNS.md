@@ -37,4 +37,4 @@ Every run of the spoken test calls (simulated callers speaking through text-to-s
 | [app-2026-10-08T07-25-10.jsonl](runs/app-2026-10-08T07-25-10.jsonl) | 2026-10-08 07:25 | Journeys (call-backs, teams, switching business) | 32 | 2 (6%) | 12.4 s | 2 |
 | [app-2026-10-08T08-16-18.jsonl](runs/app-2026-10-08T08-16-18.jsonl) | 2026-10-08 08:16 | Journeys (call-backs, teams, switching business) | 31 | 1 (3%) | 14.8 s | 2 |
 | [app-2026-10-08T09-12-16.jsonl](runs/app-2026-10-08T09-12-16.jsonl) | 2026-10-08 09:12 | Journeys (call-backs, teams, switching business) | 31 | 1 (3%) | 17.0 s | 2 |
-| [bench-qwen3_4b-instruct-2026-10-08T10-13-13.jsonl](runs/bench-qwen3_4b-instruct-2026-10-08T10-13-13.jsonl) | 2026-10-08 10:13 | Single calls, Journeys (call-backs, teams, switching business), Hard calls (long, tricky, other languages) | 63 | 22 (34%) | 11.1 s | 2 |
+| [bench-qwen3_4b-instruct-2026-10-08T10-13-13.jsonl](runs/bench-qwen3_4b-instruct-2026-10-08T10-13-13.jsonl) | 2026-10-08 10:13 | Single calls, Journeys (call-backs, teams, switching business), Hard calls (long, tricky, other languages) | 69 | 23 (33%) | 11.9 s | 2 |

@@ -48,8 +48,13 @@ No test ever places a real phone call: all test numbers are from ranges reserved
 
 ## Results
 
-- **Single calls:** improved from **53% to 87%** over six rounds of fixing what failed (246 calls in the last round). The median answer time fell from 10.6 s to under 6 s on one call at a time.
-- **Security:** **175 of 176** passed. No data leaked in any of them; the one failure was a usability bug for the real customer, now fixed.
+From 1,800+ spoken calls run during development:
+
+- **Single calls:** 537 of the 1,150 run. Passing went from **53% to 87%** over six rounds of fixing what failed (214 of 246 in the last full round). The median answer time fell from 10.6 s to under 6 s with one call at a time.
+- **Security:** all 176 run. Every scenario has passed at least once after fixes (175 of 176; the last was a usability bug for the genuine customer, since fixed). **No run leaked another person's details or changed their booking.** The best single round passed 44 of 50 (88%); the others failed on speed or on the genuine customer's own cancellation.
+- **Journeys:** all 338 run; 99 have passed at least once, and the best round was 22 of 48 (46%). Multi-call, multi-agent journeys are the hardest set. The recent rounds were also run while tracking down a memory regression, and those runs are included.
+- **Hard calls:** only a first 10 run so far.
+- **First words:** callers hear the first words after about 2.5 s (median, from 7,000+ answers); the full answer takes a median 5–17 s depending on the machine's load. Speed is the main open problem on a 4B model sharing an 18 GB laptop with everything else.
 - **Parallel calls:** with three calls at once, the AI, hearing and voice each do 2.2–2.8× the work of a single call in the same time ([`parallel_check.py`](../app/test/scenarios/parallel_check.py)).
 - **Models:** see the [model comparison](evaluations/MODELS.md).
 

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// LocalAILine palette — "telephone exchange": navy switchboard, amber line
-/// lamps, off-hook green. Mirrors demo/styles.css.
+/// lamps, off-hook green.
 class LL {
   static const navy = Color(0xFF10233A);
   static const navy2 = Color(0xFF183150);

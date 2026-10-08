@@ -335,24 +335,24 @@ void main() {
       await data.add('dining_tables', r.cast<String, dynamic>(), manager: true);
     }
     final day = DateTime.now().add(const Duration(days: 1)).toIso8601String().substring(0, 10);
-    final mine = await data.add('reservations', {'name': 'Keyhan', 'phone': '07700 900124', 'date': day, 'time': '19:00', 'guests': 2});
+    final mine = await data.add('reservations', {'name': 'Alex', 'phone': '07700 900124', 'date': day, 'time': '19:00', 'guests': 2});
     await data.add('reservations', {'name': 'Other', 'phone': '07000 000000', 'date': day, 'time': '19:00', 'guests': 2});
     final srv = AppServer(data: data, pin: '1234', toolKey: testKey);
     await srv.start(0);
     final s = McpSession(HttpTransport('http://127.0.0.1:${srv.port}/mcp', headers: {'X-Tool-Key': testKey}));
     await s.initialize();
-    final found = await s.callTool('find_my_reservations', {'phone': '+447700900124', 'name': 'Keyhan'});
-    expect(found.text, contains('Keyhan'));
+    final found = await s.callTool('find_my_reservations', {'phone': '+447700900124', 'name': 'Alex'});
+    expect(found.text, contains('Alex'));
     expect(found.text, isNot(contains('Other')));
-    expect((await s.callTool('find_my_reservations', {'phone': '+441111111111', 'name': 'Keyhan'})).text, contains('No reservations found'));
+    expect((await s.callTool('find_my_reservations', {'phone': '+441111111111', 'name': 'Alex'})).text, contains('No reservations found'));
     final other = (await data.list('reservations', manager: true)).firstWhere((r) => r['name'] == 'Other')['id'];
-    final denied = await s.callTool('cancel_my_reservations', {'id': other, 'phone': '+447700900124', 'name': 'Keyhan'});
+    final denied = await s.callTool('cancel_my_reservations', {'id': other, 'phone': '+447700900124', 'name': 'Alex'});
     expect(denied.isError, isTrue);
     expect(denied.text, contains('not under this phone number'));
-    final ok = await s.callTool('cancel_my_reservations', {'id': mine, 'phone': '+447700900124', 'name': 'Keyhan'});
+    final ok = await s.callTool('cancel_my_reservations', {'id': mine, 'phone': '+447700900124', 'name': 'Alex'});
     expect(ok.isError, isFalse, reason: ok.text);
     expect((await data.get('reservations', mine, manager: true))!['status'], 'Cancelled');
-    expect((await s.callTool('find_my_reservations', {'phone': '+447700900124', 'name': 'Keyhan'})).text, contains('No reservations found'));
+    expect((await s.callTool('find_my_reservations', {'phone': '+447700900124', 'name': 'Alex'})).text, contains('No reservations found'));
     await srv.stop();
   });
 }

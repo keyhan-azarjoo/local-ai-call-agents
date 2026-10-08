@@ -3,13 +3,13 @@
 ## What you need
 
 - A Mac. Apple silicon is recommended, with 16 GB of memory or more. More memory means bigger models and more calls at once.
-- [Flutter](https://docs.flutter.dev/get-started/install) 3.38 or newer, to build the app.
+- [Flutter](https://docs.flutter.dev/get-started/install) 3.44 or newer, to build the app.
 - [Homebrew](https://brew.sh), for the voice and AI engines:
 
 ```bash
 brew install livekit whisper-cpp llama.cpp uv
 # for real phone calls (the app builds LiveKit's SIP service once):
-brew install go redis
+brew install go redis opus libsoxr pkg-config
 ```
 
 Ollama is optional: the app can run the AI model itself.

@@ -52,8 +52,8 @@ void main() {
     await waitFor(t, find.text('Set up this computer'));
     await tapText(t, 'Set up this computer');
     final fields = find.byType(TextField);
-    await t.enterText(fields.at(0), 'Keyhan Azarjoo');
-    await t.enterText(fields.at(1), 'keyhan');
+    await t.enterText(fields.at(0), 'Alex Morgan');
+    await t.enterText(fields.at(1), 'alex');
     await t.enterText(fields.at(2), 'test-password-123');
     await tapText(t, 'Create account');
     await waitFor(t, find.text('Set up the AI'), seconds: 20);
@@ -65,7 +65,7 @@ void main() {
     await tapText(t, 'Skip for now');
     await tapText(t, 'Go to Home');
     await waitFor(t, find.text('Latest calls'));
-    expect(state.user?.username, 'keyhan');
+    expect(state.user?.username, 'alex');
 
     // ---- Model picker: shows downloaded models and picks the best one ----
     await state.refreshEngine();
@@ -93,7 +93,7 @@ void main() {
     await tapText(t, 'Talk to Ava');
     await waitFor(t, find.textContaining('How can I help'));
     if (state.llmReady) {
-      await t.enterText(find.byType(TextField).last, 'Hi, can I leave a message for Keyhan?');
+      await t.enterText(find.byType(TextField).last, 'Hi, can I leave a message for Alex?');
       await tapText(t, 'Send');
       await waitFor(t, find.textContaining('s to first word'), seconds: 90);
       debugPrint('Caller reply OK with ${state.llmModel}');
@@ -152,10 +152,10 @@ void main() {
     // ---- My assistant: edit greeting ----
     await tapText(t, 'My assistant');
     await waitFor(t, find.text('First thing callers hear'));
-    await t.enterText(find.byType(TextField).at(1), 'Hello, Keyhan’s phone — Ava speaking.');
+    await t.enterText(find.byType(TextField).at(1), 'Hello, Alex’s phone — Ava speaking.');
     await tapText(t, 'Save changes');
     final ava = (await state.db.all('agents', orderBy: 'id')).first;
-    expect(ava['greeting'], 'Hello, Keyhan’s phone — Ava speaking.');
+    expect(ava['greeting'], 'Hello, Alex’s phone — Ava speaking.');
 
     // ---- All features ----
     await state.setAdvanced(true);

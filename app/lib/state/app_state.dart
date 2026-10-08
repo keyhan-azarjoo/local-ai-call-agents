@@ -2769,7 +2769,7 @@ class AppState extends ChangeNotifier {
     return '$system$hangup This is a live voice conversation: answer in one to three short spoken sentences, no lists, no markdown, no emojis. '
         'If there are many items, say the three or four most useful ones and ask if they want to hear more. '
         'The person’s words come from speech recognition and may contain mis-heard words: work out what they most likely meant and answer that; never repeat their words back. '
-        'Names are often mis-heard (“K-Han” or “Kay hun” for “Keyhan”): if a name sounds like one you know, use that person — don’t say they don’t exist. '
+        'Names are often mis-heard (“Shivorn” or “Sha von” for “Siobhan”): if a name sounds like one you know, use that person — don’t say they don’t exist. '
         'Only state facts you were given; if you don’t know, say you will check and take a message. '
         'You have already said a short “let me check” when needed: go straight to the answer, don’t start with fillers.'
         '${mode == 'owner' ? await _capabilities(_voiceScopes(mode)) : ''}'
@@ -2798,7 +2798,7 @@ class AppState extends ChangeNotifier {
   }
 
   /// Names the hearing should expect (people, the assistant, users in connected systems),
-  /// so "Keyhan" isn't heard as "K-Han".
+  /// so "Siobhan" isn't heard as "Shivorn".
   Future<String> _vocabulary() async {
     final names = <String>{};
     void add(Object? v) {

@@ -48,14 +48,14 @@ flowchart LR
 4. Bookings, orders and look-ups go through the business app's MCP tools, where the rules live: no double-booking, closed days, stock, capacity, and whose booking is whose.
 5. When the caller is done ("No, that's all, thanks"), the assistant says goodbye and hangs up.
 
-More in the [architecture notes](docs/PLAN.md).
+More in [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Getting started
 
-Requirements: a Mac (Apple silicon recommended, 16 GB+ memory), [Flutter](https://docs.flutter.dev/get-started/install) 3.38+, [Homebrew](https://brew.sh). Windows and Linux hosts are planned.
+Requirements: a Mac (Apple silicon recommended, 16 GB+ memory), [Flutter](https://docs.flutter.dev/get-started/install) 3.44+, [Homebrew](https://brew.sh). Windows and Linux hosts are planned.
 
 ```bash
-brew install livekit whisper-cpp llama.cpp uv
+brew install livekit whisper-cpp llama.cpp uv go redis opus libsoxr pkg-config
 git clone https://github.com/keyhan-azarjoo/local-ai-call-agents.git
 cd local-ai-call-agents/app
 flutter run -d macos
@@ -75,20 +75,29 @@ On first launch, create the owner account. The app then walks you through the re
 | [Security and privacy](docs/SECURITY.md) | What callers, website visitors and the network can and can't reach |
 | [Testing and evaluation](docs/TESTING.md) | The 2,143 spoken test calls, how to run them, and the results |
 
-## Tested with over two thousand phone calls
+## Tested with spoken phone calls
 
 The app is tested with **spoken** calls. Simulated callers (personas, accents, other languages, nosy or hostile callers) talk through text-to-speech, are heard through the app's own speech recognition, and are answered by the AI. Every call is then checked against the business app's data: was the table booked, at the right time, under the right name? Was nothing said about anyone else?
 
-| Test set | Calls | What it covers |
+| Test set | Scenarios | What it covers |
 |---|---:|---|
 | Single calls | 1,150 | At least 100 per business: bookings, orders (collection, delivery with address, dine-in), questions, changes, cancellations, full days, closed days, out of stock |
 | Journeys | 338 | Book → call back to change → someone else tries to cancel → cancel; teams and hand-overs; switching business; skills; website + phone together |
 | Hard calls | 479 | Five-minute calls with detours and small talk, changing their mind, rude callers, spelling names, prompt-injection attempts, eight other languages |
 | Security | 176 | Callers trying to get other people's details, cancel their bookings, pose as the manager, or break the AI's rules, across all 11 businesses |
 
-Plus 230+ automated unit and widget tests: website and MCP rules for every template, attacks on the business apps' servers, call-ending logic, live-view rendering, and the model engines.
+Plus about 190 automated unit and widget tests (more as the template loops expand): website and MCP rules for every template, attacks on the business apps' servers, call-ending logic, live-view rendering, and the model engines.
 
-**Results:** 175 of the 176 security calls passed with **no data leaked**, and the remaining one is fixed. Every run's full conversations, tool calls, timings and failures are published in [docs/evaluations](docs/evaluations/), along with the [model comparison](docs/evaluations/MODELS.md). See [Testing and evaluation](docs/TESTING.md).
+**Results so far** (1,800+ spoken calls run while developing):
+
+| Set | Run | Passed at least once | Best full round |
+|---|---:|---:|---:|
+| Single calls | 537 | 499 | 87% (214 of 246) |
+| Security | 176 | 175: no data leaked in any run | 88% (44 of 50) |
+| Journeys | 338 | 99 | 46% (22 of 48) |
+| Hard calls | 10 | 0 | not yet run in full |
+
+Journeys (multi-call, multi-agent) are the open problem, and the failures are published: mostly the small local model not using a tool when it said it would. Every run's full conversations, tool calls, timings and failures are in [docs/evaluations](docs/evaluations/), with the [model comparison](docs/evaluations/MODELS.md). See [Testing and evaluation](docs/TESTING.md).
 
 ## Tech stack
 
@@ -111,10 +120,9 @@ app/                 the Flutter app (desktop + phone companion)
   assets/engine/     the Python voice engine, speech lab, call bridge source
   assets/scenarios/  the 2,143 test calls
   test/              unit, widget, security and live tests; scenario tools
+  tools/             latency probe for the voice agent
 docs/                guides, security, testing, evaluations, screenshots
-engine/              voice engine (development copy)
 skills/              an example business skill (restaurant)
-demo/                a static UI demo
 ```
 
 ## Status and roadmap

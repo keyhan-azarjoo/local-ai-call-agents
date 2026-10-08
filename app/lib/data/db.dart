@@ -256,6 +256,8 @@ class Db {
     ''',
     // Calls can be recorded (both sides, a WAV on this computer).
     'ALTER TABLE calls ADD COLUMN recording TEXT',
+    // Finished calls were saved as "inbound"/"outbound" but listed as "incoming"/"outgoing".
+    "UPDATE calls SET direction = CASE direction WHEN 'inbound' THEN 'incoming' WHEN 'outbound' THEN 'outgoing' ELSE direction END",
   ];
 
   // ---------- settings ----------

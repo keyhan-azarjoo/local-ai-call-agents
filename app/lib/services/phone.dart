@@ -179,9 +179,24 @@ class Phone {
   }
 
   Future<String> _outboundTrunk(Map<String, dynamic> cfg) async {
-    final key = '${cfg['sipDomain']}|${cfg['number']}';
+    final landline = cfg['provider'] == 'fxo';
+    final key = landline ? 'fxo|${cfg['host']}|${cfg['number']}' : '${cfg['sipDomain']}|${cfg['number']}';
     final known = _trunks[key];
     if (known != null) return known;
+    if (landline) {
+      // A landline: calls go out through the gateway on this network (it dials on the phone line).
+      final j = await _livekit('CreateSIPOutboundTrunk', {
+        'trunk': {
+          'name': 'Landline ${cfg['number']}',
+          'address': '${cfg['host']}${'${cfg['host']}'.contains(':') ? '' : ':5060'}',
+          'numbers': [cfg['number']],
+          if ('${cfg['gatewayUser'] ?? ''}'.isNotEmpty) 'auth_username': cfg['gatewayUser'],
+          if ('${cfg['gatewayPass'] ?? ''}'.isNotEmpty) 'auth_password': cfg['gatewayPass'],
+          'transport': 'SIP_TRANSPORT_UDP',
+        },
+      });
+      return _trunks[key] = (j['sip_trunk_id'] ?? j['sipTrunkId']) as String;
+    }
     final j = await _livekit('CreateSIPOutboundTrunk', {
       'trunk': {
         'name': 'Twilio ${cfg['number']}',
@@ -237,6 +252,43 @@ class Phone {
     });
     _inbound.add(number);
   }
+
+  /// A landline through a gateway box on this network (an "FXO" port, e.g. a Grandstream HT813):
+  /// the landline plugs into the box, the box sends each call to this computer over the local
+  /// network. Only that box may ring in (its address), and only with this line's login.
+  Future<void> ensureLandline(Map<String, dynamic> cfg, {required int lineId}) async {
+    final key = 'fxo:$lineId';
+    if (_inbound.contains(key)) return;
+    final host = '${cfg['host']}'.split(':').first.trim();
+    if (InternetAddress.tryParse(host) == null) throw PhoneError('The gateway address should be its IP address on your network, e.g. 192.168.1.40.');
+    final t = await _livekit('CreateSIPInboundTrunk', {
+      'trunk': {
+        'name': 'Landline ${cfg['number']}',
+        'numbers': const <String>[], // whatever number the box sends: it's the landline
+        'allowed_addresses': ['$host/32'],
+        'auth_username': cfg['sipUser'],
+        'auth_password': cfg['sipPass'],
+      },
+    });
+    await _livekit('CreateSIPDispatchRule', {
+      'rule': {
+        'dispatch_rule_individual': {'room_prefix': 'pstn-in-$lineId-'},
+      },
+      'trunk_ids': [t['sip_trunk_id'] ?? t['sipTrunkId']],
+      'name': 'Answer landline ${cfg['number']}',
+    });
+    _inbound.add(key);
+  }
+
+  /// What to set on the gateway box so calls come here.
+  static List<(String, String)> gatewaySettings(Map<String, dynamic> cfg, String? lanIp) => [
+        ('SIP server (primary)', '${lanIp ?? 'this computer’s IP address'}:$sipPort'),
+        ('Transport', 'UDP'),
+        ('SIP user ID and Authenticate ID', '${cfg['sipUser']}'),
+        ('Authenticate password', '${cfg['sipPass']}'),
+        ('Incoming calls from the phone line (PSTN → VoIP)', 'Forward every call to the SIP server, answering after one ring (often "Unconditional call forward to VoIP" or "Stage method: 1")'),
+        ('Caller ID', 'Turn on caller ID detection, so the assistant knows who is calling'),
+      ];
 
   /// Whether someone is in a call's room yet.
   Future<bool> inRoom(String room, String identity) async {

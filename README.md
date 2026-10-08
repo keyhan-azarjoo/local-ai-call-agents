@@ -19,7 +19,8 @@
 
 ## What it does
 
-- **Answers real phone calls.** Connect a Twilio number in a few clicks; LocalAILine sets up the SIP trunk, registers this computer and answers. Keep your landline by forwarding it to that number.
+- **Answers real phone calls.** Connect a Twilio number in a few clicks; LocalAILine sets up the SIP trunk, registers this computer and answers.
+- **Answers your landline too.** Plug your landline into a small gateway box (an FXO adapter such as a Grandstream HT813) on your network. LocalAILine answers the calls and can call out on the line. The box gets its own login and only it can ring in.
 - **Works as a team.** A receptionist answers and passes calls to specialists (bookings, sales, customer service) or rings a real person. The hold music plays, then the next agent speaks in their own voice, with a short brief so the caller never repeats themselves.
 - **Builds your business from a description.** Tell it what your business is, in your own words ("a dog-grooming salon with three groomers; customers book a wash or a full groom, and we sell shampoo"), and the local AI model designs and builds it: the tables for your bookings, orders and customers, a public website, a management website, and the MCP tools your call agents use to check, book, order, change and cancel by phone. You keep changing it in plain words ("add gift vouchers", "make the menu darker").
 - **Or start from a template.** Restaurant, barber, salon, dental clinic, hotel, garage, gym, shop, tutoring, events or estate agent: each comes with a public website (booking, ordering with delivery, room finder, timetable…) and a manager page (dashboard, sortable tables, order board, calendars, customers). The AI uses the same app through MCP tools, so a phone booking and a website booking land in one place.
@@ -55,7 +56,8 @@ All of it runs on your computer, with your local model. Nothing about your busin
 ```mermaid
 flowchart LR
   caller((Caller)) -->|phone call| twilio[Twilio number]
-  landline((Landline)) -.->|call forwarding| twilio
+  landline((Landline)) --> fxo[Gateway box · FXO<br/>on your network]
+  fxo -->|SIP on the local network| sip
   twilio -->|SIP trunk| bridge[Call bridge<br/>on this computer]
   bridge --> sip[LiveKit SIP]
   sip --> lk[LiveKit server]
@@ -208,7 +210,7 @@ skills/              an example business skill (restaurant)
 
 LocalAILine runs end to end on macOS: real Twilio calls, teams, business apps, websites, parallel calls, the live view and the built-in AI engine. Next:
 
-- Telnyx, other SIP providers and FXO landline boxes connected directly (they can be saved now; Twilio works today, and a landline can be forwarded to it).
+- Telnyx and other SIP providers connected directly (they can be saved now; Twilio and landline gateways work today).
 - Windows and Linux hosts.
 - The phone companion serving an on-device model (Gemma 4 E2B/E4B) for the owner's chat and as an offline fallback.
 

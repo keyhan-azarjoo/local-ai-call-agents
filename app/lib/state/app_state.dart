@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' show Random;
 import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
@@ -1228,17 +1229,17 @@ class AppState extends ChangeNotifier {
       refresh();
     }
 
-    final lines = await db.all('lines', where: "provider = 'twilio'", orderBy: 'id');
+    final lines = await db.all('lines', where: "provider IN ('twilio', 'fxo')", orderBy: 'id');
     final line = lines.where((l) => l['id'] == task['line_id']).firstOrNull ?? lines.firstOrNull;
-    if (line == null) return fail('Add a Twilio phone line first (Phone line). Other line types can’t place calls yet.');
+    if (line == null) return fail('Add a Twilio number or a landline first (Phone line). Other line types can’t place calls yet.');
     if (voice == null || phone == null) return fail('Calls are placed from the main computer.');
     // While test calls run, nothing ever dials out: no real person is rung by mistake.
     if (scenarioRuns.isNotEmpty) return fail('Not called: test calls are running, and they never place real calls.');
     try {
       await db.update('call_tasks', taskId, {'status': 'calling', 'line_id': line['id'], 'result': null});
       refresh();
-      var cfg = (jsonDecode('${line['config']}') as Map).cast<String, dynamic>();
-      final updated = await phone!.ensureTwilioTrunk(cfg);
+      var cfg = {...(jsonDecode('${line['config']}') as Map).cast<String, dynamic>(), 'provider': line['provider']};
+      final updated = line['provider'] == 'fxo' ? null : await phone!.ensureTwilioTrunk(cfg);
       if (updated != null) {
         cfg = updated;
         await db.update('lines', line['id'] as int, {'config': jsonEncode(cfg)});
@@ -1272,6 +1273,7 @@ class AppState extends ChangeNotifier {
     final line = (await db.all('lines', where: 'id = ?', args: [lineId])).firstOrNull;
     if (line == null || phone == null || voice == null) return 'Not available here.';
     var cfg = (jsonDecode('${line['config']}') as Map).cast<String, dynamic>();
+    if (line['provider'] == 'fxo') return _setLandline(lineId, cfg, on);
     try {
       if (on) {
         cfg = await phone!.ensureTwilioTrunk(cfg) ?? cfg;
@@ -1297,6 +1299,44 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// A landline through a gateway box on this network: its own login, then the phone service takes
+  /// its calls. The box is set up once with the details shown on the Phone line page.
+  Future<String> _setLandline(int lineId, Map<String, dynamic> cfg, bool on) async {
+    try {
+      cfg = {...cfg, 'provider': 'fxo'};
+      if (on) {
+        // The phone service needs this version's patch (local audio for calls from the gateway).
+        final patch = await rootBundle.loadString('assets/engine/livekit-sip-stun.patch');
+        if (voice!.phoneOutdated(patch) && await VoiceEngine.which('go') != null) {
+          await log('Updating the phone service for landlines (a minute or two)…');
+          await voice!.stop();
+          await voice!.installPhone(patch: patch);
+        }
+        cfg['sipUser'] ??= 'landline$lineId';
+        cfg['sipPass'] ??= base64Url.encode(List<int>.generate(18, (_) => Random.secure().nextInt(256))).replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+        cfg['inbound'] = true;
+        await db.update('lines', lineId, {'config': jsonEncode(cfg), 'status': 'verified'});
+        if (!voice!.phoneReady) await startVoice();
+        if (!voice!.phoneReady) {
+          return await voice!.sipBinary() == null
+              ? 'Phone calling isn’t installed yet: Settings → Voice & hearing → “Install phone calling”, then turn this on again.'
+              : 'The phone service didn’t start. See Settings → Voice & hearing.';
+        }
+        await phone!.ensureLandline(cfg, lineId: lineId);
+        await log('Landline ${cfg['number']} now answered on this computer (gateway ${cfg['host']})');
+        refresh();
+        return 'Ready. Now set up the gateway box with the details below; calls on your landline will come to your assistant.';
+      }
+      cfg['inbound'] = false;
+      await db.update('lines', lineId, {'config': jsonEncode(cfg)});
+      await log('Landline ${cfg['number']} no longer answered here');
+      refresh();
+      return 'Calls on the landline are no longer answered here (until the engine restarts, set the gateway back too).';
+    } catch (e) {
+      return '$e';
+    }
+  }
+
   Future<void> _installBridge() async {
     final files = <String, String>{};
     for (final f in ['main.go', 'go.mod', 'go.sum']) {
@@ -1308,8 +1348,16 @@ class AppState extends ChangeNotifier {
   /// After the engine starts: lines that answer here get their LiveKit side again.
   Future<void> _restoreInbound() async {
     if (phone == null || voice?.phoneReady != true) return;
-    for (final l in await db.all('lines', where: "provider = 'twilio'", orderBy: 'id')) {
+    for (final l in await db.all('lines', where: "provider IN ('twilio', 'fxo')", orderBy: 'id')) {
       final cfg = (jsonDecode('${l['config']}') as Map).cast<String, dynamic>();
+      if (cfg['inbound'] == true && l['provider'] == 'fxo') {
+        try {
+          await phone!.ensureLandline({...cfg, 'provider': 'fxo'}, lineId: l['id'] as int);
+        } catch (e) {
+          await log('Couldn’t set up the landline ${cfg['number']}: $e');
+        }
+        continue;
+      }
       if (cfg['inbound'] == true) {
         try {
           await phone!.ensureInbound(cfg, lineId: l['id'] as int);
@@ -1372,7 +1420,7 @@ class AppState extends ChangeNotifier {
     }
     final line = task?['line_id'] == null ? null : (await db.all('lines', where: 'id = ?', args: [task!['line_id']])).firstOrNull;
     await db.insert('calls', {
-      'direction': task != null ? 'outbound' : 'inbound',
+      'direction': task != null ? 'outgoing' : 'incoming',
       'name': task?['to_name'] ?? await _contactName('${b['number'] ?? ''}') ?? 'Caller',
       'number': task?['number'] ?? b['number'] ?? '',
       'line': line?['number'] ?? '',
@@ -2680,9 +2728,9 @@ class AppState extends ChangeNotifier {
       }
       if (number.isEmpty) return {'ok': false, 'name': person['name']};
     }
-    final lines = await db.all('lines', where: "provider = 'twilio'", orderBy: 'id');
+    final lines = await db.all('lines', where: "provider IN ('twilio', 'fxo')", orderBy: 'id');
     if (person == null || number.isEmpty || lines.isEmpty) return {'ok': false, 'why': 'no number', 'name': person?['name']};
-    final cfg = (jsonDecode('${lines.first['config']}') as Map).cast<String, dynamic>();
+    final cfg = {...(jsonDecode('${lines.first['config']}') as Map).cast<String, dynamic>(), 'provider': lines.first['provider']};
     try {
       await phone!.call(line: cfg, number: Phone.e164(number, lineNumber: '${cfg['number']}'), room: room, name: '${person['name']}');
       await log('Connected a caller to ${person['name']}');

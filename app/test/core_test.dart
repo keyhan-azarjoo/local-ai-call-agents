@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -139,7 +140,15 @@ void main() {
       markTestSkipped('No models installed');
       return;
     }
-    final out = await o.chat(models.first.name, [ChatMessage('user', 'Reply with the single word: ready')]).join();
+    // The small default model if it's there (a big one may take minutes just to load).
+    final model = models.where((m) => m.name == 'qwen3:4b-instruct').firstOrNull ?? models.reduce((a, b) => a.sizeBytes < b.sizeBytes ? a : b);
+    final String out;
+    try {
+      out = await o.chat(model.name, [ChatMessage('user', 'Reply with the single word: ready')]).join().timeout(const Duration(seconds: 90));
+    } on TimeoutException {
+      markTestSkipped('Ollama is too busy to answer right now');
+      return;
+    }
     expect(out.trim(), isNotEmpty);
-  }, timeout: const Timeout(Duration(minutes: 2)));
+  }, timeout: const Timeout(Duration(minutes: 3)));
 }

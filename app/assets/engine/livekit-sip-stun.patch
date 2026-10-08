@@ -1,5 +1,26 @@
---- a/pkg/sip/media_port.go	2026-10-06 12:33:53
-+++ b/pkg/sip/media_port.go	2026-10-06 12:31:08
+diff -ruN a/pkg/sip/inbound.go b/pkg/sip/inbound.go
+--- a/pkg/sip/inbound.go	2026-10-08 14:54:52
++++ b/pkg/sip/inbound.go	2026-10-08 14:54:59
+@@ -1299,8 +1299,15 @@
+ 	}
+ 
+ 	logSignalChanges, _ := strconv.ParseBool(featureFlags[signalLoggingFeatureFlag])
++	// LocalAILine: a call from this network (a landline gateway) gets our local address for its
++	// audio; the public one would send it out to the router and back, which many routers refuse.
++	mediaIP, local := c.s.sconf.MediaIP, false
++	if src, err := netip.ParseAddrPort(c.cc.invite.Source()); err == nil && src.Addr().IsPrivate() && c.s.sconf.SignalingIPLocal.IsValid() {
++		mediaIP, local = c.s.sconf.SignalingIPLocal, true
++	}
+ 	mp, err := NewMediaPort(c.log(), c.mon, &MediaOptions{
+-		IP:                   c.s.sconf.MediaIP,
++		IP:                   mediaIP,
++		Local:                local,
+ 		Ports:                conf.RTPPort,
+ 		MediaTimeoutInitial:  c.s.conf.MediaTimeoutInitial,
+ 		MediaTimeout:         mconf.MediaTimeout,
+diff -ruN a/pkg/sip/media_port.go b/pkg/sip/media_port.go
+--- a/pkg/sip/media_port.go	2026-10-08 14:54:52
++++ b/pkg/sip/media_port.go	2026-10-08 14:54:59
 @@ -16,6 +16,8 @@
  
  import (
@@ -9,21 +30,31 @@
  	"errors"
  	"fmt"
  	"io"
-@@ -477,6 +479,13 @@
- 			return nil, err
+@@ -372,6 +374,9 @@
+ 	MediaTimeout         time.Duration
+ 	SymmetricRTP         bool
+ 	IgnoreLocalAddrInSDP bool // enable symmetric RTP if local IP is specified in SDP
++	// LocalAILine: the other side is on this network (a landline gateway): offer our local
++	// address and port as they are, with no STUN lookup.
++	Local bool
+ 	Stats                *PortStats
+ 	EnableJitterBuffer   bool
+ 	LogSignalChanges     bool
+@@ -478,6 +483,13 @@
  		}
  		conn = c
-+	}
+ 	}
 +	// LocalAILine: behind a home router the outside port differs from ours; ask STUN from this
 +	// very socket and offer that port, so the other side's audio finds its way back.
 +	externalPort := 0
-+	if srv := os.Getenv("LIVEKIT_SIP_MEDIA_STUN"); srv != "" {
++	if srv := os.Getenv("LIVEKIT_SIP_MEDIA_STUN"); srv != "" && !opts.Local {
 +		externalPort = stunMappedPort(conn, srv)
 +		log.Infow("media port mapped by STUN", "local", conn.LocalAddr().String(), "external", externalPort)
- 	}
++	}
  	var localCrypto []srtp.Profile
  	if opts.Encryption != sdp.EncryptionNone {
-@@ -487,16 +496,17 @@
+ 		var err error
+@@ -487,16 +499,17 @@
  		}
  	}
  	p := &mediaPort{
@@ -51,7 +82,7 @@
  	}
  	// Explicitly set sample rate. We manually create resamplers to include in latency
  	p.audioOut = msdk.NewWriteCloserSwitch[msdk.PCM16Sample](targetSampleRate)
-@@ -519,6 +529,7 @@
+@@ -519,6 +532,7 @@
  	opts           *MediaOptions
  	mon            *stats.CallMonitor
  	externalIP     netip.Addr
@@ -59,7 +90,7 @@
  	port           *udpConn
  	mediaReceived  core.Fuse
  	packetCount    atomic.Uint64
-@@ -729,6 +740,54 @@
+@@ -729,6 +743,54 @@
  	return p.port.LocalAddr().(*net.UDPAddr).Port
  }
  
@@ -114,7 +145,7 @@
  func (p *mediaPort) RemoteAddr() netip.AddrPort {
  	dst := p.port.dst.Load()
  	if dst == nil {
-@@ -781,7 +840,7 @@
+@@ -781,7 +843,7 @@
  		return p.offer.SDP.Marshal()
  	}
  
@@ -123,7 +154,7 @@
  	if err != nil {
  		return nil, err
  	}
-@@ -802,7 +861,7 @@
+@@ -802,7 +864,7 @@
  	isReinvite := p.negotiated != nil
  	p.mu.RUnlock()
  	p.reportPeerCodecs(offer.MediaDesc, isReinvite)
@@ -132,3 +163,32 @@
  	if err != nil {
  		return nil, SDPError{Err: err}
  	}
+diff -ruN a/pkg/sip/outbound.go b/pkg/sip/outbound.go
+--- a/pkg/sip/outbound.go	2026-10-08 14:54:52
++++ b/pkg/sip/outbound.go	2026-10-08 14:55:09
+@@ -15,6 +15,7 @@
+ package sip
+ 
+ import (
++	"net/netip"
+ 	"context"
+ 	"errors"
+ 	"fmt"
+@@ -124,8 +125,16 @@
+ 	call.mon = c.mon.NewCall(stats.Outbound, sipConf.from.Address.Host, sipConf.to.Address.Host)
+ 	var err error
+ 
++	// LocalAILine: calling out through a gateway on this network (a landline): our local address.
++	mediaIP, local := c.sconf.MediaIP, false
++	if sipConf.uri != nil {
++		if ip, err := netip.ParseAddr(sipConf.uri.Host); err == nil && ip.IsPrivate() && c.sconf.SignalingIPLocal.IsValid() {
++			mediaIP, local = c.sconf.SignalingIPLocal, true
++		}
++	}
+ 	call.media, err = NewMediaPort(call.log, call.mon, &MediaOptions{
+-		IP:                   c.sconf.MediaIP,
++		IP:                   mediaIP,
++		Local:                local,
+ 		Ports:                conf.RTPPort,
+ 		MediaTimeoutInitial:  c.conf.MediaTimeoutInitial,
+ 		MediaTimeout:         sipConf.mediaConfig.MediaTimeout,

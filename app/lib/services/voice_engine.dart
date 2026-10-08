@@ -114,6 +114,14 @@ class VoiceEngine extends ChangeNotifier {
     _log('Call bridge installed.');
   }
 
+  /// The phone service was built (here) with an older patch: it should be built again.
+  bool phoneOutdated(String patch) {
+    final bin = File(p.join(dataDir, 'bin', 'livekit-sip'));
+    if (!bin.existsSync()) return false;
+    final used = File(p.join(dataDir, 'bin', 'livekit-sip.patch'));
+    return !used.existsSync() || used.readAsStringSync() != patch;
+  }
+
   /// Builds the phone service from LiveKit SIP's source, with our patch (each call's audio
   /// port learns its outside port by STUN, so calls work behind home routers).
   static const sipVersion = 'v1.17.0';
@@ -148,6 +156,7 @@ class VoiceEngine extends ChangeNotifier {
     await run('/usr/bin/patch', ['-p1', '-i', patchFile.path], dir: src.path);
     final bin = Directory(p.join(dataDir, 'bin'))..createSync(recursive: true);
     await run(go, ['build', '-o', p.join(bin.path, 'livekit-sip'), './cmd/livekit-sip'], dir: src.path);
+    File(p.join(bin.path, 'livekit-sip.patch')).writeAsStringSync(patch); // which patch it was built with
     await src.delete(recursive: true);
     _log('Phone calling installed.');
   }

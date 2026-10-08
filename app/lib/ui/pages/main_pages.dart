@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../data/db.dart';
 import '../../services/ollama.dart';
+import '../../services/phone.dart' show Phone;
 import '../../services/system.dart';
 import '../../state/app_state.dart';
 import '../../theme/tokens.dart';
@@ -646,7 +647,7 @@ const providers = <String, (String, List<(String, String, bool)>)>{
   'twilio': ('Twilio', [('sid', 'Account SID (starts with AC)', false), ('token', 'Auth token (or API key secret)', true), ('keySid', 'API key SID (optional, starts with SK)', false), ('number', 'Phone number (e.g. +441234567890)', false)]),
   'telnyx': ('Telnyx', [('apiKey', 'API key', true), ('sipUser', 'SIP username', false), ('sipPass', 'SIP password', true), ('number', 'Phone number', false)]),
   'sip': ('Other SIP provider', [('server', 'SIP server', false), ('sipUser', 'Username', false), ('sipPass', 'Password', true), ('number', 'Phone number', false)]),
-  'fxo': ('Landline (FXO box)', [('host', 'Gateway address (e.g. 192.168.1.40)', false), ('number', 'Landline number', false)]),
+  'fxo': ('Landline (gateway box)', [('host', 'Gateway address (e.g. 192.168.1.40)', false), ('number', 'Landline number', false)]),
 };
 
 class LinesPage extends StatelessWidget {
@@ -673,13 +674,16 @@ class LinesPage extends StatelessWidget {
                 title: Text(l['label'] as String),
                 subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Muted('${l['number'] ?? ''} · ${providers[l['provider']]?.$1 ?? ''}', mono: true),
-                  if (l['provider'] == 'twilio') _InboundSwitch(line: l),
+                  if (l['provider'] == 'twilio' || l['provider'] == 'fxo') _InboundSwitch(line: l),
+                  if (l['provider'] == 'fxo' && RegExp(r'"inbound":\s*true').hasMatch('${l['config']}')) _GatewaySettings(line: l),
                 ]),
                 trailing: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
                   Pill(
                       l['provider'] == 'twilio'
                           ? (l['status'] == 'verified' ? 'Account verified' : 'Saved')
-                          : 'Saved · connecting it comes next',
+                          : l['provider'] == 'fxo'
+                              ? (RegExp(r'"inbound":\s*true').hasMatch('${l['config']}') ? 'Landline · answered here' : 'Landline')
+                              : 'Saved · connecting it comes next',
                       tone: l['status'] == 'verified' ? Tone.blue : Tone.neutral),
                   Btn('', icon: Icons.delete_outline, small: true, kind: BtnKind.ghost, onPressed: () async {
                     await s.db.delete('lines', l['id'] as int);
@@ -746,7 +750,37 @@ class _InboundSwitchState extends State<_InboundSwitch> {
           Text(busy ? 'Setting up…' : 'Answer calls here', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
         ]),
         if (note != null) Muted(note!, size: 12),
-        if (on) const Muted('Ava answers calls to this number while LocalAILine is open. Turn off to give the number back to its previous setup.', size: 12),
+        if (on && widget.line['provider'] != 'fxo') const Muted('Ava answers calls to this number while LocalAILine is open. Turn off to give the number back to its previous setup.', size: 12),
+      ]),
+    );
+  }
+}
+
+/// What to type into the landline gateway box, so its calls come to this computer.
+class _GatewaySettings extends StatelessWidget {
+  const _GatewaySettings({required this.line});
+  final Map<String, Object?> line;
+  @override
+  Widget build(BuildContext context) {
+    final s = context.read<AppState>();
+    final cfg = (jsonDecode('${line['config']}') as Map).cast<String, dynamic>();
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: context.c.canvas, borderRadius: BorderRadius.circular(LL.rSm), border: Border.all(color: context.c.line)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('Set up the gateway box (in its web page, under its FXO port)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 6),
+        for (final (k, v) in Phone.gatewaySettings(cfg, s.voice?.lanIp))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(width: 230, child: Muted(k, size: 12)),
+              Expanded(child: SelectableText(v, style: const TextStyle(fontSize: 12, fontFamily: LL.mono))),
+            ]),
+          ),
+        const SizedBox(height: 4),
+        const Muted('The box\'s address must stay the same: give it a fixed IP in your router. Only that box, with this login, can ring in.', size: 11.5),
       ]),
     );
   }

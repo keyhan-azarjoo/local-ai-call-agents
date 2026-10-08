@@ -16,11 +16,34 @@ LocalAILine answers real phone calls through a Twilio number. You need no server
 
 The assistant can also **make** calls from the same number (**Make a call**). It says who it is calling for, works toward the goal you gave it, and writes up what happened.
 
-## Keep your landline
+## Connect your landline
 
-You don't have to change numbers. Most phone companies let you **forward** your landline to another number: always, when busy, or when there's no answer. Forward it to your Twilio number and LocalAILine answers your landline calls. *When busy* or *no answer* forwarding is a gentle start: the assistant only picks up when you can't.
+Your landline can plug straight into LocalAILine through a small **gateway box with an FXO port**, such as a Grandstream HT813 (about £50). The phone line goes into the box, and the box sits on the same network as the computer. Calls on the landline then come to your assistant, and the assistant can also call out on the line.
 
-A direct connection for landlines, through an FXO gateway box on your network, and for Telnyx and other SIP providers is on the roadmap. You can save those lines now.
+1. **Plug in:** connect the landline (from the wall socket) to the box's **FXO / Line** port, and the box to your router. In your router, give the box a fixed address (e.g. 192.168.1.40).
+2. **In LocalAILine:** **Phone line → Add phone line → Landline (gateway box)**. Enter the box's address and your landline number.
+3. **Turn on "Answer calls here"** on the new line. LocalAILine updates its phone service if needed, creates a login for the box, and shows the exact settings to enter.
+4. **In the box's web page** (FXO port settings), enter what LocalAILine shows:
+   - **SIP server:** this computer's address, port 5080;
+   - **user ID and password:** the login LocalAILine generated;
+   - **incoming calls (PSTN → VoIP):** forward each call to the SIP server, answering after one ring;
+   - **caller ID detection:** turn it on, so the assistant knows who's calling.
+5. **Ring your landline.** The assistant answers.
+
+Only that box, from its address and with its login, can send calls in. A call from anywhere else on the network is refused. The call's audio stays on your local network.
+
+**Tested:** [`app/test/landline_live_test.dart`](../../app/test/landline_live_test.dart) runs a simulated gateway box (SIPp) on the network. It confirms that:
+
+- a wrong password and a different device are refused;
+- the audio uses the computer's local address;
+- the assistant answers and hears the caller (with caller ID);
+- the call is saved with its transcript.
+
+It does this without placing any real phone call.
+
+**No box?** Most phone companies let you **forward** your landline (always, when busy, or when there's no answer) to your Twilio number instead.
+
+Telnyx and other SIP providers can be saved now; connecting them directly is on the roadmap.
 
 ## Several calls at once
 

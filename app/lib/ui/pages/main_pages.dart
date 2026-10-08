@@ -700,9 +700,8 @@ class LinesPage extends StatelessWidget {
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('What works today', style: TextStyle(fontWeight: FontWeight.w600)),
           SizedBox(height: 6),
-          Muted('Twilio lines answer and make calls through this computer: turn on "Answer calls here" and calls to the number come to your assistant. '
-              'Telnyx, other SIP providers and landline boxes are saved now; connecting them comes next. '
-              'To use a landline today, forward it to your Twilio number (most phone companies offer call forwarding).'),
+          Muted('Twilio numbers and landlines (through a gateway box on your network) answer and make calls through this computer: '
+              'turn on "Answer calls here" on the line. Telnyx and other SIP providers are saved now; connecting them comes next.'),
         ]),
       ),
     ]);

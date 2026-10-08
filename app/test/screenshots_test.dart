@@ -430,7 +430,7 @@ Future<void> _seed(_DemoState s, Directory tmp) async {
     'config': jsonEncode({'sid': 'AC00000000000000000000000000000000', 'number': '+442079460123', 'inbound': true}), 'status': 'verified',
   });
   await db.insert('lines', {
-    'provider': 'fxo', 'label': 'Landline (FXO box)', 'number': '020 7946 0456',
+    'provider': 'fxo', 'label': 'Landline (gateway box)', 'number': '020 7946 0456',
     'config': jsonEncode({'host': '192.168.1.40', 'number': '020 7946 0456', 'inbound': true, 'sipUser': 'landline2', 'sipPass': 'q7Rk2mVx9TbL4wZp'}), 'status': 'verified',
   });
 

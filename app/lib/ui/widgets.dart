@@ -472,10 +472,12 @@ class CallPath extends StatelessWidget {
 
 String ago(int ms) {
   final d = DateTime.fromMillisecondsSinceEpoch(ms);
-  final diff = DateTime.now().difference(d);
+  final now = DateTime.now();
+  // By calendar day (19:16 yesterday is "Yesterday", even under 24 hours ago).
+  final days = DateTime(now.year, now.month, now.day).difference(DateTime(d.year, d.month, d.day)).inDays;
   String two(int n) => n.toString().padLeft(2, '0');
-  if (diff.inDays == 0) return 'Today ${two(d.hour)}:${two(d.minute)}';
-  if (diff.inDays == 1) return 'Yesterday ${two(d.hour)}:${two(d.minute)}';
+  if (days == 0) return 'Today ${two(d.hour)}:${two(d.minute)}';
+  if (days == 1) return 'Yesterday ${two(d.hour)}:${two(d.minute)}';
   return '${d.day}/${d.month} ${two(d.hour)}:${two(d.minute)}';
 }
 

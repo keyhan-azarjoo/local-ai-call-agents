@@ -153,13 +153,20 @@ def saved_problems(number: str, business: str, since: float) -> list[str]:
         rows = c.execute("SELECT r.app_id, a.name, r.tbl, r.data FROM app_rows r JOIN apps a ON a.id = r.app_id WHERE r.created_at >= ?",
                          (int(since * 1000),)).fetchall()
     mine = []
+    out_bad: list[str] = []
     for app_id, name, tbl, data in rows:
         try:
             d = json.loads(data)
         except ValueError:
             continue
-        if digits in "".join(ch for ch in str(d.get("phone", "")) if ch.isdigit()):
+        ph = "".join(ch for ch in str(d.get("phone", "")) if ch.isdigit() or ch == "+")
+        same_caller = digits in ph or (d.get("name") and since and str(d.get("_via")) == "phone")
+        if digits in ph:
             mine.append((name, tbl, str(d.get("date") or d.get("check_in") or ""), str(d.get("time") or "")))
+        elif same_caller and len(rows) <= 6:
+            mine.append((name, tbl, str(d.get("date") or d.get("check_in") or ""), str(d.get("time") or "")))
+            if not __import__("re").fullmatch(r"0\d{10}|\+44\d{10}|\+(?!44)\d{8,14}", ph):
+                out_bad.append(f"saved an invalid phone number: {d.get('phone')}")
     out = []
     want = BUSINESSES.get(business)
     for name, tbl, *_ in mine:
@@ -168,8 +175,12 @@ def saved_problems(number: str, business: str, since: float) -> list[str]:
     seen = {}
     for m in mine:
         seen[m] = seen.get(m, 0) + 1
-    out += [f"saved twice: {tbl} {day} {at} in {name}" for (name, tbl, day, at), n in seen.items() if n > 1 and tbl != "orders"]
-    return out
+    out += [f"saved twice: {tbl} {day} {at} in {name}" for (name, tbl, day, at), n in seen.items() if n > 1]
+    per_table = {}
+    for name, tbl, *_ in mine:
+        per_table[(name, tbl)] = per_table.get((name, tbl), 0) + 1
+    out += [f"{n} {tbl} saved on one call in {name}" for (name, tbl), n in per_table.items() if n > 1 and not any(f" {tbl} " in o for o in out)]
+    return out + out_bad
 
 
 def main(argv: list[str] | None = None) -> int:

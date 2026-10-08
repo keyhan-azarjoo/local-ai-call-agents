@@ -160,4 +160,18 @@ void main() {
     expect(AppState.spokenText('Sure, "time": "19:00", "guests": 2 that works.'), 'Sure, that works.');
     expect(AppState.spokenText('Checking trattoria_bella__check_reservations({"date": "2026'), 'Checking');
   });
+
+  test('the time saved is the one just agreed', () {
+    // Heard: "Yes, I'll take 9 pm" — saved at 21:30 (7:30 from earlier, 9 from now).
+    expect(
+        AppState.agreedTime([
+          ChatMessage('user', 'A table for two at 7:30 pm please.'),
+          ChatMessage('assistant', 'Nothing at 7:30 pm. Free at 5:30 pm, 6 pm or 9 pm.'),
+          ChatMessage('user', "Yes, I'll take 9 pm for two people. Thanks."),
+        ]),
+        '21:00');
+    expect(AppState.agreedTime([ChatMessage('assistant', 'Table 5 is free at 9 pm, shall I book it?'), ChatMessage('user', 'Yes please.')]), '21:00');
+    expect(AppState.agreedTime([ChatMessage('assistant', 'Free at 6 pm or 9 pm.'), ChatMessage('user', 'Yes please.')]), isNull);
+    expect(AppState.agreedTime([ChatMessage('user', 'Is 6 pm or 6:30 pm better?')]), isNull);
+  });
 }

@@ -15,7 +15,7 @@ import '../services/auth.dart';
 import '../services/abilities.dart';
 import '../services/agent_loop.dart';
 import '../services/agent_templates.dart';
-import '../services/apps/app_data.dart' show AppData, BookingShape, parseDate, spokenDates, withDay;
+import '../services/apps/app_data.dart' show AppData, BookingShape, parseDate, parseTime, spokenDates, withDay;
 import '../services/apps/apps_manager.dart';
 import '../services/apps/app_server.dart' show sameName;
 import '../services/builtin_llm.dart';
@@ -660,7 +660,7 @@ class AppState extends ChangeNotifier {
         ? _appToolFor(tools, 'order') ?? _appToolFor(tools, 'booking')
         : _appToolFor(tools, 'booking') ?? _appToolFor(tools, 'order');
     if (tool == null) return null;
-    return commitWith(toolLoop, modelTarget, tool, [...convo, ChatMessage('assistant', reply)], _notAgentName(tool),
+    return commitWith(toolLoop, modelTarget, tool, [...convo, ChatMessage('assistant', reply)], _notAgentName(tool, number: callerNumber, convo: convo),
         callerNumber: callerNumber, checked: callerNumber == null ? null : _lastCheck[callerNumber], system: system);
   }
 
@@ -1203,24 +1203,11 @@ class AppState extends ChangeNotifier {
           final digits = (args['phone'] as String).replaceAll(RegExp(r'[^\d+]'), '');
           if (RegExp(r'^\+?\d{7,15}$').hasMatch(digits)) args = {...args, 'phone': digits};
         }
-        // The same booking or order again on this call (said back, then "yes, that's right"): it is
-        // already saved. Twice made two tables for one party.
-        final again = callerNumber == null || !b.tool.name.startsWith('add_')
-            ? null
-            : '$callerNumber|${b.tool.name}|${args['date'] ?? args['check_in'] ?? ''}|${args['time'] ?? ''}';
-        if (again != null && _addedOnCall.containsKey(again)) {
-          return Future.value((text: 'Already saved on this call: ${_addedOnCall[again]} Do not save it again; tell the caller it is booked.', isError: false));
-        }
+        if (callerNumber != null && b.tool.name.startsWith('add_')) return saveOnCall(b, args, callerNumber, messages);
         final r = mcp.callCached(b.serverId, b.tool.name, args, readOnly: b.tool.readOnly);
         if (callerNumber != null && b.tool.name.startsWith('check_')) {
           return r.then((x) {
             if (!x.isError) _checkedOnCall[callerNumber] = spokenText(x.text.length > 400 ? x.text.substring(0, 400) : x.text);
-            return x;
-          });
-        }
-        if (again != null) {
-          return r.then((x) {
-            if (!x.isError) _addedOnCall[again] = x.text.length > 300 ? x.text.substring(0, 300) : x.text;
             return x;
           });
         }
@@ -2702,6 +2689,7 @@ class AppState extends ChangeNotifier {
   /// A call from [number] is over: what it saved may be booked again on the next call.
   void forgetCallSaves(String number) {
     _addedOnCall.removeWhere((k, _) => k.startsWith('$number|'));
+    _savedWith.removeWhere((k, _) => k.startsWith('$number|'));
     _checkedOnCall.remove(number);
   }
 
@@ -2809,19 +2797,68 @@ class AppState extends ChangeNotifier {
       final r = await mcp.call(tool.serverId, tool.tool.name, {'phone': callerNumber, 'name': name});
       return (ok: !r.isError, text: r.text);
     }
-    return commitWith(toolLoop, modelTarget, tool, convo, _notAgentName(tool), callerNumber: callerNumber, checked: callerNumber == null ? null : _lastCheck[callerNumber], system: system);
+    return commitWith(toolLoop, modelTarget, tool, convo, _notAgentName(tool, number: callerNumber, convo: convo), callerNumber: callerNumber, checked: callerNumber == null ? null : _lastCheck[callerNumber], system: system);
   }
 
   /// Saves with [tool], but never under an agent's own name (small models put "Ava" in as the customer).
-  Future<({String text, bool isError})> Function(Map<String, dynamic>) _notAgentName(ToolBinding tool) => (args) async {
+  Future<({String text, bool isError})> Function(Map<String, dynamic>) _notAgentName(ToolBinding tool, {String? number, List<ChatMessage>? convo}) => (args) async {
         final agents = {for (final a in await db.all('agents')) '${a['name']}'.trim().toLowerCase()};
         for (final e in args.entries) {
           if (RegExp(r'name|student|patient').hasMatch(e.key) && agents.contains('${e.value}'.trim().toLowerCase())) {
             return (text: 'Ask the caller for their name first ("${e.value}" is the assistant\'s name), then save it.', isError: true);
           }
         }
-        return mcp.call(tool.serverId, tool.tool.name, args);
+        return saveOnCall(tool, args, number, convo ?? const []);
       };
+
+  /// What this call saved with each tool (caller|tool → the app's answer).
+  final _savedWith = <String, String>{};
+
+  /// A save on a call, however it is made (the AI's tool call, its "yes", the safety net):
+  /// - once per call: saying it again, or correcting it, updates that one (one order was saved three
+  ///   times as the caller corrected the address); a second one only when they asked for another;
+  /// - the phone they said only if it's a real number (a misheard "+44770094456" isn't): else the call's;
+  /// - the time they just agreed to ("I'll take 9 pm" was saved at 21:30).
+  Future<({String text, bool isError})> saveOnCall(ToolBinding tool, Map<String, dynamic> args, String? number, List<ChatMessage> convo) async {
+    if (number == null || !tool.tool.name.startsWith('add_')) return mcp.call(tool.serverId, tool.tool.name, args);
+    final phone = '${args['phone'] ?? ''}'.replaceAll(RegExp(r'[^\d+]'), '');
+    if (!RegExp(r'^(0\d{10}|\+44\d{10}|\+(?!44)\d{8,14})$').hasMatch(phone)) args = {...args, 'phone': number};
+    final agreed = agreedTime(convo);
+    if (agreed != null && args['time'] != null && parseTime('${args['time']}') != agreed) args = {...args, 'time': agreed};
+    final key = '$number|${tool.serverId}|${tool.tool.name}';
+    final another = convo.any((m) => m.role == 'user' && _another.hasMatch(callerWords(m.content)));
+    if (_savedWith.containsKey(key) && !another) {
+      final change = (await builtAppTools({'all'}, number: number))
+          .where((t) => t.serverId == tool.serverId && t.tool.name == 'change_my_${tool.tool.name.substring(4)}')
+          .firstOrNull;
+      if (change != null) {
+        final r = await mcp.call(change.serverId, change.tool.name, {...args, 'phone': number});
+        if (!r.isError) return (text: r.text, isError: false);
+      }
+      return (text: 'Already saved on this call: ${_savedWith[key]} Not saved again.', isError: false);
+    }
+    final r = await mcp.call(tool.serverId, tool.tool.name, args);
+    if (!r.isError) _savedWith[key] = r.text.length > 300 ? r.text.substring(0, 300) : r.text;
+    return r;
+  }
+
+  /// The time the caller has just agreed to: the one time in their last words ("Yes, I'll take 9 pm"),
+  /// else the one time in the answer they said yes to. Null if it isn't that clear.
+  static String? agreedTime(List<ChatMessage> convo) {
+    final rx = RegExp(r'\b(\d{1,2})(?:[:.](\d{2}))?\s*([ap])\.?\s?m\b|\b([01]?\d|2[0-3]):([0-5]\d)\b', caseSensitive: false);
+    Set<String> times(String t) => {
+          for (final m in rx.allMatches(t))
+            ?parseTime(m[1] != null ? '${m[1]}:${m[2] ?? '00'} ${m[3]}m' : '${m[4]}:${m[5]}'),
+        };
+    final users = convo.where((m) => m.role == 'user').toList();
+    if (users.isEmpty) return null;
+    final last = times(callerWords(users.last.content));
+    if (last.length == 1) return last.first;
+    if (last.isNotEmpty) return null;
+    final answer = convo.lastWhere((m) => m.role == 'assistant', orElse: () => ChatMessage('assistant', '')).content;
+    final offered = times(answer);
+    return offered.length == 1 ? offered.first : null;
+  }
 
   /// "Done. Added to reservations with id 9: id 9 · Name: … · Date: Saturday 2026-10-10 · Time: 19:10 · Guests: 2"
   /// → "That's all done: Saturday 10 October at 7:10 pm, guests 2."
@@ -2908,7 +2945,7 @@ class AppState extends ChangeNotifier {
         }
         final m = RegExp(r'\{[\s\S]*\}').firstMatch(out.toString());
         if (m != null) {
-          final r = await _notAgentName(appTool)((jsonDecode(m.group(0)!) as Map).cast<String, dynamic>()); // never under an agent's name
+          final r = await _notAgentName(appTool, number: number, convo: convo)((jsonDecode(m.group(0)!) as Map).cast<String, dynamic>()); // never under an agent's name
           await log('${r.isError ? 'Could not save' : 'Saved'} a $kind from a call into ${appTool.serverName}${r.isError ? ': ${r.text}' : ''}');
           if (!r.isError) return refresh();
         }

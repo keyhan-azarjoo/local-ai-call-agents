@@ -2727,6 +2727,11 @@ class AppState extends ChangeNotifier {
   /// The app's own line after a save: when the model writes it, nothing was saved.
   static final _appDone = RegExp(r"\s*That[’']s all done\b");
 
+  /// A sentence saying something is booked, ordered or saved (from its start).
+  static final _claimsDone = RegExp(
+      r"(?:^|(?<=[.!?]\s))[^.!?]*\b(?:(?:is|are|has been|have been|'s)\s+(?:now\s+|all\s+)?(?:confirmed|booked|saved|placed|reserved|sorted)|i(?:'ve| have)\s+(?:now\s+)?(?:booked|reserved|saved|placed|confirmed|put you down)|you(?:'re| are)\s+(?:all\s+)?(?:set|booked)|(?:booking|reservation|order|appointment)\s+(?:is\s+)?confirmed)\b",
+      caseSensitive: false);
+
   static final _yes = RegExp(r"^\W*(yes|yeah|yep|yup|sure|ok(ay)?|please do|please|go ahead|correct|that'?s (right|correct|fine|perfect|great|it)|book it|perfect|sounds (good|great)|absolutely|definitely|do it|confirm(ed)?|lovely|great)\b", caseSensitive: false);
   static final _yesEnd = RegExp(r"\b(all|that'?s( all)?|it'?s|everything'?s?|everything is|yes,?) (all )?(correct|right|good|fine|perfect)\W*$", caseSensitive: false);
   static final _proposal = RegExp(
@@ -3327,6 +3332,9 @@ class AppState extends ChangeNotifier {
     if (RegExp(r'^(hi|hello|hey|thanks|thank you|bye|good (morning|evening|afternoon)|who are you|what.s your name|how are you)\b').hasMatch(l) && words.length < 6) {
       return null;
     }
+    // Thanking or saying goodbye ("Great, thanks Julia, I'll be there at 7:30"): nothing to look up
+    // (it said "Right, let me do that. You're welcome.").
+    if (RegExp(r"\b(thanks|thank you|cheers|bye|goodbye|that'?s all|all set)\b").hasMatch(l)) return null;
     const stop = {'do', 'does', 'did', 'are', 'is', 'were', 'was', 'have', 'has', 'we', 'i', 'you', 'there', 'in', 'on', 'at', 'of', 'for', 'right', 'now', 'currently', 'today', 'and', 'who', 'which', 'that', 'with', 'please', 'or'};
     String topic(String rest) {
       final t = <String>[];
@@ -3739,7 +3747,7 @@ class AppState extends ChangeNotifier {
     final ackAt = ack == null ? null : DateTime.now().difference(t0).inMilliseconds;
     // Backup "one moment" for a slow answer — also once per question.
     final slow = Timer(const Duration(milliseconds: 2500), () {
-      if (!continuing && !justAcked && !nothingNew) fill();
+      if (!continuing && !justAcked && !nothingNew && !RegExp(r"\b(thanks|thank you|cheers|bye|goodbye)\b", caseSensitive: false).hasMatch(question)) fill();
     });
     try {
       // Route by meaning: when the caller clearly wants a teammate's job, pass the call at once
@@ -3821,6 +3829,7 @@ class AppState extends ChangeNotifier {
       // (Any earlier answer on this call, not just the last: it went back to one from two turns ago.)
       final saidBefore = [for (final m in convo.reversed.where((m) => m.role == 'assistant').take(5)) m.content].join(' \n ');
       var repeating = lastSaid.length > 30;
+      var withheld = ''; // a claim it had booked or saved something, not said until it really is
       // Still waiting for the detail the app needs (their name, postcode): no saving again until they give it.
       final waitingFor = RegExp(r'before I can save that, could I have (?:your|the) ([^?]+)\?\s*$').firstMatch(lastSaid)?.group(1);
       final heardNow = callerWords(question);
@@ -3878,6 +3887,15 @@ class AppState extends ChangeNotifier {
           if (!ending) t = t.replaceAll('[hangup]', '');
           t = spokenText(t);
           if (!saved) t = t.split(_appDone).first.replaceFirst(_appDoneStart, ''); // copying the app's "That's all done" without saving
+          // "Your booking is confirmed" with nothing saved (it said so twice while the table was
+          // taken): held back; the save below says it's done, or what the problem is.
+          if (!saved && mode != 'owner' && !_savedOn.contains(room)) {
+            final claim = _claimsDone.firstMatch(t);
+            if (claim != null) {
+              withheld = t.substring(claim.start);
+              t = t.substring(0, claim.start).trimRight();
+            }
+          }
           // Its last answer again, word for word: held back while it's only that.
           if (repeating) {
             if (_saidAlready(saidBefore, t.replaceAll('[hangup]', ''))) return;
@@ -4005,7 +4023,15 @@ class AppState extends ChangeNotifier {
       // app if it has one; if that fails (e.g. the table is taken), say so straight away.
       // (Not when this call already saved something: "your table is booked, see you!" again is no new booking.)
       if (!saved && !refused && !stillMissing && mode != 'owner' && passTo == null && (!_savedOn.contains(room) || fixing)) {
-        final c = gone ? null : await commitClaimed(convo, sent, scopes, callerNumber: callerNumber, system: messages.first.role == 'system' ? messages.first.content : null).catchError((_) => null);
+        final c = gone ? null : await commitClaimed(convo, withheld.isEmpty ? sent : '$sent $withheld', scopes, callerNumber: callerNumber, system: messages.first.role == 'system' ? messages.first.content : null).catchError((_) => null);
+        if (c == null && withheld.isNotEmpty && !gone) {
+          // It said it was booked but nothing could be saved from what was agreed: ask instead.
+          final line = sent.trim().endsWith('?') ? '' : ' Shall I go ahead and book that for you?';
+          if (line.isNotEmpty) {
+            chunk({'content': line});
+            sent += line;
+          }
+        }
         if (c == null) {
           // Not while asking them something (e.g. the name the app needs first): judged on what was said, not the draft.
           if (flow != null && !_waitsForCaller.hasMatch(sent.trim())) unawaited(_autoSave(abilitiesOf(flow.agent), [...convo, ChatMessage('assistant', sent)], '${flow.agent['name']}', number: callerNumber));

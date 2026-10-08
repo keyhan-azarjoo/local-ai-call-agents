@@ -16,4 +16,10 @@ void main() {
       print('$q -> ${AppState.ackFor(q, 'en')}');
     }
   });
+
+  test('no "let me check" before a thank-you or goodbye', () {
+    expect(AppState.ackFor("Great, thanks Julia. I'll be there at 7:30 pm.", 'en'), isNull);
+    expect(AppState.ackFor("I'll call 111 then. Thank you.", 'en'), isNull);
+    expect(AppState.ackFor('Can I book a table for two at 8?', 'en'), isNotNull);
+  });
 }

@@ -17,8 +17,8 @@ Ollama is optional: the app can run the AI model itself.
 ## Run it
 
 ```bash
-git clone https://github.com/keyhan-azarjoo/LocalAILine.git
-cd LocalAILine/app
+git clone https://github.com/keyhan-azarjoo/local-ai-call-agents.git
+cd local-ai-call-agents/app
 flutter run -d macos          # or: flutter build macos --release
 ```
 

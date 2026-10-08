@@ -1,4 +1,4 @@
-# LocalAILine
+# LocalAILine: local AI call agents
 
 **An AI receptionist that runs on your own computer.** LocalAILine answers your business phone with a team of AI agents, takes bookings and orders in websites it builds for you, and keeps every word of every call on your machine. There's no LocalAILine cloud, no account to sign up for, and no per-minute AI bill.
 
@@ -56,8 +56,8 @@ Requirements: a Mac (Apple silicon recommended, 16 GB+ memory), [Flutter](https:
 
 ```bash
 brew install livekit whisper-cpp llama.cpp uv
-git clone https://github.com/keyhan-azarjoo/LocalAILine.git
-cd LocalAILine/app
+git clone https://github.com/keyhan-azarjoo/local-ai-call-agents.git
+cd local-ai-call-agents/app
 flutter run -d macos
 ```
 

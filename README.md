@@ -135,6 +135,9 @@ The spoken test calls run inside the app: **Calls → Tests → Run test scenari
 |---|---|
 | ![Home](docs/screenshots/app-home.png) **Home:** lines, calls today, latest calls | ![Calls](docs/screenshots/app-calls-live.png) **Calls:** live conversations word by word |
 | ![Call flow](docs/screenshots/app-call-flow.png) **Call flow:** the team and who passes calls to whom | ![My assistant](docs/screenshots/app-assistant.png) **My assistant:** greeting, instructions, voice, skills |
+| ![Agent editor](docs/screenshots/app-agent-editor.png) **One specialist:** what it may do and use on calls | ![Skills](docs/screenshots/app-skills.png) **Skills:** switch-on behaviours, some made from documents |
+| ![Knowledge](docs/screenshots/app-knowledge.png) **Knowledge:** documents and folders indexed on this computer | ![Tools](docs/screenshots/app-tools.png) **Tools:** your apps' MCP servers and connectors |
+| ![MCP tools](docs/screenshots/app-mcp-tools.png) **MCP tools:** what callers can do in the restaurant app | |
 | ![Build an app](docs/screenshots/app-builder.png) **Build an app:** your apps and the template gallery | ![Phone line](docs/screenshots/app-phone-line.png) **Phone line:** Twilio, landline box, paired phones |
 | ![AI engines](docs/screenshots/app-ai-engines.png) **Settings:** built-in AI engine and models | ![Test runs](docs/screenshots/app-test-runs.png) **Tests:** spoken test calls and their results |
 | ![Restaurant website](docs/screenshots/site-restaurant-home.png) **Website:** a restaurant LocalAILine built | ![Menu](docs/screenshots/site-restaurant-menu.png) **Menu** with dietary labels and prices |

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:localailine/data/db.dart';
 import 'package:localailine/services/apps/app_data.dart';
 import 'package:localailine/services/apps/app_templates.dart';
@@ -48,7 +49,7 @@ void main() {
         {'name': 'site-mobile', 'url': site('restaurant'), 'width': 390, 'height': 844, 'scale': 2, 'mobile': true},
         {'name': 'manage-dashboard', 'url': manage('restaurant', 'overview')},
         {'name': 'manage-table', 'url': manage('restaurant', 't:reservations')},
-        {'name': 'manage-board', 'url': manage('restaurant', 't:orders'), 'action': 'board'},
+        {'name': 'manage-board', 'url': manage('restaurant', 't:orders'), 'action': 'board', 'width': 1940, 'height': 900},
         {'name': 'manage-calendar', 'url': manage('garage', 't:bookings'), 'action': 'calendar'},
         {'name': 'manage-customers', 'url': manage('restaurant', 'customers')},
       ];
@@ -212,6 +213,25 @@ class _Demo {
 
   Future<void> shop(BuiltApp a) async {
     final d = await data(a);
+    // Photos for the products the template has none for, so no card in the catalogue is blank.
+    const photos = {
+      'Free-range eggs (6)': '1506976785307-8732e854ad03',
+      'Extra-virgin olive oil': '1474979266404-7eaacbcd87c5',
+      'Sparkling lemonade': '1621263764928-df1444c5e859',
+      'Eco washing-up liquid': '1563453392212-326f5e854473',
+      'Wildflower honey': '1587049352851-8d4e89133924',
+      'Dark chocolate (70%)': '1511381939415-e44015466834',
+    };
+    final files = Directory('${File(db.path).parent.path}/apps/${a.id}/files')..createSync(recursive: true);
+    for (final r in await d.list('products', manager: true)) {
+      final id = photos['${r['name']}'];
+      if (id == null || '${r['photo'] ?? ''}'.isNotEmpty) continue;
+      final res = await http.get(Uri.parse('https://images.unsplash.com/photo-$id?w=900&q=78&fm=jpg&fit=crop'));
+      if (res.statusCode != 200) continue;
+      final name = '${id.replaceAll('-', '')}.jpg';
+      File('${files.path}/$name').writeAsBytesSync(res.bodyBytes);
+      await d.update('products', r['id'] as int, {'photo': '/files/$name'});
+    }
     final products = [for (final r in await d.list('products', manager: true)) '${r['name']}'];
     var p = 2;
     for (var off = -10; off <= 0; off++) {

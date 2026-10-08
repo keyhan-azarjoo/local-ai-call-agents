@@ -303,14 +303,14 @@ class AppState extends ChangeNotifier {
 
   static final _listQuestion = RegExp(r'\b(list|all|every|which|what .* (do|does) we have|how many|number of|count|show me (the )?\w+s)\b', caseSensitive: false);
 
-  Future<String?> _wholeListSnapshot(String question, Set<String> scopes) async {
+  Future<String?> _wholeListSnapshot(String question, Set<String> scopes, {String? number}) async {
     if (!_listQuestion.hasMatch(question)) return null;
     final dirRoot = Directory('${File(db.path).parent.path}/mcp');
     if (!dirRoot.existsSync()) return null;
     final allowed = {
       for (final srv in await mcp.servers())
         // (On a call: only a built app's customer lists — menus, prices — never another service's data.)
-        if (srv.enabled && scopes.contains(srv.scope) && (scopes.contains('me') || _customerApp(srv))) srv.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
+        if (srv.enabled && scopes.contains(srv.scope) && !_outOfFocus(srv, number) && (scopes.contains('me') || _customerApp(srv))) srv.name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '-'),
     };
     String stem(String w) => w.endsWith('ies') ? '${w.substring(0, w.length - 3)}y' : (w.endsWith('s') ? w.substring(0, w.length - 1) : w);
     final qWords = RegExp(r'[a-z]{3,}').allMatches(question.toLowerCase()).map((m) => stem(m.group(0)!)).toSet();
@@ -740,7 +740,8 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<ChatMessage>> prepare(List<ChatMessage> messages, {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile, String? model, AgentAccess? access, bool quote = true}) async {
+  Future<List<ChatMessage>> prepare(List<ChatMessage> messages,
+      {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile, String? model, AgentAccess? access, bool quote = true, String? number}) async {
     final extra = <String>[];
     final skills = [
       for (final k in await db.all('skills', where: "enabled = 1 AND instructions IS NOT NULL AND instructions != ''", orderBy: 'id'))
@@ -762,11 +763,12 @@ class AppState extends ChangeNotifier {
     final allowedSnapshots = access?.tools == null && !caller
         ? null
         : {
+            // (only the business this call is for: never another business's prices or classes)
             if (caller)
               for (final srv in await mcp.servers())
-                if (_customerApp(srv)) 'MCP: ${srv.name}',
+                if (_customerApp(srv) && !_outOfFocus(srv, number)) 'MCP: ${srv.name}',
             for (final m in await db.all('mcp_servers', orderBy: 'id')) if (access?.tools?.contains(m['id']) ?? false) 'MCP: ${m['name']}',
-            for (final t in await builtAppTools(scopes)) 'MCP: ${t.serverName}',
+            for (final t in await builtAppTools(scopes, number: number)) 'MCP: ${t.serverName}',
           };
     final users = messages.where((m) => m.role == 'user').toList();
     // Past conversations only when the question is about the past; data questions use live tools.
@@ -833,7 +835,7 @@ class AppState extends ChangeNotifier {
     // Whole-list questions: attach the complete snapshot of that list (if small), so the
     // answer is complete and instant without calling the server.
     if (users.isNotEmpty && !isPhone) {
-      final full = await _wholeListSnapshot(users.last.content, scopes);
+      final full = await _wholeListSnapshot(users.last.content, scopes, number: number);
       if (full != null) notes = notes == null ? full : '$full\n\n$notes';
     }
     if (earlier.isNotEmpty) {
@@ -899,7 +901,7 @@ class AppState extends ChangeNotifier {
           ]
         : <ToolBinding>[];
     messages = await prepare(messages, scopes: scopes, earlier: earlier, excludeFile: excludeFile, model: target is LocalTarget ? target.model : null, access: access,
-        quote: callerNumber == null || abilities.contains('order'));
+        quote: callerNumber == null || abilities.contains('order'), number: callerNumber);
     // Find tools by meaning too (typos, other words), using the local embedding model.
     var preferred = <ToolBinding>[];
     final question = messages.lastWhere((m) => m.role == 'user', orElse: () => ChatMessage('user', '')).content;

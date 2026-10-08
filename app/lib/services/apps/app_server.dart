@@ -559,8 +559,12 @@ class AppServer {
         if (samePhone(r[phoneF.id], phone) && !(shape?.cancelled(r) ?? false) && (shape == null || '${r[shape.dateField.id] ?? ''}'.compareTo(today) >= 0)) r,
     ];
     final label = t.labelField;
+    // The name it is under: its own name, or another person's name on it (a parent enrolling a
+    // student, a guest booking for a group).
+    final nameFields = {label, for (final f in t.fields) if (f.type == 'text' && RegExp(r'name|parent|guardian|customer|guest|student|patient|booker|contact', caseSensitive: false).hasMatch('${f.id} ${f.label}')) f.id};
+    bool under(Map r) => nameFields.any((k) => sameName(r[k], named));
     final onNumber = mine.length;
-    mine.removeWhere((r) => !sameName(r[label], named));
+    mine.removeWhere((r) => !under(r));
     if (mine.isEmpty && onNumber > 0) {
       // On this number but under another name: maybe theirs (a partner's phone), maybe not — so no details.
       throw AppDataError('There is a ${t.title.toLowerCase()} on this number but not under the name "$named". For privacy, give no details of it: '
@@ -577,7 +581,7 @@ class AppServer {
     // Which one: the id given if it's theirs; else, when they have just one, that one.
     final id = (args['id'] as num?)?.toInt() ?? int.tryParse('${args['id'] ?? ''}');
     var r = id == null ? null : await data.get(t.id, id, manager: true);
-    if (r != null && (!samePhone(r[phoneF.id], phone) || !sameName(r[label], named))) {
+    if (r != null && (!samePhone(r[phoneF.id], phone) || !under(r))) {
       throw AppDataError('That $what is not under this phone number and name, so it can\'t be ${change ? 'changed' : 'cancelled'} from this number. Tell the caller to call from the number they booked with. Give no details of it.');
     }
     if (r == null || !mine.any((m) => m['id'] == r!['id'])) {

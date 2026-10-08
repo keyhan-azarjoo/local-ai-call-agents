@@ -186,4 +186,30 @@ void main() {
     expect(sameName('Tariq Ahmad', 'Tarek'), isTrue);
     expect(sameName('Victoria Stone', 'Mark Jones'), isFalse);
   });
+
+  test('a parent who enrolled a student finds it under their own name; a stranger doesn\'t', () async {
+    final t = appTemplates.firstWhere((t) => t.id == 'tutoring');
+    final spec = AppSpec.fromJson(t.spec.cast<String, dynamic>());
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final id = await db.insert('apps', {'name': 'y', 'request': 'y', 'spec': jsonEncode(spec.toJson()), 'port': 0, 'pin': '111111', 'created_at': now, 'updated_at': now});
+    final d = AppData(db, id, spec);
+    for (final e in t.rows.entries) {
+      for (final r in e.value) {
+        try {
+          await d.add(e.key, r.cast<String, dynamic>(), manager: true);
+        } catch (_) {}
+      }
+    }
+    final course = '${(await d.list('courses', manager: true)).first['name']}';
+    await d.add('enrolments', {'student': 'Mei Stone', 'parent': 'Victoria Stone', 'phone': '+442079460555', 'course': course}, manager: true);
+    final s2 = AppServer(data: d, pin: '111111', toolKey: key);
+    await s2.start(0);
+    final mcp = McpSession(HttpTransport('http://127.0.0.1:${s2.port}/mcp', headers: {'X-Tool-Key': key}));
+    await mcp.initialize();
+    expect((await mcp.callTool('find_my_enrolments', {'phone': '+442079460555', 'name': 'Victoria Stone'})).text, contains('Found 1'));
+    expect((await mcp.callTool('find_my_enrolments', {'phone': '+442079460555', 'name': 'Mei'})).text, contains('Found 1'));
+    expect((await mcp.callTool('find_my_enrolments', {'phone': '+442079460555', 'name': 'Mark Jones'})).isError, isTrue);
+    expect((await mcp.callTool('find_my_enrolments', {'phone': '+447700900123', 'name': 'Victoria Stone'})).text, isNot(contains('Found')));
+    await s2.stop();
+  });
 }

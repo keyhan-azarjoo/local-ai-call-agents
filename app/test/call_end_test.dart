@@ -92,4 +92,9 @@ void main() {
     expect(AppState.callerName([ChatMessage('assistant', 'What time?'), ChatMessage('user', 'Seven.')]), isNull);
     expect(AppState.callerName([ChatMessage('user', 'Hi, my name is Hugo Khan, cancel please')]), 'Hugo Khan');
   });
+
+  test('a tool written as [name: key="value"] is not said either', () {
+    expect(AppState.spokenText('Let me check. [check_appointments: date="2026-10-15", time="10:00"] It is free.'), 'Let me check. It is free.');
+    expect(AppState.spokenText('Let me check. [check_appointments: date="2026'), 'Let me check.');
+  });
 }

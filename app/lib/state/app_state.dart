@@ -2216,7 +2216,9 @@ class AppState extends ChangeNotifier {
     final yes = convo.last.content.trim();
     // "Yes." — or a corrected name or number, then yes: "No, the number is 07712 284 221. Yes, that's correct."
     // ("Yes, please change it to 12:30" is a yes to changing it.)
-    final notYes = RegExp(r"\b(no|not|but|instead|wait|actually|cancel)\b", caseSensitive: false);
+    // (…but "Yes, cancel it" to "Shall I cancel it?" is a yes.)
+    final aboutCancel = RegExp(r'\bcancel', caseSensitive: false).hasMatch(convo[convo.length - 2].content);
+    final notYes = RegExp(aboutCancel ? r"\b(no|not|but|instead|wait|actually)\b" : r"\b(no|not|but|instead|wait|actually|cancel)\b", caseSensitive: false);
     final parts = yes.split(RegExp(r'(?<=[.!?])\s+'));
     final agreed = parts.where(_yes.hasMatch).toList();
     final offer0 = convo[convo.length - 2].content.trim();
@@ -2813,7 +2815,7 @@ class AppState extends ChangeNotifier {
   static String spokenText(String t) {
     t = t.split('CALL_TASK').first;
     // (Held back while it may still turn into markup: a list, bold, CALL_TASK, a tool written out as "[take_message:{…".)
-    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z_]*|\[[a-z_]+:\s*\{[^\]]*|\s+)$');
+    final pending = RegExp(r'(\n[\s\-*#•\d.]*|\*+|_+|C(A(L(L(_(T(AS?)?)?)?)?)?)?|\[[a-zA-Z_]*|\[[a-z_]+:\s*\{[^\]]*|\[[a-z]+_[a-z_]+:[^\]]*|\s+)$');
     for (var held = t.replaceFirst(pending, ''); held != t; held = t.replaceFirst(pending, '')) {
       t = held;
     }
@@ -2823,7 +2825,8 @@ class AppState extends ChangeNotifier {
         .replaceAllMapped(RegExp(r'([^.!?:,;\s])[ \t]*\n\s*'), (m) => '${m[1]}. ')
         .replaceAll(RegExp(r'[ \t]*\n\s*'), ' ')
         .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]*\]'), '') // a tool's name written out instead of called
-        .replaceAll(RegExp(r'\s*\[[a-z_]+:\s*\{[^\]]*\}?\]?'), ''); // …or with its details: "[take_message:{"name":…}]"
+        .replaceAll(RegExp(r'\s*\[[a-z_]+:\s*\{[^\]]*\}?\]?'), '') // …or with its details: "[take_message:{"name":…}]"
+        .replaceAll(RegExp(r'\s*\[[a-z]+_[a-z_]+:[^\]]*\]?'), ''); // …or "[check_appointments: date="…"]"
   }
 
   Future<void> _engineRequest(HttpRequest req, String path) async {

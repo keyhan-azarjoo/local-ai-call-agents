@@ -186,6 +186,7 @@ class CallControls extends StatelessWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             switch (mode) {
+              MonitorMode.off when asCaller => const Muted('Listening through the test caller', size: 12),
               MonitorMode.off => Btn('Listen', icon: Icons.headphones, small: true, onPressed: () => m.listen(room)),
               MonitorMode.connecting => Btn('Connecting…', icon: Icons.headphones, small: true, kind: BtnKind.ghost, onPressed: () => m.stop(room)),
               MonitorMode.listening => Btn('Stop listening', icon: Icons.headset_off, small: true, kind: BtnKind.ghost, onPressed: () => m.stop(room)),
@@ -198,7 +199,8 @@ class CallControls extends StatelessWidget {
               ),
               MonitorMode.handingBack => const Btn('Handing back…', icon: Icons.smart_toy_outlined, small: true, kind: BtnKind.ghost),
             },
-            if (mode == MonitorMode.off || mode == MonitorMode.listening)
+            // (One at a time: in place of the AI, or in place of the caller — not both.)
+            if ((mode == MonitorMode.off || mode == MonitorMode.listening) && !asCaller)
               Btn('Take over', icon: Icons.record_voice_over, small: true, kind: BtnKind.amber, onPressed: () => m.takeOver(room)),
             if (mode == MonitorMode.takenOver) ...[
               Btn('Hand back to AI', icon: Icons.smart_toy_outlined, small: true, kind: BtnKind.green, onPressed: () => m.handBack(room)),

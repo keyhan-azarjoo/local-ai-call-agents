@@ -111,4 +111,14 @@ void main() {
     expect(AppState.spokenText('See you at 20:'), 'See you at');
     expect(AppState.spokenText('Table 4'), 'Table 4');
   });
+
+  test('times are said the normal way', () {
+    // Heard on a call: "1930 pm", "7, 0, 0pm", "1,930p".
+    expect(AppState.spokenText('Would you like to try 1930 pm instead?'), 'Would you like to try 7:30 pm instead?');
+    expect(AppState.spokenText('A table at 7:00pm tonight.'), 'A table at 7 pm tonight.');
+    expect(AppState.spokenText('Ready by 7.30pm, or 19.30 p.m.'), 'Ready by 7:30 pm, or 7:30 pm');
+    expect(AppState.spokenText('Free at 17:30, 18:00 and 21:00.'), 'Free at 5:30 pm, 6 pm and 9 pm.');
+    expect(AppState.spokenText('We open at 9am.'), 'We open at 9 am.');
+    expect(AppState.spokenText('It costs £7.30 per person.'), 'It costs £7.30 per person.');
+  });
 }

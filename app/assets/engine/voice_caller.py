@@ -716,6 +716,8 @@ class Caller:
         self.agent_identity = ""
         self.agent_ended = False
         self.disconnected = asyncio.Event()
+        self.agent_tracks: dict = {}  # identity -> the AI's voice track (played to the owner in takeover)
+        self.speaker = None  # takeover: 48 kHz frames for the Mac's speakers
         self.last_caller_end = 0.0
         self.t0 = time.monotonic()
         self.wall0 = time.time()
@@ -967,13 +969,17 @@ class Caller:
         self.mouth.stop()
         loop = asyncio.get_running_loop()
         speaker: collections.deque[np.ndarray] = collections.deque()
-        spk_buf = {"b": np.zeros(0, dtype=np.int16)}
+        spk_buf = {"b": np.zeros(0, dtype=np.int16), "started": False, "loud_at": 0.0}
         det = SilenceDetector(threshold_db=-50, hangover_s=0.8)
         heard: list[np.ndarray] = []
         seg = {"start": None}
 
         def on_mic(indata, frames, t, status):  # noqa: ANN001, ARG001
             pcm = indata[:, 0].copy()
+            # The AI's voice from the speakers comes back into the microphone: while it plays (and a
+            # moment after), the call gets silence, not that echo (headphones avoid it altogether).
+            if time.monotonic() - spk_buf["loud_at"] < 0.35:
+                pcm = np.zeros_like(pcm)
             self.mouth.live.append(pcm)
             now = time.monotonic()
             small = resample(pcm, TRACK_SR, EAR_SR)
@@ -991,26 +997,49 @@ class Caller:
 
         def on_speaker(outdata, frames, t, status):  # noqa: ANN001, ARG001
             b = spk_buf["b"]
-            while len(b) < frames and speaker:
+            while len(b) < frames * 6 and speaker:
                 b = np.concatenate([b, speaker.popleft()])
+            # A little audio in hand before playing (and after running dry), so it doesn't crackle.
+            if not spk_buf["started"] and len(b) < TRACK_SR // 10:
+                spk_buf["b"] = b
+                outdata[:, 0] = 0
+                return
+            spk_buf["started"] = len(b) >= frames
             out = b[:frames]
             spk_buf["b"] = b[frames:]
+            if len(out) and np.abs(out).mean() > 300:
+                spk_buf["loud_at"] = time.monotonic()
             outdata[:, 0] = np.concatenate([out, np.zeros(frames - len(out), dtype=np.int16)])
 
         try:
             self.mic = (sd.InputStream(samplerate=TRACK_SR, channels=1, dtype="int16", blocksize=TRACK_SR * FRAME_MS // 1000, callback=on_mic),
-                        sd.OutputStream(samplerate=EAR_SR, channels=1, dtype="int16", callback=on_speaker))
+                        sd.OutputStream(samplerate=TRACK_SR, channels=1, dtype="int16", latency="low", callback=on_speaker))
             for s in self.mic:
                 s.start()
         except Exception as e:  # noqa: BLE001
             self.shared.mode = "sim"
             self.mic = None
             return f"could not open the microphone/speakers: {e}"
-        self.ear.speaker = speaker
+        # The AI at full quality (48 kHz) on the speakers, not the 16 kHz copy used for hearing it.
+        self.speaker = speaker
+        for track in list(self.agent_tracks.values()):
+            asyncio.ensure_future(self.play(track))
         self.turns.append({"who": "note", "text": "owner took over", "t": self.rel(time.monotonic())})
         print("  >>> owner took over: speak into the Mac's microphone", flush=True)
         asyncio.ensure_future(self.takeover_listen())
         return "ok"
+
+    async def play(self, track) -> None:  # noqa: ANN001
+        """The AI's voice on this Mac's speakers while the owner is the caller."""
+        from livekit import rtc  # noqa: PLC0415
+        stream = rtc.AudioStream(track, sample_rate=TRACK_SR, num_channels=1, frame_size_ms=FRAME_MS)
+        try:
+            async for ev in stream:
+                if self.shared.mode != "takeover" or self.speaker is None:
+                    break
+                self.speaker.append(np.frombuffer(ev.frame.data, dtype=np.int16).copy())
+        finally:
+            await stream.aclose()
 
     async def owner_said(self, clip: np.ndarray, start: float, end: float) -> None:
         text, _, _ = await self.hear(clip, self.lang)
@@ -1044,6 +1073,7 @@ class Caller:
             except Exception:  # noqa: BLE001
                 pass
         self.mic = None
+        self.speaker = None
         self.ear.speaker = None
         self.mouth.live.clear()
         self.shared.mode = "sim"
@@ -1138,6 +1168,9 @@ class Caller:
             # The agent's voice (not its background/thinking-sound track: that one is ambience).
             if track.kind == rtc.TrackKind.KIND_AUDIO and answers(participant) and "background" not in (pub.name or ""):
                 self.agent_identity = participant.identity
+                self.agent_tracks[participant.identity] = track
+                if self.shared.mode == "takeover" and self.speaker is not None:
+                    asyncio.ensure_future(self.play(track))  # (the AI came back while the owner is the caller)
                 # (The owner taking over from the AI has no agent state: their turns end on silence.)
                 self.ear.set_state(participant.attributes.get("lk.agent.state", "") if is_agent(participant) else "listening")
                 asyncio.ensure_future(listen(track, pub.name))

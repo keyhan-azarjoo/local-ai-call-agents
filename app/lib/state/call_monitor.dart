@@ -321,8 +321,12 @@ class CallMonitor extends ChangeNotifier {
   /// Speak as the caller on a voice test call (or [back] to the simulated caller).
   Future<void> speakAsCaller(String room, {bool back = false, http.Client? client}) async {
     if (_callerBusy.contains(room)) return;
+    if (!back && modeOf(room) == MonitorMode.takenOver) return app.toast('You’re already on this call in place of the AI: hand it back first.');
     _callerBusy.add(room);
     notifyListeners();
+    // As the caller you hear the AI through the test caller (your Mac's speakers): the app listening
+    // too would play your own voice back to you, and twice the AI.
+    if (!back && modeOf(room) == MonitorMode.listening) await stop(room);
     try {
       await callerControl(room, back ? 'handback' : 'takeover', by: app.ownerName, client: client);
       app.liveCallerAs(room, back ? null : app.ownerName);

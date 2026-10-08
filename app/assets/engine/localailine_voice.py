@@ -706,9 +706,27 @@ def speakable(text: str) -> str:
             return f"{m[2]} {unit} {int(m[3])}" if m[1] == "£" else f"{m[2]} {unit} and {int(m[3])} {small}"
         return f"{m[2]} {unit}"
     text = _MONEY.sub(money, text).replace(" – ", ", ").replace(" — ", ", ")
+    text = _SPOKEN_TIME.sub(spoken_time, text)
     text = _PHONE.sub(phone_digits, text)
     text = _SAY_AS_RE.sub(lambda m: _SAY_AS[m[0]], text)
     return __import__("re").sub(r"\s*&\s*", " and ", text)
+
+
+# Times as people say them: "7:00pm" -> "7 pm" (was read "7, 0, 0 p m"), "19:30" -> "7:30 pm".
+_SPOKEN_TIME = __import__("re").compile(r"(?<![\d£$€.:])\b([01]?\d|2[0-3])[:.]([0-5]\d)(?:\s*([ap])\.?\s?m\b)?(?![\d:])", __import__("re").I)
+
+
+def spoken_time(m) -> str:  # noqa: ANN001
+    h, mins, half = int(m[1]), m[2], (m[3] or "").lower()
+    if not half and h <= 12 and not m[1].startswith("0"):
+        return m[0] if mins != "00" else f"{h} o'clock"
+    if h > 12:
+        h, half = h - 12, "p"
+    elif h == 0:
+        h, half = 12, "a"
+    elif not half:
+        half = "a" if h < 12 else "p"
+    return f"{h}{'' if mins == '00' else ':' + mins} {half}m"
 
 
 # Names the English voices say wrongly, spelled as they sound ("Giulia" came out as "Jellelia").

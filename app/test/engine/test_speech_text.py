@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[2] / "assets" / "engine" / "localailine_voice.py"
-WANTED = {"_MONEY", "_MONEY_NAMES", "_PHONE", "_SAY_AS", "_SAY_AS_RE", "_HEARD_TIME", "_HEARD_POSTCODE", "speakable", "phone_digits", "tidy_heard"}
+WANTED = {"_SPOKEN_TIME", "spoken_time", "_MONEY", "_MONEY_NAMES", "_PHONE", "_SAY_AS", "_SAY_AS_RE", "_HEARD_TIME", "_HEARD_POSTCODE", "speakable", "phone_digits", "tidy_heard"}
 
 
 def _load() -> dict:
@@ -35,6 +35,11 @@ class Speakable(unittest.TestCase):
         self.assertEqual(V["speakable"]("Phone number is 07700 900123."), "Phone number is 0 7 7 0 0, 9 0 0, 1 2 3.")
         self.assertEqual(V["speakable"]("07700900123"), "0 7 7 0 0, 9 0 0, 1 2 3")
         self.assertEqual(V["speakable"]("Call +447700900258"), "Call plus 4 4, 7 7 0 0, 9 0 0, 2 5 8")
+
+    def test_times(self) -> None:
+        self.assertEqual(V["speakable"]("A table at 7:00pm tonight."), "A table at 7 pm tonight.")
+        self.assertEqual(V["speakable"]("Free at 18:00 or 21:30."), "Free at 6 pm or 9:30 pm.")
+        self.assertEqual(V["speakable"]("Ready at 7:30 pm."), "Ready at 7:30 pm.")
 
     def test_other_numbers_stay(self) -> None:
         self.assertEqual(V["speakable"]("It is £21.50 for 2 people"), "It is 21 pounds 50 for 2 people")

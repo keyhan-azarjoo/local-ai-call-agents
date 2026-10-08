@@ -1212,6 +1212,12 @@ class AppState extends ChangeNotifier {
           return Future.value((text: 'Already saved on this call: ${_addedOnCall[again]} Do not save it again; tell the caller it is booked.', isError: false));
         }
         final r = mcp.callCached(b.serverId, b.tool.name, args, readOnly: b.tool.readOnly);
+        if (callerNumber != null && b.tool.name.startsWith('check_')) {
+          return r.then((x) {
+            if (!x.isError) _checkedOnCall[callerNumber] = spokenText(x.text.length > 400 ? x.text.substring(0, 400) : x.text);
+            return x;
+          });
+        }
         if (again != null) {
           return r.then((x) {
             if (!x.isError) _addedOnCall[again] = x.text.length > 300 ? x.text.substring(0, 300) : x.text;
@@ -2690,8 +2696,20 @@ class AppState extends ChangeNotifier {
   /// What each call has saved (caller|tool|day|time → the app's answer): not saved twice.
   final _addedOnCall = <String, String>{};
 
+  /// What the last check on each call found (caller → the app's answer, said as people say it).
+  final _checkedOnCall = <String, String>{};
+
   /// A call from [number] is over: what it saved may be booked again on the next call.
-  void forgetCallSaves(String number) => _addedOnCall.removeWhere((k, _) => k.startsWith('$number|'));
+  void forgetCallSaves(String number) {
+    _addedOnCall.removeWhere((k, _) => k.startsWith('$number|'));
+    _checkedOnCall.remove(number);
+  }
+
+  /// Nothing new to look up in what they said (no other day, time or number of people): the last check stands.
+  static final _newToCheck = RegExp(
+      r'\d|\b(today|tonight|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekend|week|morning|afternoon|evening|lunch|dinner|noon|midnight|'
+      r'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|half|quarter|earlier|later|instead|other|another|different|else|people|guests|persons?|nights?)\b',
+      caseSensitive: false);
 
   static const _sameAgain = {'en': 'Sorry, I didn\'t quite follow — could you say that another way?'};
 
@@ -3397,7 +3415,22 @@ class AppState extends ChangeNotifier {
           final h12 = h % 12 == 0 ? 12 : h % 12;
           return '$h12${min == '00' ? '' : ':$min'} ${h < 12 ? 'am' : 'pm'}';
         })
-        .replaceAllMapped(RegExp(r'\+44\s?7(\d{3})\s?(\d{6})\b'), (m) => '07${m[1]} ${m[2]}');
+        .replaceAllMapped(RegExp(r'\+44\s?7(\d{3})\s?(\d{6})\b'), (m) => '07${m[1]} ${m[2]}')
+        // Times as people say them: "1930 pm" / "19.30pm" / "7:00pm" / "7.30 p.m." → "7:30 pm", "7 pm".
+        .replaceAllMapped(RegExp(r'(?<![\d£$€.:])\b([01]?\d|2[0-3])(?:[:.]?([0-5]\d))?\s*(?:([ap])\.\s?m\.|([ap])\s?m\b)', caseSensitive: false), (m) {
+          var h = int.parse(m[1]!);
+          final min = m[2] ?? '00';
+          var half = (m[3] ?? m[4]!).toLowerCase();
+          if (m[2] == null && m[1]!.length > 2) return m[0]!;
+          if (h > 12) {
+            h -= 12;
+            half = 'p';
+          } else if (h == 0) {
+            h = 12;
+            half = 'a';
+          }
+          return '$h${min == '00' ? '' : ':$min'} ${half}m';
+        });
   }
 
   Future<void> _engineRequest(HttpRequest req, String path) async {
@@ -3649,12 +3682,16 @@ class AppState extends ChangeNotifier {
     final lastAi = convo.lastWhere((m) => m.role == 'assistant', orElse: () => ChatMessage('assistant', '')).content.trim();
     final justAcked = lastAi.isNotEmpty && lastAi.length < 70 && RegExp(r'^(hmm|okay|sure|right|let me|one moment|اممم|یه لحظه|بذار|باشه|حتماً)', caseSensitive: false).hasMatch(lastAi) &&
         !RegExp(r'[.!?]\s+\S').hasMatch(lastAi); // only a one-sentence "let me check", not an answer
-    final ack = continuing || justAcked ? null : ackFor(question, lang);
+    // Already checked on this call and they ask nothing new: no "let me check" again (it said it on
+    // every turn and checked nothing), and it answers from what the check found.
+    final checked = callerNumber == null ? null : _checkedOnCall[callerNumber];
+    final nothingNew = checked != null && !_newToCheck.hasMatch(callerWords(question));
+    final ack = continuing || justAcked || nothingNew ? null : ackFor(question, lang);
     if (ack != null) fill(ack);
     final ackAt = ack == null ? null : DateTime.now().difference(t0).inMilliseconds;
     // Backup "one moment" for a slow answer — also once per question.
     final slow = Timer(const Duration(milliseconds: 2500), () {
-      if (!continuing && !justAcked) fill();
+      if (!continuing && !justAcked && !nothingNew) fill();
     });
     try {
       // Route by meaning: when the caller clearly wants a teammate's job, pass the call at once
@@ -3726,7 +3763,15 @@ class AppState extends ChangeNotifier {
         final last = messages.removeLast();
         messages.add(ChatMessage(last.role, '${last.content}\n\n(System note: they only thanked you. Say you are welcome and ask if there is anything else you can help with. Do not say goodbye yet.)'));
       }
+      if (nothingNew && !gone) {
+        final last = messages.removeLast();
+        messages.add(ChatMessage(last.role,
+            '${last.content}\n\n(System note: already checked on this call: "$checked" Answer from that now, in your own words; offer only times it says are free. '
+            'Don\'t say you will check, and don\'t repeat your last answer word for word.)'));
+      }
       mark('save_on_yes');
+      // (Any earlier answer on this call, not just the last: it went back to one from two turns ago.)
+      final saidBefore = [for (final m in convo.reversed.where((m) => m.role == 'assistant').take(5)) m.content].join(' \n ');
       var repeating = lastSaid.length > 30;
       // Still waiting for the detail the app needs (their name, postcode): no saving again until they give it.
       final waitingFor = RegExp(r'before I can save that, could I have (?:your|the) ([^?]+)\?\s*$').firstMatch(lastSaid)?.group(1);
@@ -3787,7 +3832,7 @@ class AppState extends ChangeNotifier {
           if (!saved) t = t.split(_appDone).first.replaceFirst(_appDoneStart, ''); // copying the app's "That's all done" without saving
           // Its last answer again, word for word: held back while it's only that.
           if (repeating) {
-            if (_saidAlready(lastSaid, t.replaceAll('[hangup]', ''))) return;
+            if (_saidAlready(saidBefore, t.replaceAll('[hangup]', ''))) return;
             repeating = false;
           }
           // Nobody listens to a minute-long answer: stop at a sentence end and offer the rest.

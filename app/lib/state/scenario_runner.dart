@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import '../services/agent_loop.dart' show OpenAiTarget;
 import '../services/agent_templates.dart';
 import '../services/apps/app_data.dart';
 import '../services/apps/app_server.dart';
 import '../services/apps/app_spec.dart';
 import '../services/apps/app_templates.dart';
+import '../services/openai_compat.dart';
 import 'app_state.dart';
 import 'test_businesses.dart';
 
@@ -643,17 +645,26 @@ class ScenarioRunner {
     if (i == 0 && caller['name'] != null) {
       convo.add({'role': 'user', 'content': '(You are ${caller['name']}. Say your opening line now.)'});
     }
-    final rq = await http.postUrl(Uri.parse('http://127.0.0.1:11434/api/chat'));
-    rq.headers.contentType = ContentType.json;
-    rq.write(jsonEncode({
-      'model': callerModel ?? s.llmModel ?? 'qwen3:4b-instruct',
-      'messages': convo,
-      'stream': false,
-      'keep_alive': -1,
-      'options': {'num_ctx': 16384, 'num_predict': 90, 'temperature': 0.6, 'seed': (sc['n'] as int) * 31 + i},
-    }));
-    final r = jsonDecode(await utf8.decodeStream(await rq.close())) as Map;
-    var text = '${(r['message'] as Map?)?['content'] ?? ''}'.trim();
+    String text;
+    final main = s.modelTarget;
+    if (callerModel == null && main is OpenAiTarget) {
+      // The AI runs in LocalAILine's own engine (or the owner's server): the caller is played there too.
+      final r = await OpenAiCompat().send(main.server,
+          OpenAiCompat.body(main.server, convo, maxTokens: 90, temperature: 0.6, seed: (sc['n'] as int) * 31 + i, stream: false));
+      text = r.answer;
+    } else {
+      final rq = await http.postUrl(Uri.parse('http://127.0.0.1:11434/api/chat'));
+      rq.headers.contentType = ContentType.json;
+      rq.write(jsonEncode({
+        'model': callerModel ?? s.llmModel ?? 'qwen3:4b-instruct',
+        'messages': convo,
+        'stream': false,
+        'keep_alive': -1,
+        'options': {'num_ctx': 16384, 'num_predict': 90, 'temperature': 0.6, 'seed': (sc['n'] as int) * 31 + i},
+      }));
+      final r = jsonDecode(await utf8.decodeStream(await rq.close())) as Map;
+      text = '${(r['message'] as Map?)?['content'] ?? ''}'.trim();
+    }
     text = text.replaceAll(RegExp(r'^(customer|caller|me)\s*:\s*', caseSensitive: false), '').replaceAll(RegExp(r'^"|"$'), '').trim();
     return text.isEmpty ? '[END]' : text;
   }

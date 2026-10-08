@@ -77,7 +77,7 @@ class HomePage extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(title, style: displayStyle(context, 30)),
                     const SizedBox(height: 6),
-                    Muted(!s.llmReady ? 'Ava needs an AI before she can talk.' : s.usingCloud ? 'Thinking with ${s.llmLabel}' : 'Everything runs on this computer · thinking with ${s.llmModel}', size: 14),
+                    Muted(!s.llmReady ? 'Ava needs an AI before she can talk.' : s.usingCloud ? 'Thinking with ${s.llmLabel}' : s.usingServer ? 'Thinking with ${s.llmLabel} (your own server)' : 'Everything runs on this computer · thinking with ${s.llmLabel}', size: 14),
                     if (lines.isEmpty && s.llmReady) ...[
                       const SizedBox(height: 14),
                       Btn('Connect a phone line', icon: Icons.add, kind: BtnKind.primary, onPressed: () => s.go(PageId.lines)),

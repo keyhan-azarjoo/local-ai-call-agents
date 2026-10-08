@@ -17,7 +17,9 @@ import '../services/agent_templates.dart';
 import '../services/apps/app_data.dart' show AppData, BookingShape, parseDate, spokenDates, withDay;
 import '../services/apps/apps_manager.dart';
 import '../services/apps/app_server.dart' show sameName;
+import '../services/builtin_llm.dart';
 import '../services/catalog.dart';
+import '../services/openai_compat.dart';
 import '../services/tool_results.dart';
 import '../services/cloud_llm.dart';
 import '../services/hardware.dart';
@@ -140,7 +142,7 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
       // Pick the best downloaded model when none is chosen, or the chosen one is gone.
       // A model the user picked by hand is kept as long as it is still downloaded.
-      final manual = await db.setting('llm.manual') == '1';
+      final manual = _llmPinned || await db.setting('llm.manual') == '1';
       final missing = llmModel == null || !installedModels.any((m) => m.name == llmModel);
       if (installedModels.isNotEmpty && (missing || !manual)) {
         final pick = catalog.bestInstalled(hardware, installedModels.map((m) => m.name).toList());
@@ -155,18 +157,119 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------- where the AI runs ----------
-  /// 'local' (this computer) or 'cloud' (a provider the user connected).
+  /// 'local' (Ollama on this computer — the setting's original name), 'builtin' (LocalAILine's own
+  /// engine), 'openai' (the user's own OpenAI-compatible server) or 'cloud' (a provider the user connected).
   String llmSource = 'local';
   CloudConfig? cloud;
   final cloudLlm = CloudLlm();
 
+  /// The user's own AI server (vLLM, LM Studio, llama.cpp, MLX, LocalAI, Jan…), when set up.
+  OpenAiServer? aiServer;
+  final compat = OpenAiCompat();
+
+  /// LocalAILine's own engine (llama.cpp's server, run by the app) and the model it runs:
+  /// a suggested model's id, a file in its models folder, or a full path (e.g. an Ollama download).
+  BuiltinEngine? _builtin;
+  BuiltinEngine get builtin => _builtin ??= BuiltinEngine(dataDir: p.dirname(db.path))..addListener(notifyListeners);
+  String? builtinModel;
+
+  /// Debug test runs (LOCALAILINE_LLM) choose the Ollama model: don't swap it for the "best" one.
+  bool _llmPinned = false;
+
   bool get usingCloud => llmSource == 'cloud';
+  bool get usingOllama => llmSource == 'local';
+  bool get usingBuiltin => llmSource == 'builtin';
+  bool get usingServer => llmSource == 'openai';
+
+  /// For status lines: where the AI runs, in words.
+  String get llmSourceLabel => switch (llmSource) {
+        'builtin' => 'Built into LocalAILine',
+        'openai' => aiServer?.kind.label ?? 'Your AI server',
+        'cloud' => cloud?.provider.label ?? 'Cloud AI',
+        _ => 'Ollama',
+      };
 
   Future<void> setLlmSource(String v) async {
+    final was = llmSource;
     llmSource = v;
     await db.setSetting('llm.source', v);
-    await log(v == 'cloud' ? 'Switched AI to ${cloud?.provider.label ?? 'cloud'}' : 'Switched AI to this computer');
+    await log('Switched AI to $llmSourceLabel');
     notifyListeners();
+    // The built-in engine holds its model in memory: only while it is the one in use.
+    if (v == 'builtin') {
+      unawaited(startBuiltin());
+    } else if (was == 'builtin') {
+      unawaited(builtin.stop());
+    }
+  }
+
+  /// Uses the user's own OpenAI-compatible server.
+  Future<void> saveAiServer(OpenAiServer s) async {
+    aiServer = s;
+    await db.setSetting('llm.openai', jsonEncode(s.toJson()));
+    await log('Connected ${s.kind.label} at ${s.base} (${s.model})');
+    await setLlmSource('openai');
+  }
+
+  Future<void> removeAiServer() async {
+    aiServer = null;
+    await db.setSetting('llm.openai', '');
+    await setLlmSource('local');
+  }
+
+  /// Runs the built-in engine with [choice] (see [builtinModel]) and uses it.
+  Future<void> setBuiltinModel(String choice) async {
+    builtinModel = choice;
+    await db.setSetting('llm.builtin', choice);
+    if (llmSource != 'builtin') {
+      await setLlmSource('builtin'); // (starts it)
+    } else {
+      notifyListeners();
+      await startBuiltin();
+    }
+  }
+
+  /// The built-in engine's model, ready to run (null = not downloaded yet).
+  String? get builtinModelPath => builtin.pathFor(builtinModel);
+
+  /// Starts the built-in engine (or restarts it for a new model or number of calls).
+  Future<void> startBuiltin() async {
+    final path = builtinModelPath;
+    if (path == null) return;
+    await builtin.start(path, lines: lines, hw: hardware, params: BuiltinEngine.byId(builtinModel)?.params);
+    notifyListeners();
+  }
+
+  /// Downloads a suggested model for the built-in engine (progress in [pulls]), then uses it.
+  Future<void> downloadBuiltin(BuiltinModel m) => _downloadBuiltin('builtin:${m.id}', Uri.parse(m.url), m.file, m.id, m.name);
+
+  /// Downloads any .gguf from a Hugging Face link, then uses it.
+  Future<void> downloadBuiltinLink(String link) async {
+    final url = BuiltinEngine.hfUrl(link);
+    if (url == null) return toast('Paste a Hugging Face link to a .gguf file.');
+    final file = url.pathSegments.last;
+    await _downloadBuiltin('builtin:$file', url, file, file, file);
+  }
+
+  Future<void> _downloadBuiltin(String key, Uri url, String file, String choice, String name) async {
+    if (pulls.containsKey(key)) return;
+    pulls[key] = null;
+    notifyListeners();
+    try {
+      await for (final f in builtin.download(url, file)) {
+        pulls[key] = f;
+        notifyListeners();
+      }
+      await log('Downloaded $name for the built-in engine');
+      pulls.remove(key);
+      await setBuiltinModel(choice);
+      toast('$name downloaded and in use.');
+    } catch (e) {
+      toast('Download of $name failed: $e');
+    } finally {
+      pulls.remove(key);
+      notifyListeners();
+    }
   }
 
   Future<void> saveCloud(CloudConfig c) async {
@@ -185,12 +288,20 @@ class AppState extends ChangeNotifier {
   }
 
   /// What the AI is thinking with, for status lines.
-  String get llmLabel => usingCloud && cloud != null ? '${cloud!.provider.label} · ${cloud!.model}' : (llmModel ?? 'no model');
+  String get llmLabel => switch (llmSource) {
+        'cloud' when cloud != null => '${cloud!.provider.label} · ${cloud!.model}',
+        'builtin' => BuiltinEngine.byId(builtinModel)?.name ?? (builtinModel == null ? 'no model' : p.basenameWithoutExtension(builtinModel!)),
+        'openai' when aiServer != null => '${aiServer!.kind.label} · ${aiServer!.model}',
+        _ => llmModel ?? 'no model',
+      };
 
   /// Chat with the chosen (or given) model, using the right thinking setting.
   /// With [json], local models can only answer with a JSON object.
   Stream<String> chat(List<ChatMessage> messages, {String? model, bool json = false, double temperature = 0.6}) {
-    if (usingCloud && cloud != null && (model == null || model == 'cloud')) return cloudLlm.chat(cloud!, messages);
+    if (cloud != null && (model == 'cloud' || (model == null && usingCloud))) return cloudLlm.chat(cloud!, messages);
+    if (model == null && (usingBuiltin || usingServer) && modelTarget is OpenAiTarget) {
+      return compat.chat((modelTarget as OpenAiTarget).server, messages, json: json, temperature: temperature);
+    }
     final m = model ?? llmModel!;
     final entry = catalog.llm.where((e) => e.id == m).firstOrNull;
     final t = targetFor(model);
@@ -224,6 +335,8 @@ class AppState extends ChangeNotifier {
     if (model == 'cloud' && cloud != null) return CloudTarget(cloud!);
     if (model != null && model != 'cloud') return _local(model);
     if (usingCloud && cloud != null) return CloudTarget(cloud!);
+    if (usingBuiltin) return OpenAiTarget(builtin.server(disableThinking: BuiltinEngine.byId(builtinModel)?.thinks ?? false));
+    if (usingServer && aiServer != null) return OpenAiTarget(aiServer!);
     return _local(llmModel!);
   }
 
@@ -277,9 +390,9 @@ class AppState extends ChangeNotifier {
   Future<void> prewarm(List<ChatMessage> history, {required Set<String> scopes, List<String>? sticky, ModelTarget? target, bool useTools = true}) async {
     if (!llmReady) return;
     final t = target ?? modelTarget;
-    if (t is! LocalTarget) return;
+    if (!t.isLocal) return;
     final tools = useTools ? await toolsFor(scopes) : <ToolBinding>[];
-    final msgs = await prepare([...history.where((m) => m.role != 'tool'), ChatMessage('user', '…')], scopes: scopes, model: target == null ? null : t.model);
+    final msgs = await prepare([...history.where((m) => m.role != 'tool'), ChatMessage('user', '…')], scopes: scopes, model: target is LocalTarget ? target.model : null);
     await toolLoop.run(
       target: t,
       warmOnly: true,
@@ -295,6 +408,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _snapTimer?.cancel();
+    _builtin?.stopNow();
     try {
       knowledge.stopEmbedServer();
     } catch (_) {} // (never started)
@@ -875,10 +989,10 @@ class AppState extends ChangeNotifier {
       out = [if (i < 0) ChatMessage('system', block), for (var j = 0; j < out.length; j++) j == i ? ChatMessage('system', '${out[j].content}\n\n$block') : out[j]];
     }
     // Orders: exact totals from the document's price lines (local models add up badly).
-    if (quote && !usingCloud && users.isNotEmpty && OrderQuote.worthChecking(callerWords(users.last.content))) {
+    if (quote && users.isNotEmpty && OrderQuote.worthChecking(callerWords(users.last.content))) {
       try {
         final t = modelTarget;
-        if (t is LocalTarget) {
+        if (t.isLocal) {
           final quote = await OrderQuote.quote(toolLoop.client, t, messages, await knowledge.priceLines(sources));
           if (quote != null) notes = notes == null ? quote : '$notes\n$quote';
         }
@@ -1070,7 +1184,20 @@ class AppState extends ChangeNotifier {
     return text;
   }
 
-  bool get llmReady => usingCloud ? (cloud != null && cloud!.model.isNotEmpty) : localReady;
+  bool get llmReady => switch (llmSource) {
+        'cloud' => cloud != null && cloud!.model.isNotEmpty,
+        'builtin' => builtin.state == EngineRun.running,
+        'openai' => aiServer != null && aiServer!.base.isNotEmpty,
+        _ => localReady,
+      };
+
+  /// The AI answers now (for test runs waiting on a restarting engine).
+  Future<bool> modelUp() async => switch (llmSource) {
+        'builtin' => await builtin.healthy(),
+        'openai' => await compat.models(aiServer!).then((_) => true, onError: (_) => false),
+        'cloud' => true,
+        _ => await ollama.version() != null,
+      };
 
   bool get localReady => ollamaVersion != null && llmModel != null && installedModels.any((m) => m.name == llmModel);
 
@@ -1406,10 +1533,26 @@ class AppState extends ChangeNotifier {
     llmModel = await db.setting('llm.model');
     sttModel = await db.setting('stt.model') ?? sttModel;
     ttsVoice = await db.setting('tts.voice') ?? ttsVoice;
-    llmSource = await db.setting('llm.source') ?? 'local';
-    final cj = await db.setting('llm.cloud');
-    cloud = cj == null || cj.isEmpty ? null : CloudConfig.fromJson(jsonDecode(cj) as Map<String, dynamic>);
-    if (cloud == null) llmSource = 'local';
+    final ls = await LlmSettings.load(db);
+    llmSource = ls.source;
+    cloud = ls.cloud;
+    aiServer = ls.server;
+    builtinModel = ls.builtinModel;
+    // Debug builds only: which AI an automated test run uses (not saved), e.g.
+    // LOCALAILINE_LLM=builtin:qwen3-4b-instruct-2507 | ollama:qwen3:4b-instruct | openai:http://127.0.0.1:8000/v1|my-model
+    final ov = kDebugMode ? LlmOverride.parse(Platform.environment['LOCALAILINE_LLM']) : null;
+    if (ov != null) {
+      llmSource = ov.source;
+      switch (ov.source) {
+        case 'local':
+          llmModel = ov.value;
+          _llmPinned = true;
+        case 'builtin':
+          builtinModel = ov.value;
+        case 'openai':
+          aiServer = OpenAiServer(baseUrl: ov.value, model: ov.model);
+      }
+    }
     role = await db.setting('app.role');
     if (role == '') role = null;
     gate = await auth.hasOwner() ? Gate.signIn : Gate.setup;
@@ -1451,6 +1594,12 @@ class AppState extends ChangeNotifier {
       hardware = h;
       notifyListeners();
       refreshEngine();
+      // The built-in engine is sized from this computer's memory, so it starts once that is known.
+      // (One left running by an earlier run that crashed is stopped either way.)
+      if (!isPhone && role != 'companion') {
+        builtin.killStale();
+        if (usingBuiltin) unawaited(startBuiltin());
+      }
     });
   }
 
@@ -1578,6 +1727,7 @@ class AppState extends ChangeNotifier {
     }());
     AppLifecycleListener(
       onExitRequested: () async {
+        await _builtin?.stop();
         await voice?.stop();
         await apps.stopAll();
         return AppExitResponse.exit;
@@ -1800,6 +1950,7 @@ class AppState extends ChangeNotifier {
     // Calls in progress keep going: the engine and Ollama pick it up when nobody is on the line.
     if (liveCalls.isEmpty && scenarioRuns.isEmpty) {
       await ollama.applyLines(lines);
+      if (usingBuiltin) await startBuiltin(); // (restarts it with one working place per call)
       final v = voice;
       if (v != null && v.lines != lines) {
         v.lines = lines;
@@ -1904,7 +2055,7 @@ class AppState extends ChangeNotifier {
         // the scenario again from the start instead of counting it as a failure.
         Future<bool> modelBack() async {
           for (var i = 0; i < 120 && !r.stopRequested; i++) {
-            if (await ollama.version() != null) return true;
+            if (await modelUp()) return true;
             if (i == 0) {
               scenarioStatus = 'Waiting for the AI model to come back…';
               notifyListeners();
@@ -1913,7 +2064,7 @@ class AppState extends ChangeNotifier {
           }
           return false;
         }
-        bool modelAway(Object res) => RegExp(r'Connection (refused|closed before full header)|11434').hasMatch('$res');
+        bool modelAway(Object res) => RegExp(r'Connection (refused|closed before full header)|11434|${BuiltinEngine.port}').hasMatch('$res');
 
         var t0 = DateTime.now();
         Map<String, Object?> res;

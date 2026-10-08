@@ -952,7 +952,7 @@ function tone(o) {
   return 'blue';
 }
 const pill = (o) => o ? '<span class="spill t-' + tone(o) + '">' + esc(o) + '</span>' : '';
-/// The same number however it's written (07700 900124 = 07700 900124).
+/// The same number however it's written (07700 900124 = +447700900124).
 const digits9 = (p) => { const d = String(p || '').replace(/\D/g, ''); return d.length >= 9 ? d.slice(-9) : ''; };
 const phoneOf = (t) => t.fields.find((f) => f.type === 'phone');
 const dateOf = (t) => t.fields.find((f) => f.type === 'date' || f.type === 'datetime');

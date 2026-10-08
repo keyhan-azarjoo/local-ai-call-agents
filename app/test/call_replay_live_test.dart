@@ -16,7 +16,7 @@ import 'package:localailine/state/app_state.dart';
 /// LOCALAILINE_LIVE_MODEL=qwen3:4b-instruct flutter test test/call_replay_live_test.dart
 void main() {
   final model = Platform.environment['LOCALAILINE_LIVE_MODEL'];
-  const caller = '07700 900124';
+  const caller = '+447700900124';
 
   Future<({McpManager mcp, AppData data, List<ToolBinding> tools, AppsManager apps})> setUpApp() async {
     final tmp = Directory.systemTemp.createTempSync('replay');

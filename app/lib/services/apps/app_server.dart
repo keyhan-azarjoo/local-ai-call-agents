@@ -777,7 +777,7 @@ class AppServer {
   }
 }
 
-/// Same number, however it's written (07700 900124 = 07700 900124).
+/// Same number, however it's written (07700 900124 = +447700900124).
 bool samePhone(Object? a, Object? b) {
   String d(Object? x) => '${x ?? ''}'.replaceAll(RegExp(r'\D'), '');
   final x = d(a), y = d(b);

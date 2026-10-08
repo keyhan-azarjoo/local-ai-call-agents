@@ -43,10 +43,10 @@ void main() {
   });
 
   test('phone numbers in international form', () {
-    expect(Phone.e164('07700 900124'), '07700 900124');
-    expect(Phone.e164('07700 900124', lineNumber: '+441234988088'), '07700 900124');
+    expect(Phone.e164('+44 7700 900124'), '+447700900124');
+    expect(Phone.e164('07700 900124', lineNumber: '+441234988088'), '+447700900124');
     expect(Phone.e164('(415) 555-0100', lineNumber: '+16065432628'), '+14155550100');
-    expect(Phone.e164('07700 900124'), '07700 900124');
+    expect(Phone.e164('0044 7700 900124'), '+447700900124');
   });
 
   test('the hang-up marker reaches the voice agent whole', () {

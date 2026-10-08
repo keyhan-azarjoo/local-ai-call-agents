@@ -2238,7 +2238,8 @@ class AppState extends ChangeNotifier {
       return null;
     }
     // Asked "shall I book it?", or said "I'll enrol you for that." and they said yes.
-    if (!_proposal.hasMatch(offer) && !_promisedAction.hasMatch(offer)) return null;
+    // (On a call to cancel, a yes to the read-back — "Would you like to cancel that?" — is that.)
+    if (!_proposal.hasMatch(offer) && !_promisedAction.hasMatch(offer) && !(cancelling && offer.trim().endsWith('?'))) return null;
     final tools = await builtAppTools(scopes, number: callerNumber);
     final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
     if (RegExp(r'\bcancel', caseSensitive: false).hasMatch(offer) || cancelling) {
@@ -3294,6 +3295,25 @@ class AppState extends ChangeNotifier {
         sent = line;
       }
       await saveTask(full);
+      // Said it is cancelled but didn't cancel it (small models do that), on a call to cancel: do it now.
+      if (!saved && mode != 'owner' && passTo == null && callerNumber != null && !gone &&
+          RegExp(r"\b(is|are|has been|have been|now) (now )?cancell?ed\b|\bi(?:'ve| have) cancell?ed\b|cancellation is (done|confirmed)", caseSensitive: false).hasMatch(sent) &&
+          convo.reversed.where((m) => m.role == 'user').take(4).any((m) => RegExp(r'\bcancel', caseSensitive: false).hasMatch(callerWords(m.content)))) {
+        final said = [for (final m in convo.reversed.take(8)) m.content].join(' ');
+        final cancels = (await builtAppTools(scopes, number: callerNumber)).where((t) => t.tool.name.startsWith('cancel_my_')).toList();
+        final tool = cancels.where((t) => t.tool.name.contains('order') == RegExp(r'\border', caseSensitive: false).hasMatch(said)).firstOrNull ?? cancels.firstOrNull;
+        if (tool != null) {
+          final c = await _runYes(tool, convo, callerNumber).catchError((_) => null);
+          if (c != null && c.ok) {
+            saved = true;
+            await log('Cancelled what ${flow?.agent['name'] ?? 'Ava'} said was cancelled on a call');
+          } else if (c != null) {
+            final fix = ' Sorry — ${_problemForCaller(c.text)}';
+            chunk({'content': fix});
+            sent += fix;
+          }
+        }
+      }
       // Said it's done but didn't save it (small models do that): save it now, into the business's
       // app if it has one; if that fails (e.g. the table is taken), say so straight away.
       // (Not when this call already saved something: "your table is booked, see you!" again is no new booking.)

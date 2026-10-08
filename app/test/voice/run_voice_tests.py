@@ -132,7 +132,44 @@ def run_one(persona_file: Path, persona: dict, args, slot: int, log_lock: thread
     result["persona"] = persona["id"]
     result["business"] = persona.get("business")
     result["wall_s"] = round(time.time() - started, 1)
+    # What the call saved in the business's app: never twice, never in another business.
+    problems = saved_problems(result.get("number") or "", persona.get("business", ""), started)
+    if problems:
+        a = result.setdefault("analysis", {"issues": [], "warnings": [], "pass": True})
+        a.setdefault("issues", []).extend(problems)
+        a["pass"] = False
+        with log_lock:
+            print(f"[{persona['id']}] DATA " + "; ".join(problems), flush=True)
     return result
+
+
+def saved_problems(number: str, business: str, since: float) -> list[str]:
+    db = Path.home() / "Library/Application Support/com.localailine.localailine/localailine.db"
+    digits = "".join(c for c in number if c.isdigit())[-9:]
+    if not db.exists() or len(digits) < 9:
+        return []
+    import sqlite3
+    with sqlite3.connect(f"file:{db}?mode=ro", uri=True) as c:
+        rows = c.execute("SELECT r.app_id, a.name, r.tbl, r.data FROM app_rows r JOIN apps a ON a.id = r.app_id WHERE r.created_at >= ?",
+                         (int(since * 1000),)).fetchall()
+    mine = []
+    for app_id, name, tbl, data in rows:
+        try:
+            d = json.loads(data)
+        except ValueError:
+            continue
+        if digits in "".join(ch for ch in str(d.get("phone", "")) if ch.isdigit()):
+            mine.append((name, tbl, str(d.get("date") or d.get("check_in") or ""), str(d.get("time") or "")))
+    out = []
+    want = BUSINESSES.get(business)
+    for name, tbl, *_ in mine:
+        if want and name != want:
+            out.append(f"saved in {name}, not {want} ({tbl})")
+    seen = {}
+    for m in mine:
+        seen[m] = seen.get(m, 0) + 1
+    out += [f"saved twice: {tbl} {day} {at} in {name}" for (name, tbl, day, at), n in seen.items() if n > 1 and tbl != "orders"]
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:

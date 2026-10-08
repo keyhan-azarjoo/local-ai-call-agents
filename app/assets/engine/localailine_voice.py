@@ -682,8 +682,15 @@ class _PiperChunked(tts.ChunkedStream):
 _HEARD_TIME = __import__("re").compile(r"\b(1[0-2]|0?[1-9])(?:,\s*|\s+|\.)([0-5]\d)\s*([ap])\.?\s?m\b\.?", __import__("re").IGNORECASE)
 
 
+# UK postcodes as heard: "BS 14 DJ" (said "B S one, four D J") -> "BS1 4DJ".
+_HEARD_POSTCODE = __import__("re").compile(r"\b([A-Z]{1,2})\s?(\d{1,2}[A-Z]?)\s?(\d)\s?([A-Z]{2})\b")
+
+
 def tidy_heard(text: str) -> str:
-    return _HEARD_TIME.sub(lambda m: f"{m[1]}:{m[2]} {m[3].lower()}m", text) if text else text
+    if not text:
+        return text
+    text = _HEARD_TIME.sub(lambda m: f"{m[1]}:{m[2]} {m[3].lower()}m", text)
+    return _HEARD_POSTCODE.sub(lambda m: f"{m[1]}{m[2]} {m[3]}{m[4]}", text)
 
 
 _CLAUSE = __import__("re").compile(r"(?<=[,;:.!?…—])\s+")
@@ -1146,13 +1153,18 @@ def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool =
         tts=PiperTTS(stt_=stt_),
         turn_handling={
             "turn_detection": MultilingualModel(),  # runs locally
-            "endpointing": {"mode": "dynamic", "min_delay": 0.2, "max_delay": 1.5},
+            # Phone callers pause between sentences ("Only Marco. … No other barbers. … Can't do it
+            # otherwise."): ending the turn 0.2 s into a pause split one answer into three, each
+            # answered on its own (and the rest of what they said cut off). On calls, wait longer.
+            "endpointing": {"mode": "dynamic", "min_delay": 0.7, "max_delay": 2.4} if phone_call else {"mode": "dynamic", "min_delay": 0.2, "max_delay": 1.5},
             # Think (and start speaking) before the turn is confirmed; dropped if the caller continues.
             "preemptive_generation": {"enabled": True, "preemptive_tts": True},
             # "vad" keeps barge-in local ("adaptive" calls LiveKit Cloud).
             # Interrupt only on the caller's real words: Ava's own voice is filtered out by the hearing.
             # On the phone, "okay" / "yeah" / "mm" while she speaks is listening, not interrupting.
-            "interruption": {"enabled": True, "mode": "vad", "min_duration": 0.6 if phone_call else 0.4, "min_words": 3 if phone_call else 1,
+            # (Shorter than this is dropped, not just "not an interruption": at 3 words, a caller's
+            # "Tom Reed." or "Only Marco." said over her was lost. One word is the listening noise.)
+            "interruption": {"enabled": True, "mode": "vad", "min_duration": 0.6 if phone_call else 0.4, "min_words": 2 if phone_call else 1,
                              "resume_false_interruption": True},
         },
     )
@@ -1490,8 +1502,8 @@ async def entrypoint(ctx: JobContext) -> None:
             await asyncio.sleep(0.5)
             ctx.shutdown("passed to a person")  # the caller and the person stay connected
         else:
-            who = res.get("name") or "they"
-            session.say(f"Sorry, {who} isn't available right now. Can I take a message, or help with anything else?", allow_interruptions=True)
+            who = res.get("name")
+            session.say(f"Sorry, {who + ' isn' if who else 'they aren'}'t available right now. Can I take a message, or help with anything else?", allow_interruptions=True)
 
     def maybe_connect(ev) -> None:  # noqa: ANN001
         if phone_call and ava.connect_requested and ev.old_state == "speaking" and ev.new_state != "speaking":

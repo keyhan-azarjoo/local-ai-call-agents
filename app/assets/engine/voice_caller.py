@@ -382,6 +382,16 @@ def caller_messages(persona: dict, turns: list[dict], directive: str | None, lan
 # ----------------------------------------------------------------------------- analysis
 
 
+_DIDNT_FOLLOW = re.compile(r"didn.?t (quite )?(follow|catch|understand)", re.I)
+_NONSENSE = [
+    ("answered its own question", re.compile(r"\?\s*(yes|yeah|yep|that'?s (right|correct)|correct)\b[ ,.]", re.I)),
+    ("offered something it can't do", re.compile(r"\b(send|text|email)(ing)? (you )?(a |the |an )?(secure |payment |confirmation )*(link|text|sms|email|message to your)", re.I)),
+    ("read data out raw", re.compile(r"\b20\d\d-\d\d-\d\d\b|\b2\.0\d\d\b|\b(1[3-9]|2[0-3])[.:][0-5]\d\b(?!\s*[ap]\.?m)|\+\s?44", re.I)),
+    ("bad grammar", re.compile(r"\bthey isn.?t\b|\bI 's\b", re.I)),
+    ("made up a policy", re.compile(r"no (delivery )?fee (since|because|as) you", re.I)),
+]
+
+
 def analyze(result: dict) -> dict:
     """Pass/fail heuristics for one call."""
     turns = [t for t in result.get("turns") or [] if t.get("who") in ("agent", "caller")]
@@ -461,7 +471,24 @@ def analyze(result: dict) -> dict:
         warnings.append(f"call did not finish ({result.get('end_reason')})")
     if not agent:
         issues.append("the agent never spoke")
+    # Answers that don't make sense (each seen on a test call, fixed, and checked from then on).
+    nonsense = []
+    for i, a in enumerate(agent):
+        ta = strip_whisper_tags(a.get("text") or "")
+        for why, rx in _NONSENSE:
+            if rx.search(ta):
+                nonsense.append(f"{why}: {ta[:90]}")
+    for i, t in enumerate(turns[:-1]):  # two answers in a row to one thing said (it was cut in two)
+        if t["who"] == "agent" and turns[i + 1]["who"] == "agent" and not t.get("greeting") and not t.get("partial"):
+            nonsense.append(f"answered twice in a row: {strip_whisper_tags(turns[i + 1].get('text') or '')[:90]}")
+    for i, t in enumerate(turns[:-1]):  # "didn't follow" a clear sentence
+        if t["who"] == "caller" and len((t.get("text") or "").split()) >= 4 and turns[i + 1]["who"] == "agent" and \
+                _DIDNT_FOLLOW.search(turns[i + 1].get("text") or ""):
+            nonsense.append(f"said it didn't follow: {(t.get('text') or '')[:90]}")
+    if nonsense:
+        issues.append(f"{len(nonsense)} answer(s) that don't make sense")
     return {
+        "nonsense": nonsense,
         "agent_turns": len(agent), "caller_turns": len(turns) - len(agent),
         "unanswered_caller_turns": unanswered, "latency": lat, "repeats": repeats, "wrong_language": wrong_lang,
         "markup": markup, "empty_or_garbled": empty, "filler_only": filler_only, "agent_ended_call": bool(result.get("agent_ended_call")),

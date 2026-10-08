@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[2] / "assets" / "engine" / "localailine_voice.py"
-WANTED = {"_MONEY", "_MONEY_NAMES", "_PHONE", "_SAY_AS", "_SAY_AS_RE", "_HEARD_TIME", "speakable", "phone_digits", "tidy_heard"}
+WANTED = {"_MONEY", "_MONEY_NAMES", "_PHONE", "_SAY_AS", "_SAY_AS_RE", "_HEARD_TIME", "_HEARD_POSTCODE", "speakable", "phone_digits", "tidy_heard"}
 
 
 def _load() -> dict:
@@ -50,6 +50,10 @@ class Heard(unittest.TestCase):
         self.assertEqual(V["tidy_heard"]("it's 7, 30pm, not 7pm"), "it's 7:30 pm, not 7pm")
         self.assertEqual(V["tidy_heard"]("at 7 30 p.m. tonight"), "at 7:30 pm tonight")
         self.assertEqual(V["tidy_heard"]("7.30pm please"), "7:30 pm please")
+
+    def test_postcodes(self) -> None:
+        self.assertEqual(V["tidy_heard"]("delivered to Bristol BS 14 DJ please"), "delivered to Bristol BS1 4DJ please")
+        self.assertEqual(V["tidy_heard"]("it's SW1A 1AA"), "it's SW1A 1AA")
 
     def test_not_times(self) -> None:
         self.assertEqual(V["tidy_heard"]("table for 2, 30 people"), "table for 2, 30 people")

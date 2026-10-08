@@ -602,6 +602,7 @@ class ScenarioRunner {
     end.write(jsonEncode({'room': room, 'transcript': [], 'answered': true, 'number': number}));
     await (await end.close()).drain<void>();
     s.callApp.remove(number);
+    s.forgetCallSaves(number);
     return (turns: turns, times: times, passedTo: passedTo, hungUp: hungUp);
   }
 

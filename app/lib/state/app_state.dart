@@ -935,9 +935,13 @@ class AppState extends ChangeNotifier {
   Future<List<ChatMessage>> prepare(List<ChatMessage> messages,
       {required Set<String> scopes, void Function(List<KnowledgeHit>)? onHits, List<String> earlier = const [], String? excludeFile, String? model, AgentAccess? access, bool quote = true, String? number}) async {
     final extra = <String>[];
+    // Talking with the owner (not on a call for a business): no business's call skills ("Trattoria
+    // Bella: …", "Kings Cut Barbers: …") — with all of them, a "hi" got "thanks for calling The
+    // Copper Kettle" and then "it's a barber shop".
+    final businesses = access == null && scopes.contains('me') ? {for (final a in await db.all('apps')) '${a['name']}: '} : const <String>{};
     final skills = [
       for (final k in await db.all('skills', where: "enabled = 1 AND instructions IS NOT NULL AND instructions != ''", orderBy: 'id'))
-        if (access?.skills == null || access!.skills!.contains(k['id'])) k,
+        if ((access?.skills == null || access!.skills!.contains(k['id'])) && !businesses.any('${k['name']}'.startsWith)) k,
     ];
     if (skills.isNotEmpty) {
       extra.add('Skills you have (follow them when relevant):\n${skills.map((k) => '## ${k['name']}\n${k['instructions']}').join('\n\n')}');
@@ -974,7 +978,10 @@ class AppState extends ChangeNotifier {
           k['id'] as int,
     };
     String? notes;
-    if (sources.isNotEmpty && users.isNotEmpty) {
+    // ("hi", "hello there", "thanks": nothing to look up — a matching passage only confuses the reply.)
+    final greetingOnly = users.isNotEmpty &&
+        RegExp(r"^\W*(hi|hello|hey|hiya|good (morning|afternoon|evening)|thanks|thank you|ok(ay)?|bye)\b[\s\w,!.']{0,12}$", caseSensitive: false).hasMatch(users.last.content.split('\n\n(System note').first.trim());
+    if (sources.isNotEmpty && users.isNotEmpty && !greetingOnly) {
       String said(ChatMessage m) => m.content.split('\n\n(System note').first;
       var q = said(users.last);
       if (q.length < 40 && users.length > 1) q = '${said(users[users.length - 2])} $q';
@@ -1191,7 +1198,26 @@ class AppState extends ChangeNotifier {
             isError: true,
           ));
         }
+        // A phone number as written down: "07-7-0-0-900-123" (as heard digit by digit) → "07700900123".
+        if (b.tool.name.startsWith('add_') && args['phone'] is String) {
+          final digits = (args['phone'] as String).replaceAll(RegExp(r'[^\d+]'), '');
+          if (RegExp(r'^\+?\d{7,15}$').hasMatch(digits)) args = {...args, 'phone': digits};
+        }
+        // The same booking or order again on this call (said back, then "yes, that's right"): it is
+        // already saved. Twice made two tables for one party.
+        final again = callerNumber == null || !b.tool.name.startsWith('add_')
+            ? null
+            : '$callerNumber|${b.tool.name}|${args['date'] ?? args['check_in'] ?? ''}|${args['time'] ?? ''}';
+        if (again != null && _addedOnCall.containsKey(again)) {
+          return Future.value((text: 'Already saved on this call: ${_addedOnCall[again]} Do not save it again; tell the caller it is booked.', isError: false));
+        }
         final r = mcp.callCached(b.serverId, b.tool.name, args, readOnly: b.tool.readOnly);
+        if (again != null) {
+          return r.then((x) {
+            if (!x.isError) _addedOnCall[again] = x.text.length > 300 ? x.text.substring(0, 300) : x.text;
+            return x;
+          });
+        }
         if (callerNumber == null || !RegExp(r'^(find|cancel|change)_my_').hasMatch(b.tool.name)) return r;
         // Found under the name they gave: that is who they are for the rest of this call.
         return r.then((x) {
@@ -1437,6 +1463,8 @@ class AppState extends ChangeNotifier {
     _verifiedName.remove('${b['number'] ?? ''}');
     _notFound.remove('${b['number'] ?? ''}');
     _savedOn.remove(room);
+    _saidAgain.remove(room);
+    forgetCallSaves('${b['number'] ?? '-'}');
     roomAgent.remove(room);
     if (scenarioRuns.isEmpty) callApp.remove('${b['number'] ?? ''}'); // (a test run keeps its own)
     final turns = [
@@ -2657,6 +2685,14 @@ class AppState extends ChangeNotifier {
   static final _fillerStart = RegExp(r"^\s*(?:(?:Sure, let me sort that out|Okay, on it|Right, let me do that|Hmm, let me see|Let me check that for you|Okay, one sec, let me look|One moment, let me check that)\.\s*)+");
 
   static final _fillerLine = RegExp(r"^(sure|okay|ok|right|hmm|mm|one moment|one sec|let me (check|see|look)|i'?ll check)\b[^.!?]*[.!?]?$", caseSensitive: false);
+  final _saidAgain = <String, int>{};
+
+  /// What each call has saved (caller|tool|day|time → the app's answer): not saved twice.
+  final _addedOnCall = <String, String>{};
+
+  /// A call from [number] is over: what it saved may be booked again on the next call.
+  void forgetCallSaves(String number) => _addedOnCall.removeWhere((k, _) => k.startsWith('$number|'));
+
   static const _sameAgain = {'en': 'Sorry, I didn\'t quite follow — could you say that another way?'};
 
   /// The caller asked for a second booking or order in the same call.
@@ -3837,11 +3873,15 @@ class AppState extends ChangeNotifier {
         ];
         final short = again.length <= 2 ? again.join(' ') : '${again.first} ${again.last}';
         // ("Thanks, Lily." needs no new answer: they're welcome; the goodbye follows if they're done.)
+        // The second time on one call: no "as I said" again, a way forward instead.
+        final again2 = (_saidAgain[room] = (_saidAgain[room] ?? 0) + 1) > 1;
         final line = (thanksOnly(question) || ending) && lang == 'en'
             ? 'You’re welcome.'
-            : lang == 'en' && callerWords(question).split(RegExp(r'\s+')).length >= 3 && short.isNotEmpty
-                ? 'As I said, ${short[0].toLowerCase()}${short.substring(1)}'
-                : _sameAgain[lang] ?? _sameAgain['en']!;
+            : lang == 'en' && again2
+                ? 'I’m sorry, I can’t do that. I can take a message so someone calls you back, or help with something else. Which would you like?'
+                : lang == 'en' && callerWords(question).split(RegExp(r'\s+')).length >= 3 && short.isNotEmpty
+                    ? 'As I said, ${short[0].toLowerCase()}${short.substring(1)}'
+                    : _sameAgain[lang] ?? _sameAgain['en']!;
         chunk({'content': line});
         sent = line;
       }
@@ -3918,6 +3958,10 @@ class AppState extends ChangeNotifier {
         flow = await _callAgent(room, mode);
         access = flow == null ? null : await accessOf(flow.agent);
         var said = '';
+        // Its opening ends at its first question: the caller answers it (it once went on "…is that
+        // correct? Yes, that's right, I'll confirm it's booked" and saved without them).
+        var asked = false;
+        try {
         await agentReply(
           [
             ChatMessage('system', await _callSystem(mode, lang, flow!, scopes, callerNumber)),
@@ -3930,7 +3974,7 @@ class AppState extends ChangeNotifier {
           abilities: abilitiesOf(flow.agent),
           agentName: '${flow.agent['name']}',
           callerNumber: callerNumber,
-          cancelled: () => gone,
+          cancelled: () => gone || asked,
           approve: (_, _) async => false,
           onText: (t) {
             if (t.isEmpty) {
@@ -3938,12 +3982,20 @@ class AppState extends ChangeNotifier {
               return;
             }
             t = spokenText(t.split('[transfer').first);
+            final q = t.indexOf('?');
+            if (q >= 0) {
+              t = t.substring(0, q + 1);
+              asked = true;
+            }
             if (t.length > said.length) {
               chunk({'content': t.substring(said.length)});
               said = t;
             }
           },
         );
+        } on Cancelled {
+          if (gone) rethrow;
+        }
         sent += ' → ${target['name']}: $said';
       }
     } on Cancelled {

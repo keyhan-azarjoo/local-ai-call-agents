@@ -256,7 +256,8 @@ void main() {
       expect(s['tables']['orders']['counts'].last, 3);
       expect(s['tables']['reservations']['counts'].last, 2);
       expect((s['hours'] as List).length, 24);
-      expect(s['hours'][19], 2, reason: 'both bookings are at 19:00');
+      // (The two open orders count at the hour they came in: now. Between 19:00 and 20:00 that's 19 too.)
+      expect(s['hours'][19] - (DateTime.now().hour == 19 ? 2 : 0), 2, reason: 'both bookings are at 19:00');
     });
 
     test('a closed day refuses bookings on the website and by phone, and the plans show it', () async {

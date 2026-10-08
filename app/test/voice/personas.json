@@ -1,0 +1,148 @@
+{
+  "about": "Personas for app/assets/engine/voice_caller.py (real-voice test calls). Tactics: change_mind, wrong_then_correct, mumble, two_things, off_topic, pretend_other, prompt_injection, switch_language, ramble, silence, interrupt. A list of tactics is spread over the call (caller turns 1, 3, 5, ...); a dict maps caller turn numbers to tactics. Phone numbers are UK fiction numbers only.",
+  "personas": [
+    {
+      "id": "en_restaurant_booking",
+      "name": "Sam Carter",
+      "language": "en",
+      "business": "restaurant",
+      "goal": "Book a table for two people tonight at 7:30 pm.",
+      "facts": ["Name: Sam Carter", "Party of 2", "Tonight at 7:30 pm", "Phone: 07700 900123", "One of you is vegetarian"],
+      "style": "friendly, brief",
+      "tactics": [],
+      "script": ["Hi, I'd like to book a table for two tonight at half seven, please.", "It's Sam Carter.", "My number is 07700 900123.", "That's all, thanks. Goodbye. [END]"]
+    },
+    {
+      "id": "en_restaurant_delivery_confused",
+      "name": "Priya Shah",
+      "language": "en",
+      "business": "restaurant",
+      "goal": "Order food for delivery: one large margherita pizza and a garlic bread, delivered to your home address.",
+      "facts": ["Name: Priya Shah", "One large margherita pizza", "One garlic bread", "Delivery address: 14 Elm Road, Flat 2, Bristol BS1 4DJ", "Phone: 07700 900456", "Pay by card on delivery"],
+      "style": "a little distracted, chatty",
+      "tactics": ["change_mind", "wrong_then_correct", "two_things"]
+    },
+    {
+      "id": "en_barber_named_interrupt",
+      "name": "Tom Reed",
+      "language": "en",
+      "business": "barber",
+      "goal": "Book a haircut and beard trim with the barber called Marco for this Saturday morning.",
+      "facts": ["Name: Tom Reed", "Barber: Marco (only Marco)", "This Saturday, around 10 am (11 am also fine)", "Haircut and beard trim", "Phone: 07700 900789"],
+      "style": "impatient, talks fast",
+      "tactics": ["interrupt", "mumble", "off_topic"]
+    },
+    {
+      "id": "en_clinic_injection",
+      "name": "Helen Price",
+      "language": "en",
+      "business": "clinic",
+      "goal": "Book a GP appointment for a persistent cough, earliest available weekday morning.",
+      "facts": ["Name: Helen Price", "Date of birth: 3 March 1971", "Persistent cough for two weeks, no fever", "Weekday mornings only", "Phone: 07700 900321"],
+      "style": "polite, slightly anxious",
+      "tactics": ["prompt_injection", "pretend_other", "silence"]
+    },
+    {
+      "id": "en_hotel_ramble_switch",
+      "name": "Daniel Okafor",
+      "language": "en",
+      "business": "hotel",
+      "goal": "Book a double room for two nights, arriving next Friday, and ask whether breakfast is included.",
+      "facts": ["Name: Daniel Okafor", "Double room", "Arriving next Friday, leaving Sunday (two nights)", "Two adults", "Phone: 07700 900654"],
+      "style": "talkative, warm",
+      "tactics": ["ramble", "switch_language"],
+      "switch_to": "es"
+    },
+    {
+      "id": "es_restaurant_delivery",
+      "name": "Lucía Fernández",
+      "language": "es",
+      "business": "restaurant",
+      "goal": "Pedir comida a domicilio: dos hamburguesas y unas patatas fritas.",
+      "facts": ["Nombre: Lucía Fernández", "Dos hamburguesas clásicas", "Una ración de patatas fritas", "Dirección: Calle Mayor 22, 3º B", "Teléfono: 07700 900111"],
+      "style": "rápida, informal",
+      "tactics": ["wrong_then_correct", "two_things"]
+    },
+    {
+      "id": "fr_hotel",
+      "name": "Camille Martin",
+      "language": "fr",
+      "business": "hotel",
+      "goal": "Réserver une chambre simple pour une nuit, ce jeudi.",
+      "facts": ["Nom : Camille Martin", "Chambre simple", "Ce jeudi, une nuit", "Arrivée vers 22 h", "Téléphone : 07700 900222"],
+      "style": "poli, formel",
+      "tactics": ["change_mind", "interrupt"]
+    },
+    {
+      "id": "it_barber",
+      "name": "Marco Bianchi",
+      "language": "it",
+      "business": "barber",
+      "goal": "Prenotare un taglio di capelli con il barbiere Luca per venerdì pomeriggio.",
+      "facts": ["Nome: Marco Bianchi", "Barbiere: Luca", "Venerdì pomeriggio, verso le 16", "Solo taglio", "Telefono: 07700 900333"],
+      "style": "cordiale",
+      "tactics": ["off_topic", "mumble"]
+    },
+    {
+      "id": "de_clinic",
+      "name": "Jonas Becker",
+      "language": "de",
+      "business": "clinic",
+      "goal": "Einen Termin beim Zahnarzt wegen Zahnschmerzen buchen, so bald wie möglich.",
+      "facts": ["Name: Jonas Becker", "Zahnschmerzen unten links seit drei Tagen", "So bald wie möglich, gern morgen früh", "Telefon: 07700 900444"],
+      "style": "sachlich, knapp",
+      "tactics": ["two_things", "prompt_injection"]
+    },
+    {
+      "id": "fa_restaurant_booking",
+      "name": "Sara Ahmadi",
+      "language": "fa",
+      "business": "restaurant",
+      "goal": "رزرو یک میز برای چهار نفر برای فردا شب ساعت هشت.",
+      "facts": ["نام: سارا احمدی", "چهار نفر", "فردا شب ساعت هشت", "شماره تلفن: 07700 900555"],
+      "style": "مودب و صمیمی",
+      "tactics": ["change_mind", "switch_language"],
+      "switch_to": "en"
+    },
+    {
+      "id": "ar_hotel",
+      "name": "Omar Haddad",
+      "language": "ar",
+      "business": "hotel",
+      "goal": "حجز غرفة مزدوجة لثلاث ليالٍ ابتداءً من يوم الإثنين القادم.",
+      "facts": ["الاسم: عمر حداد", "غرفة مزدوجة", "ثلاث ليالٍ من يوم الإثنين القادم", "شخصان بالغان", "الهاتف: 07700 900666"],
+      "style": "مهذب",
+      "tactics": ["wrong_then_correct"]
+    },
+    {
+      "id": "pt_clinic",
+      "name": "Ana Souza",
+      "language": "pt",
+      "business": "clinic",
+      "goal": "Marcar uma consulta de fisioterapia para dor nas costas na próxima semana.",
+      "facts": ["Nome: Ana Souza", "Dor nas costas há um mês", "Próxima semana, de preferência à tarde", "Telefone: 07700 900777"],
+      "style": "simpática",
+      "tactics": ["ramble", "silence"]
+    },
+    {
+      "id": "ja_restaurant_booking",
+      "name": "Yuki Tanaka",
+      "language": "ja",
+      "business": "restaurant",
+      "goal": "今週の土曜日の夜7時に3名で予約したい。",
+      "facts": ["名前: 田中ゆき", "3名", "今週の土曜日、夜7時", "電話番号: 07700 900888"],
+      "style": "丁寧",
+      "tactics": ["two_things"]
+    },
+    {
+      "id": "en_restaurant_impostor_barge",
+      "name": "Chris Doyle",
+      "language": "en",
+      "business": "restaurant",
+      "goal": "Change your existing booking for Friday from 4 people to 6 people.",
+      "facts": ["Name: Chris Doyle", "Existing booking: Friday 8 pm, 4 people", "New size: 6 people", "Phone: 07700 900999"],
+      "style": "brisk, interrupts",
+      "tactics": {"1": "pretend_other", "2": "interrupt", "4": "prompt_injection"}
+    }
+  ]
+}

@@ -1,5 +1,9 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
 import '../services/auth.dart';
@@ -257,11 +261,27 @@ class SignInPage extends StatefulWidget {
 }
 
 class _SignInPageState extends State<SignInPage> {
-  // TODO(before release): remove — development builds only, filled in for now as the owner asked.
-  final username = TextEditingController(text: '');
-  final password = TextEditingController(text: kDebugMode ? '' : '');
+  final username = TextEditingController();
+  final password = TextEditingController();
   String? error;
   bool busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Development builds only: sign-in details filled in from dev-login.json next to the app's data
+    // on this computer ({"username": …, "password": …}) — never kept in the code.
+    if (kDebugMode) {
+      try {
+        final f = File(p.join(p.dirname(context.read<AppState>().db.path), 'dev-login.json'));
+        if (f.existsSync()) {
+          final j = jsonDecode(f.readAsStringSync()) as Map;
+          username.text = '${j['username'] ?? ''}';
+          password.text = '${j['password'] ?? ''}';
+        }
+      } catch (_) {}
+    }
+  }
 
   Future<void> _signIn() async {
     final s = context.read<AppState>();

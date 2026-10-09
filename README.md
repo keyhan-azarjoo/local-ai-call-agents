@@ -1,8 +1,3 @@
-<!-- myotgo-master-index -->
-> **Part of the MyOTGO project.** The project was mothballed on 2026-10-08.
-> **[📍 MASTER_INDEX — every MyOTGO repository, what it does, and where it ran](https://github.com/keyhan-azarjoo/MyOTGO-Project-Docs/blob/development/MASTER_INDEX.md)**
-> Read that first: it is the only complete list, and it records what to do before restarting.
-
 # LocalAILine: local AI call agents
 
 [![CI](https://github.com/keyhan-azarjoo/local-ai-call-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/keyhan-azarjoo/local-ai-call-agents/actions/workflows/ci.yml) [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE) ![Flutter](https://img.shields.io/badge/Flutter-3.44-02569B?logo=flutter) ![macOS](https://img.shields.io/badge/host-macOS-black?logo=apple)
@@ -130,6 +125,7 @@ To build a standalone app instead, run `flutter build macos --release`. The app 
 cd app
 flutter analyze
 flutter test $(ls test/*_test.dart test/scenarios/*_test.dart | grep -v live_test)
+cd ../packages/localailine_engine && dart test   # the engine, headless
 ```
 
 The spoken test calls run inside the app: **Calls → Tests → Run test scenarios** ([how they work](docs/TESTING.md)).
@@ -199,17 +195,36 @@ Journeys (multi-call, multi-agent) are the open problem, and the failures are pu
 | Phone | Twilio Elastic SIP trunking, a Go call bridge (SIP registration), LiveKit SIP |
 | Tests | flutter_test, a Python scenario generator, a spoken-call scenario runner, headless Chrome |
 
+## Packages
+
+LocalAILine is built from open packages that you can use on their own, the way LiveKit ships its server, SDKs and agents framework. The desktop app is one way of putting them together; the engine also runs headless, without Flutter.
+
+| Package | Language | What it is |
+|---|---|---|
+| [`localailine_model`](packages/localailine_model) | Dart, runs in browsers too | Shared types and pure logic: chat messages, users and roles, MCP tools, the business app spec, templates, the generated websites, the service interfaces |
+| [`localailine_core`](packages/localailine_core) | Dart | The AI tool-calling loop, LLM clients (llama.cpp, Ollama, OpenAI-compatible, cloud), MCP client with OAuth, knowledge search, phone set-up, the database |
+| [`localailine_apps`](packages/localailine_apps) | Dart | Business apps: data with booking rules, the website and manager page server, MCP tools for call agents, the AI app builder |
+| [`localailine_engine`](packages/localailine_engine) | Dart | `AppEngine`: everything the app does, with no user interface: call flow, the per-turn call pipeline and its guards, live calls; runs headless |
+| [`localailine_ui`](packages/localailine_ui) | Flutter | The pages, written against `AppModel`, so another app can put them on its own engine |
+| [`localailine-voice`](packages/localailine_voice) | Python | The call worker (LiveKit Agents): local hearing and voices; a plugin hook (`LL_PLUGIN`) for other hearing, voices and hosts |
+
+```mermaid
+flowchart LR
+  model[localailine_model] --> core[localailine_core] --> apps[localailine_apps] --> engine[localailine_engine]
+  model --> ui[localailine_ui]
+  engine --> desktop[app/ · desktop app]
+  ui --> desktop
+  voice[localailine-voice] -. calls .-> engine
+```
+
 ## Project layout
 
 ```
-app/                 the Flutter app (desktop + phone companion)
-  lib/state/         app state, call handling, scenario runner, test businesses
-  lib/services/      voice engine, phone, AI engines, MCP, knowledge, business apps
-  lib/ui/            pages (calls, call flow, builder, phone line, settings…)
+app/                 the desktop app: AppState (engine + Flutter), desktop-only pages, main
   assets/engine/     the Python voice engine, speech lab, call bridge source
   assets/scenarios/  the 2,143 test calls
   test/              unit, widget, security and live tests; scenario tools
-  tools/             latency probe for the voice agent
+packages/            the open packages above
 docs/                guides, security, testing, evaluations, screenshots
 skills/              an example business skill (restaurant)
 ```

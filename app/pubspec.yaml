@@ -25,6 +25,21 @@ dependencies:
   archive: ^4.3.0
   livekit_client: ^2.13.0
 
+  # The open LocalAILine packages (see ../packages).
+  localailine_model:
+    path: ../packages/localailine_model
+  localailine_core:
+    path: ../packages/localailine_core
+  localailine_apps:
+    path: ../packages/localailine_apps
+  localailine_engine:
+    path: ../packages/localailine_engine
+  localailine_ui:
+    path: ../packages/localailine_ui
+  # The phone gateway's Go source, built on first use (see packages/localailine_sipgw).
+  localailine_sipgw:
+    path: ../packages/localailine_sipgw
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

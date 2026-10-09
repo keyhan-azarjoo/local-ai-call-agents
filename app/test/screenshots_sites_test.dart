@@ -4,11 +4,11 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/apps/apps_manager.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_apps/apps_manager.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
 
 /// Pictures of the business apps for the README: their public websites and the manager pages.
 /// The apps are made from the ready-made templates in a temporary database (with the templates'

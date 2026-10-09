@@ -2,11 +2,11 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/auth.dart';
-import 'package:localailine/services/catalog.dart';
-import 'package:localailine/services/hardware.dart';
-import 'package:localailine/services/ollama.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/auth.dart';
+import 'package:localailine_core/services/catalog.dart';
+import 'package:localailine_core/services/hardware.dart';
+import 'package:localailine_core/services/ollama.dart';
 
 Hardware hw({double ram = 32, double vram = 0, bool unified = true}) => Hardware(
     os: 'test', cpu: 'cpu', cores: 8, ramGb: ram, gpu: 'gpu', vramGb: vram, unifiedMemory: unified, freeDiskGb: 100);

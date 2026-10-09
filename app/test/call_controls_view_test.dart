@@ -2,11 +2,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
+import 'package:localailine_core/data/db.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:localailine/state/call_monitor.dart';
-import 'package:localailine/theme/tokens.dart';
-import 'package:localailine/ui/pages/live_calls.dart';
+import 'package:localailine_ui/app_model.dart';
+import 'package:localailine_ui/state/call_monitor.dart';
+import 'package:localailine_ui/theme/tokens.dart';
+import 'package:localailine_ui/ui/pages/live_calls.dart';
 import 'package:provider/provider.dart';
 
 /// Calls → live calls: Listen, Take over (then Hand back to AI / End call), and on voice test
@@ -31,7 +32,7 @@ void main() {
       expect(t.takeException(), isNull);
     }
 
-    await t.pumpWidget(ChangeNotifierProvider.value(
+    await t.pumpWidget(ListenableProvider<AppModel>.value(
       value: s,
       child: MaterialApp(
         theme: buildTheme(Brightness.light),

@@ -2,14 +2,14 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/agent_loop.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/apps/apps_manager.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
-import 'package:localailine/services/ollama.dart';
-import 'package:localailine/services/persona.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/agent_loop.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_apps/apps_manager.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/services/ollama.dart';
+import 'package:localailine_core/services/persona.dart';
 import 'package:localailine/state/app_state.dart';
 
 /// Real calls from 6 Oct, replayed with a real local model the way the voice path runs them.
@@ -45,9 +45,9 @@ void main() {
     }
 
     final lastSaid = convo.lastWhere((m) => m.role == 'assistant', orElse: () => ChatMessage('assistant', '')).content;
-    final msgs = [ChatMessage('system', '$base${AppState.calendar()} The number of the person on this call is $caller.${AppState.noRepeat(lastSaid)}'), ...convo];
+    final msgs = [ChatMessage('system', '$base${AppEngine.calendar()} The number of the person on this call is $caller.${AppEngine.noRepeat(lastSaid)}'), ...convo];
     var reply = await loop.run(target: LocalTarget(model!, maxCtx: 16384), messages: msgs, tools: tools, approve: (_, _) async => false, runTool: run);
-    if (AppState.unfinished(reply, usedTool: used.isNotEmpty, acted: used.any((u) => RegExp(r'^(add_|cancel_my_)').hasMatch(u)))) {
+    if (AppEngine.unfinished(reply, usedTool: used.isNotEmpty, acted: used.any((u) => RegExp(r'^(add_|cancel_my_)').hasMatch(u)))) {
       final more = await loop.run(
           target: LocalTarget(model, maxCtx: 16384),
           messages: [...msgs, ChatMessage('assistant', reply), ChatMessage('user', '(Go ahead: use your tools now and tell me the result in one or two sentences. Don\'t say you will check again.)')],
@@ -58,10 +58,10 @@ void main() {
     }
     // The safety net (as on a real call): said it's booked, or promised to, and saved nothing.
     final asked = convo.where((m) => m.role == 'user').map((m) => m.content).join(' ');
-    if (!used.any((u) => u.startsWith('add_')) && (RegExp(r'\b(confirmed|booked|reserved)\b', caseSensitive: false).hasMatch(reply) || AppState.promisesAction(reply)) &&
+    if (!used.any((u) => u.startsWith('add_')) && (RegExp(r'\b(confirmed|booked|reserved)\b', caseSensitive: false).hasMatch(reply) || AppEngine.promisesAction(reply)) &&
         RegExp(r'\bbook', caseSensitive: false).hasMatch(asked) && !RegExp(r'cancel', caseSensitive: false).hasMatch(asked)) {
       final add = tools.firstWhere((t) => t.tool.name == 'add_reservations');
-      final c = await AppState.commitWith(loop, LocalTarget(model, maxCtx: 16384), add, [...convo, ChatMessage('assistant', reply)], (args) => run(add, args), callerNumber: caller);
+      final c = await AppEngine.commitWith(loop, LocalTarget(model, maxCtx: 16384), add, [...convo, ChatMessage('assistant', reply)], (args) => run(add, args), callerNumber: caller);
       reply = '$reply [net: ${c == null ? 'no call' : c.ok ? 'saved' : 'failed: ${c.text}'}]';
     }
     print('  tools: ${used.join(' · ')}\n  AI: $reply');
@@ -71,7 +71,7 @@ void main() {
   test('18:47 call: book for tomorrow, then switch to table 5', () async {
     final a = await setUpApp();
     final base = '${Persona.callerSystem({'name': 'Ava', 'instructions': 'You answer phone calls for Pasargad restaurant.'})} '
-        'This is a live voice conversation: answer in one to three short spoken sentences.${AppState.appRulesText(a.tools)}';
+        'This is a live voice conversation: answer in one to three short spoken sentences.${AppEngine.appRulesText(a.tools)}';
     final convo = [ChatMessage('assistant', 'Hi, thanks for calling Pasargad. How can I help?')];
     final loop = ToolLoop();
     for (final heard in [
@@ -97,7 +97,7 @@ void main() {
     final today = DateTime.now().toIso8601String().substring(0, 10);
     await a.data.add('reservations', {'name': 'Alex', 'phone': '07700 900124', 'date': today, 'time': '20:30', 'guests': 2}, via: 'website');
     final base = '${Persona.outboundSystem('Ava', 'Alex', 'Alex', 'ask for confirmation for the reservation')} '
-        'This is a live voice conversation: answer in one to three short spoken sentences.${AppState.appRulesText(a.tools)}';
+        'This is a live voice conversation: answer in one to three short spoken sentences.${AppEngine.appRulesText(a.tools)}';
     final convo = [ChatMessage('assistant', 'Hello, this is Ava, an AI assistant calling on behalf of Alex. I just wanted to confirm your reservation for tonight.')];
     final loop = ToolLoop();
     final replies = <String>[];

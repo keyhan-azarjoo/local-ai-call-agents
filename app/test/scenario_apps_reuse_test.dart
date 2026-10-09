@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/apps/app_spec.dart';
-import 'package:localailine/services/apps/app_templates.dart';
+import 'package:localailine_apps/app_spec.dart';
+import 'package:localailine_apps/app_templates.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:localailine/state/scenario_runner.dart';
+import 'package:localailine_engine/scenario_runner.dart';
 
 /// Test runs in the app reuse the businesses they made before, even after the templates gained
 /// tables (they used to make a second copy of each, and the AI then saw two barbers, two clinics…),

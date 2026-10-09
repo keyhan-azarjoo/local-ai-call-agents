@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:localailine/main.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:provider/provider.dart';
 
 /// Drives the real app end to end on this computer, against the real local
 /// Ollama, with a throwaway database.
@@ -45,7 +44,7 @@ void main() {
     state = AppState(dbPath: '${dir.path}/it.db')..speakReplies = false;
     await state.init();
     await t.binding.setSurfaceSize(const Size(1440, 1000));
-    await t.pumpWidget(ChangeNotifierProvider.value(value: state, child: const LocalAILineApp()));
+    await t.pumpWidget(withState(state, const LocalAILineApp()));
     await settle(t);
 
     // ---- Setup wizard ----

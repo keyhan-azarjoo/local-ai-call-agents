@@ -1,0 +1,21 @@
+name: localailine_core
+description: "LocalAILine core: the AI tool-calling loop, LLM clients (llama.cpp, Ollama, OpenAI-compatible, cloud), MCP client with OAuth, knowledge search, phone set-up and the local database. Pure Dart, no Flutter."
+version: 0.9.0
+repository: https://github.com/keyhan-azarjoo/local-ai-call-agents
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  localailine_model:
+    path: ../localailine_model
+  archive: ^4.3.0
+  cryptography: ^2.9.0
+  http: ^1.6.0
+  path: ^1.9.1
+  pdfrx_engine: ^0.4.7
+  sqflite_common_ffi: ^2.4.3
+
+dev_dependencies:
+  test: any

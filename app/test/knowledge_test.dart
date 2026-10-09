@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/knowledge/chunker.dart';
-import 'package:localailine/services/knowledge/extract.dart';
-import 'package:localailine/services/knowledge/knowledge.dart';
-import 'package:localailine/ui/pages/knowledge_page.dart' show skillFrom;
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/knowledge/chunker.dart';
+import 'package:localailine_core/services/knowledge/extract.dart';
+import 'package:localailine_core/services/knowledge/knowledge.dart';
+import 'package:localailine_ui/ui/pages/knowledge_page.dart' show skillFrom;
 
 // ignore_for_file: avoid_print
 const pdf = '../skills/restaurant-skill.pdf';

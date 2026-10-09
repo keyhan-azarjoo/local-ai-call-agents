@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:localailine/services/mcp/mcp_auth.dart';
+import 'package:localailine_core/services/mcp/mcp_auth.dart';
 
 void main() {
   test('pre-registered sign-in (Google style): no registration, secret sent, offline access asked', () async {

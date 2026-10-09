@@ -3,8 +3,8 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:localailine/services/cloud_llm.dart';
-import 'package:localailine/services/ollama.dart' show ChatMessage;
+import 'package:localailine_core/services/cloud_llm.dart';
+import 'package:localailine_core/services/ollama.dart' show ChatMessage;
 
 /// Fake provider servers: check what we send, answer like the real API.
 http.Client fake(void Function(http.BaseRequest) check, String body, {int status = 200}) =>

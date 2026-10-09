@@ -9,14 +9,14 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_server.dart';
-import 'package:localailine/services/apps/app_spec.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/apps/apps_manager.dart';
-import 'package:localailine/services/mcp/mcp_client.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_server.dart';
+import 'package:localailine_apps/app_spec.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_apps/apps_manager.dart';
+import 'package:localailine_core/services/mcp/mcp_client.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
 
 const key = 'pro2-test-tool-key-0123456789abcdefghij';
 const pin = '135790';

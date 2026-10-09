@@ -30,6 +30,7 @@ Callers never reach the owner's own tools (contacts, email, calendar), other con
 
 - Calls are accepted only through the call bridge on this computer (the SIP trunk allows `127.0.0.1` only), so no device on your network can ring in pretending to be someone.
 - The voice engine's keys and SIP passwords are stored readable only by your user account.
+- The phone gateway (your own number) listens for its control requests on `127.0.0.1` only, with a new random token each start. Providers can reach it from the internet on port 5070, but a call is accepted only on the secret address it signed in with, from the provider's connection or addresses. Outgoing calls are accepted only from LiveKit on this computer, with a login, and always show the line's own number.
 - Recording file names are made from safe characters only, whatever the caller's network sends.
 - Tests never place real calls: the app refuses outbound calls and person hand-overs while tests run, and test numbers come from Ofcom's ranges reserved for drama.
 
@@ -42,7 +43,7 @@ Callers never reach the owner's own tools (contacts, email, calendar), other con
 
 ## Known limitations
 
-- **Credentials:** provider credentials (the Twilio token, cloud API keys) are kept in the app's local database, readable by your user account only, not yet in the macOS Keychain. Moving them there is planned.
+- **Credentials:** provider credentials (the Twilio token, the SIP password of your own number, cloud API keys) are kept in the app's local database, readable by your user account only, not yet in the macOS Keychain. Moving them there is planned. The phone gateway keeps its copy of your lines in an encrypted file (`sipgw-lines.enc`); its key is in `sipgw.secret` in the same data folder (readable only by you), so it protects against the file being copied on its own, not against someone who can read your data folder.
 - **What's on the network:** business websites and the companion server listen on your local network, so phones and visitors on your Wi-Fi can reach them. On those servers the AI's tools need this computer and the tool key, and the manager page needs the PIN. LiveKit listens on the network for paired phones and only admits signed tokens.
 - **Heuristic guards:** some call guards read English phrasing (a "yes", "that's all"). They only add protection; in other languages the server-side rules above still hold.
 

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/agent_loop.dart';
-import 'package:localailine/services/mcp/mcp_client.dart';
+import 'package:localailine_core/services/agent_loop.dart';
+import 'package:localailine_core/services/mcp/mcp_client.dart';
 
 ToolBinding tool(String name, String desc) => ToolBinding(
     serverId: 1,

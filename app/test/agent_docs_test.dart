@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/ollama.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/ollama.dart';
 import 'package:localailine/state/app_state.dart';
 
 /// A business's own agent uses that business's knowledge only: on a voice test call, the Trattoria

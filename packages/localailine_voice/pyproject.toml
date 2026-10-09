@@ -1,0 +1,47 @@
+# The LocalAILine voice worker as an installable package (a LiveKit Agents worker, like LiveKit's
+# own plugins). Its code is one file, app/assets/engine/localailine_voice.py, which the desktop app
+# also copies and runs as it is: src/localailine_voice/__init__.py is a link to it, never a copy.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "localailine-voice"
+version = "0.1.0"
+description = "LocalAILine's voice worker: a phone receptionist on LiveKit Agents, with local hearing and voices"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11"
+keywords = ["livekit", "agents", "voice", "telephony", "receptionist", "sip"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Communications :: Telephony",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+# The same versions as app/assets/engine/requirements.txt (what the desktop app installs).
+dependencies = [
+    "livekit-agents[silero,turn-detector,openai]==1.8.4",
+    "livekit==1.1.20",
+    "onnxruntime==1.30.0",  # (Silero and the end-of-turn model need it either way)
+    "numpy==2.5.3",
+    "aiohttp==3.14.3",
+    "httpx",
+]
+
+[project.optional-dependencies]
+# The voices on this computer (Kokoro and Piper); whisper.cpp's server is a separate program the
+# desktop app runs. Not needed when a plugin (LL_PLUGIN) gives the hearing and the voice.
+local = [
+    "piper-tts==1.8.0",
+    "kokoro-onnx==0.6.1",
+]
+
+[project.scripts]
+localailine-voice = "localailine_voice:main"
+
+[project.urls]
+Source = "https://github.com/keyhan-azarjoo/local-ai-call-agents"
+
+[tool.setuptools.packages.find]
+where = ["src"]

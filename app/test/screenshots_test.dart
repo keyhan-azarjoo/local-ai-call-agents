@@ -6,24 +6,24 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_server.dart';
-import 'package:localailine/services/apps/app_spec.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/apps/apps_manager.dart';
-import 'package:localailine/services/auth.dart';
-import 'package:localailine/services/builtin_llm.dart';
-import 'package:localailine/services/catalog.dart';
-import 'package:localailine/services/companion/host_server.dart';
-import 'package:localailine/services/hardware.dart';
-import 'package:localailine/services/knowledge/knowledge.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
-import 'package:localailine/services/speech.dart';
-import 'package:localailine/services/voice_engine.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_server.dart';
+import 'package:localailine_apps/app_spec.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_apps/apps_manager.dart';
+import 'package:localailine_core/services/auth.dart';
+import 'package:localailine_core/services/builtin_llm.dart';
+import 'package:localailine_core/services/catalog.dart';
+import 'package:localailine_core/services/companion/host_server.dart';
+import 'package:localailine_core/services/hardware.dart';
+import 'package:localailine_core/services/knowledge/knowledge.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/services/speech.dart';
+import 'package:localailine_core/services/voice_engine.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:localailine/theme/tokens.dart';
-import 'package:localailine/ui/shell.dart';
+import 'package:localailine_ui/theme/tokens.dart';
+import 'package:localailine_ui/ui/shell.dart';
 import 'package:provider/provider.dart';
 
 /// Pictures of the desktop app for the README, drawn through the real app (sidebar, top bar, pages)
@@ -85,7 +85,7 @@ void main() {
       });
     }
 
-    await t.pumpWidget(ChangeNotifierProvider<AppState>.value(
+    await t.pumpWidget(ListenableProvider<AppState>.value(
       value: s,
       child: RepaintBoundary(
         key: key,
@@ -284,7 +284,7 @@ Future<void> _seed(_DemoState s, Directory tmp) async {
   final now = DateTime.now();
   int ago(Duration d) => now.subtract(d).millisecondsSinceEpoch;
 
-  s.catalog = await Catalog.load();
+  s.catalog = await Catalog.load(rootBundle.loadString);
   s.speech = _DemoSpeech();
   s.auth = AuthService(db);
   s.mcp = _DemoMcp(db);

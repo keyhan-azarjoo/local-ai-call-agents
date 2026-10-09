@@ -1,8 +1,39 @@
-# Phone lines: Twilio and landlines
+# Phone lines: your own number, Twilio and landlines
 
-LocalAILine answers real phone calls through a Twilio number. You need no server, port forwarding or router change: the call bridge on your computer keeps a secure connection to your own Twilio account open, and calls come in through it.
+LocalAILine answers real phone calls on your own number (through your phone provider), on a Twilio number, or on a landline. You need no server, port forwarding or router change: this computer signs in to your provider and keeps that connection open, and calls come in through it.
 
 ![Phone line](../screenshots/app-phone-line.png)
+
+## Your own number, through your provider
+
+Keep the number you already have. If your phone provider offers a **SIP login** (often called "SIP device", "SIP phone", "BYOD" or "SIP credentials"), LocalAILine signs in with it, just like a desk phone would. Nothing to buy, no hardware, and your number doesn't move.
+
+1. **From your provider**, get the SIP details for your number: the **SIP server** (also called registrar or domain), the **username** and the **password**. Some providers also give a separate **authentication username**, a **port**, or an **outbound proxy**.
+2. **In LocalAILine:** **Phone line → Add phone line → My number, through my provider**.
+3. **Pick your provider** if it's in the list (sipgate, Telnyx, Vonage Business, BT Cloud Voice, Zen…). That fills in the usual server, port and connection, but **check them with your provider**: products differ and change. Otherwise choose **Any SIP provider**.
+4. Enter your **number** (with its country code, e.g. +44 7700 900123), the **username** and the **password**.
+5. Choose the **connection**: **TLS** (secure, the default) if your provider offers it, else **TCP**, else **UDP**. Over TLS and TCP your provider sends calls back over the connection this computer opened, so nothing needs opening on your router.
+6. Press **Test connection**. LocalAILine signs in once and tells you, in plain words, whether it worked: for example "wrong username or password", "the provider's address could not be found", or "refused the connection: check the port and transport".
+7. **Save line.** The line shows its state: **Connected**, **Signing in…**, **Sign-in failed** (with the reason), or **Off**.
+
+The assistant can also **make calls** from your number (**Make a call**): they go out through your provider and show your own number.
+
+How it works: a small **phone gateway** runs on this computer (`packages/localailine_sipgw`). The first time you test or connect a line, LocalAILine builds it with Go (`brew install go`; it takes a minute). The gateway signs in to your provider and keeps that sign-in alive. When your number rings, your provider sends the call to the gateway, which passes it to the assistant. Only the call set-up goes through the gateway: the audio goes straight between your provider and this computer.
+
+While LocalAILine is closed (or the line is **Off**), the gateway signs out, and your provider rings your other phones as before.
+
+**Needs a real provider to check:** the sign-in and test work with any provider that offers SIP registration. Whether the call's audio gets through your home router depends on the router, just as with the Twilio line.
+
+## Who takes the calls
+
+Each line has its own choice, under **Who takes calls** on the line (and in the add/edit dialog):
+
+- **AI answers** (the default): the assistant answers every call at once.
+- **Ring me:** your phones paired with LocalAILine (those with ringing on) and the **Calls** page on this computer ring. Answer on a phone, or press **Answer** on the computer, and you talk to the caller yourself; the AI never joins. If nobody answers within the line's ring time, the AI answers and takes a message.
+- **Ring me, then the AI:** the same, but after the ring time (you choose the seconds, 20 by default) the AI answers as usual.
+- **Off:** calls on this line aren't answered here. For your own number, LocalAILine signs the line out, so your provider rings your other phones. For a Twilio number or a landline it's the same as turning off **Answer calls here**.
+
+While a call is ringing you, the Calls page shows it with **Answer** and **Let the AI answer**. The caller hears a ringing tone until someone picks up. If they hang up first, the call is saved as missed.
 
 ## Connect a Twilio number
 
@@ -43,7 +74,7 @@ It does this without placing any real phone call.
 
 **No box?** Most phone companies let you **forward** your landline (always, when busy, or when there's no answer) to your Twilio number instead.
 
-Telnyx and other SIP providers can be saved now; connecting them directly is on the roadmap.
+For Telnyx and most other SIP providers, use **My number, through my provider** (above).
 
 ## Several calls at once
 
@@ -69,5 +100,5 @@ On a 2023 MacBook Pro (M3 Pro, 18 GB), three requests at once take about 1.8 s f
 
 ## Safety
 
-- Calls are accepted only through the call bridge on this computer, never from elsewhere on your network.
+- Calls are accepted only through the call bridge or the phone gateway on this computer, never from elsewhere on your network. The gateway accepts a call from your provider only on the secret address it signed in with, and places outgoing calls only for the assistant, always with your line's own number.
 - Test calls are simulated inside the app. They never place a real call, and the app refuses outbound calls while tests run.

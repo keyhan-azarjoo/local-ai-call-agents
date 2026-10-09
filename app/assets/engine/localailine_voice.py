@@ -16,6 +16,8 @@ Configuration comes from environment variables (set by the app):
   LL_LANGUAGE (auto | en | fa | …)
   LL_VOICES_DIR (folder with Piper .onnx voices), LL_KOKORO_DIR (kokoro-v1.0.onnx + voices-v1.0.bin),
   LL_GREETING, LL_INSTRUCTIONS
+  LL_AGENT_NAME (optional: the name calls are dispatched to this worker by; empty: every new room)
+  LL_PLUGIN (optional: a Python module that can change a few things per call; see "plugin" below)
 """
 from __future__ import annotations
 
@@ -23,12 +25,16 @@ import asyncio
 import io
 import json
 import logging
+import importlib
+import inspect
 import os
 import random
+import sys
 import threading
 import time
 import urllib.request
 import wave
+from dataclasses import dataclass
 from pathlib import Path
 
 import aiohttp
@@ -174,6 +180,141 @@ def handback_of(metadata: str | None) -> str | None:
 def is_app_listener(identity: str | None) -> bool:
     """The owner in the app (listening in or on the call): never the caller the AI talks to."""
     return str(identity or "").startswith((OWNER_PREFIX, "listen-"))
+
+
+# ---------- who takes a call: the AI now, or the owner's devices ring first ----------
+# The app's /api/voice-config can say, per phone call (the line's "who takes calls"):
+#   "answer": {"off": true}                          not answered here: hang up without a word
+#   "answer": {"wait": N, "then": "ai" | "message"}  the owner's devices ring first. The worker
+#       stays silent (the caller hears ringing) until the app says who took the call
+#       (/api/call-answer, held open until then), the owner takes over in the room, the caller
+#       hangs up, or N seconds pass. Then the AI answers ("ai"), takes a message ("message"), or
+#       leaves the call to the person who answered ("person", "owner").
+# No "answer": the AI answers at once, as it always has.
+ANSWER_GOES = ("ai", "message", "person", "owner", "gone")
+
+
+def answer_plan(cfg: dict | None) -> dict | None:
+    """The app's answer plan for this call, checked; None means answer now."""
+    a = (cfg or {}).get("answer")
+    if not isinstance(a, dict):
+        return None
+    if a.get("off") is True:
+        return {"off": True}
+    try:
+        wait = float(a.get("wait") or 0)
+    except (TypeError, ValueError):
+        return None
+    if wait <= 0:
+        return None
+    return {"wait": min(wait, 300.0), "then": a.get("then") if a.get("then") in ("ai", "message") else "ai"}
+
+
+async def wait_to_answer(plan: dict, ask_app, taken: asyncio.Event, gone: asyncio.Event, who: dict | None = None,  # noqa: ANN001
+                         grace: float = 10.0) -> dict:
+    """Waits while the owner is rung: returns {"go": one of ANSWER_GOES, ...}.
+
+    ask_app(): a coroutine asking the app (it answers once someone took the call or its time is up).
+    taken: set when the owner takes the call over in the room (who["by"]: their name).
+    gone: set when the caller hangs up. If the app can't be asked, the line's own time decides."""
+    wait, then = plan["wait"], plan["then"]
+    started = time.monotonic()
+
+    async def from_app() -> dict:
+        try:
+            r = await ask_app()
+        except Exception as e:  # noqa: BLE001
+            log.warning("could not ask the app who takes the call: %s", e)
+            r = None
+        if isinstance(r, dict) and r.get("go") in ANSWER_GOES:
+            return r
+        await asyncio.sleep(max(0.0, wait - (time.monotonic() - started)))  # (the app couldn't say)
+        return {"go": then}
+
+    app = asyncio.ensure_future(from_app())
+    t_taken = asyncio.ensure_future(taken.wait())
+    t_gone = asyncio.ensure_future(gone.wait())
+    try:
+        await asyncio.wait({app, t_taken, t_gone}, timeout=wait + grace, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for t in (app, t_taken, t_gone):
+            if not t.done():
+                t.cancel()
+    if gone.is_set():
+        return {"go": "gone"}
+    if taken.is_set():
+        return {"go": "owner", "by": (who or {}).get("by") or "the owner"}
+    if app.done() and not app.cancelled():
+        return app.result()
+    return {"go": then}
+
+
+def ringback_cadence(number: str) -> tuple[tuple[float, ...], list[tuple[bool, float]]]:
+    """The ringing tone a caller from [number] knows: its frequencies and (on, seconds) steps."""
+    n = str(number or "")
+    if n.startswith("+1"):
+        return (440.0, 480.0), [(True, 2.0), (False, 4.0)]
+    if n.startswith(("+44", "+353", "+61", "+64")):
+        return (400.0, 450.0), [(True, 0.4), (False, 0.2), (True, 0.4), (False, 2.0)]
+    return (425.0,), [(True, 1.0), (False, 4.0)]
+
+
+# ---------- the app a call talks to, and a plugin ----------
+
+
+@dataclass(frozen=True)
+class Host:
+    """The LocalAILine app a call talks to: its brain (an OpenAI-compatible endpoint), its voice
+    settings and its call log. Here it comes from the environment the app sets."""
+
+    url: str  # the app ("" when run on its own, straight on Ollama)
+    token: str  # bearer token for the app
+    llm_base: str  # the brain's OpenAI-compatible endpoint
+
+    @classmethod
+    def from_env(cls) -> Host:
+        return cls(url=os.environ.get("LL_APP_URL", ""), token=os.environ.get("LL_LLM_KEY", ""),
+                   llm_base=os.environ.get("LL_LLM_BASE", "http://127.0.0.1:11434/v1"))
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}"}
+
+
+# LL_PLUGIN=<module>: another package can change a few things per call without changing this
+# file. Every function is optional; a missing one (or None returned) keeps what is here.
+#   host_for_job(metadata: str) -> Host | None
+#       the app this call talks to, from the job's metadata (a subclass of Host can carry more)
+#   make_stt(host, language: str, vocabulary: str) -> stt.STT | None
+#       the hearing for this call (else whisper.cpp)
+#   make_tts(host, voice: str, language: str, stt) -> tts.TTS | None
+#       the voice for this call (else Kokoro/Piper). voice = the app's voice for the agent ("" if
+#       none); VOICE_CHOICE has the voices per language. The call sets `voice_override` on it when
+#       passed to a teammate, and `_language`.
+#   on_call_end(host, stats: dict) -> None (or a coroutine)
+#       stats: room, phoneCall, answered, callSeconds, llmTurns, and this call's stt and tts
+# The call also uses these on the hearing and voice when they have them: detected_language,
+# recorder and record_agent_audio(pcm, sr) (recording), and played(frame) on the voice.
+_plugin_module: object = None
+
+
+def plugin():  # noqa: ANN201
+    """The LL_PLUGIN module, or None."""
+    global _plugin_module  # noqa: PLW0603
+    name = os.environ.get("LL_PLUGIN", "").strip()
+    if not name:
+        return None
+    if _plugin_module is None:
+        # (Run as a script this file is __main__: the plugin's `import localailine_voice` gets this one.)
+        sys.modules.setdefault("localailine_voice", sys.modules[__name__])
+        _plugin_module = importlib.import_module(name)
+    return _plugin_module
+
+
+def plugin_call(fn: str, *args):  # noqa: ANN002, ANN201
+    """The plugin's `fn(*args)`, or None when there is no plugin or it has no such function."""
+    f = getattr(plugin(), fn, None)
+    return f(*args) if callable(f) else None
 
 
 def wav_bytes(pcm: np.ndarray, sr: int) -> bytes:
@@ -983,7 +1124,7 @@ class AppLLM(openai.LLM):
 
     def chat(self, **kw):  # noqa: ANN003, ANN201
         # mode:language:room — the room tells the app which call (and which agent is on it).
-        self._opts.model = f"{self._mode}:{self._stt.detected_language}:{self._room}"
+        self._opts.model = f"{self._mode}:{getattr(self._stt, 'detected_language', 'en')}:{self._room}"
         return super().chat(**kw)
 
 
@@ -1032,6 +1173,8 @@ class Ava(Agent):
 
     async def tts_node(self, text, model_settings):  # noqa: ANN001, ANN201
         tts_ = self.session.tts
+        # (The local voices note what they play themselves; a plugin's voice is told frame by frame.)
+        played = getattr(tts_, "played", None)
         spoke = False
         queue: asyncio.Queue[str | None] = asyncio.Queue()
 
@@ -1095,6 +1238,8 @@ class Ava(Agent):
                         spoke = True
                         async with tts_.synthesize(before.strip()) as stream:
                             async for ev in stream:
+                                if played:
+                                    played(ev.frame)
                                 yield ev.frame
                     for frame in hold_music(self.session.tts._stt if hasattr(self.session.tts, "_stt") else None):  # noqa: SLF001
                         yield frame
@@ -1107,6 +1252,8 @@ class Ava(Agent):
                     spoke = True
                     async with tts_.synthesize(piece.strip()) as stream:
                         async for ev in stream:
+                            if played:
+                                played(ev.frame)
                             yield ev.frame
         finally:
             reader.cancel()
@@ -1116,9 +1263,10 @@ class SpokenText(lk_io.TextOutput):
     """The AI's words as the caller hears them (timed to its voice, word by word), for the app's
     live view: the model writes faster than it speaks, so its text alone ran ahead of the voice."""
 
-    def __init__(self, room: str) -> None:
+    def __init__(self, room: str, host: Host) -> None:
         super().__init__(label="LocalAILineSpoken", next_in_chain=None)
         self._room = room
+        self._host = host
         self._q: asyncio.Queue = asyncio.Queue()
         self._task: asyncio.Task | None = None
 
@@ -1134,7 +1282,7 @@ class SpokenText(lk_io.TextOutput):
             self._task = asyncio.create_task(self._send())
 
     async def _send(self) -> None:
-        base = os.environ.get("LL_APP_URL")
+        base = self._host.url
         if not base:
             return
         async with aiohttp.ClientSession() as h:
@@ -1148,16 +1296,16 @@ class SpokenText(lk_io.TextOutput):
                     continue
                 try:
                     await h.post(f"{base}/api/call-text", json={"room": self._room, "who": "ai", "text": text, "final": final},
-                                 headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=3))
+                                 headers=self._host.headers, timeout=aiohttp.ClientTimeout(total=3))
                 except Exception:  # noqa: BLE001
                     pass
 
 
-def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool = False, room: str = "") -> AgentSession:
-    llm = (AppLLM if os.environ.get("LL_APP_URL") else openai.LLM)(
-        base_url=os.environ.get("LL_LLM_BASE", "http://127.0.0.1:11434/v1"),
-        api_key=os.environ.get("LL_LLM_KEY", "local"),
-        **({"mode": model, "stt_": stt_, "room": room} if os.environ.get("LL_APP_URL") else {"model": model}),
+def build_session(stt_: stt.STT, vad, model: str, host: Host, phone_call: bool = False, room: str = "", tts_: tts.TTS | None = None) -> AgentSession:
+    llm = (AppLLM if host.url else openai.LLM)(
+        base_url=host.llm_base,
+        api_key=host.token or "local",
+        **({"mode": model, "stt_": stt_, "room": room} if host.url else {"model": model}),
         temperature=0.5,
         timeout=httpx.Timeout(120.0, connect=5.0),
         max_retries=0,
@@ -1168,7 +1316,7 @@ def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool =
         stt=stt_,
         vad=vad,
         llm=llm,
-        tts=PiperTTS(stt_=stt_),
+        tts=tts_ or PiperTTS(stt_=stt_),
         turn_handling={
             "turn_detection": MultilingualModel(),  # runs locally
             # Phone callers pause between sentences ("Only Marco. … No other barbers. … Can't do it
@@ -1189,10 +1337,10 @@ def build_session(stt_: WhisperStreamingSTT, vad, model: str, phone_call: bool =
     )
 
 
-async def app_config(mode: str, lang: str = "auto", room: str = "") -> dict:
+async def app_config(host: Host, mode: str, lang: str = "auto", room: str = "") -> dict:
     """Greeting, name and default language from the LocalAILine app (if it runs us).
     Also tells the app a call is starting, so it loads the model while we greet."""
-    base = os.environ.get("LL_APP_URL")
+    base = host.url
     if not base:
         return {}
     # (The app can be slow to answer right after it starts, or while it loads the model: without
@@ -1200,13 +1348,128 @@ async def app_config(mode: str, lang: str = "auto", room: str = "") -> dict:
     for attempt in range(3):
         try:
             async with aiohttp.ClientSession() as h:
-                async with h.get(f"{base}/api/voice-config", params={"mode": mode, "lang": lang, "room": room}, headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"},
+                async with h.get(f"{base}/api/voice-config", params={"mode": mode, "lang": lang, "room": room}, headers=host.headers,
                                  timeout=aiohttp.ClientTimeout(total=4)) as r:
                     return await r.json(content_type=None)
         except Exception as e:  # noqa: BLE001
             log.warning("no app config (try %d): %s", attempt + 1, e)
             await asyncio.sleep(0.5)
     return {}
+
+
+def is_phone_caller(p) -> bool:  # noqa: ANN001
+    """The person who rang in (LiveKit SIP's participant), not the owner or the AI."""
+    return getattr(p, "kind", None) == rtc.ParticipantKind.PARTICIPANT_KIND_SIP or str(getattr(p, "identity", "")).startswith("sip_")
+
+
+async def play_ringback(room: rtc.Room, number: str, stop: asyncio.Event) -> None:
+    """A ringing tone to the caller while the owner's devices ring (the call is already connected)."""
+    sr, step = 16000, 320  # 20 ms frames
+    freqs, cadence = ringback_cadence(number)
+    source = rtc.AudioSource(sr, 1)
+    track = rtc.LocalAudioTrack.create_audio_track("ringing", source)
+    pub = await room.local_participant.publish_track(track, rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE))
+    t = 0
+    try:
+        while not stop.is_set():
+            for on, secs in cadence:
+                for _ in range(int(secs * sr / step)):
+                    if stop.is_set():
+                        return
+                    if on:
+                        x = (np.arange(step) + t) / sr
+                        pcm = sum(np.sin(2 * np.pi * f * x) for f in freqs) * (0.25 / len(freqs)) * 32767
+                    else:
+                        pcm = np.zeros(step)
+                    t += step
+                    await source.capture_frame(rtc.AudioFrame(pcm.astype(np.int16).tobytes(), sr, 1, step))
+    finally:
+        try:
+            await room.local_participant.unpublish_track(pub.sid)
+        except Exception as e:  # noqa: BLE001
+            log.warning("stopping the ringing tone: %s", e)
+
+
+async def ring_first(ctx: JobContext, host: Host, plan: dict, number: str) -> dict:
+    """The owner is rung before anyone answers (see answer_plan). The caller hears ringing."""
+    # A plugin can ring people elsewhere too (it's told once, as the ringing starts).
+    try:
+        r = plugin_call("on_ring", host, ctx.room.name, number, plan)
+        if asyncio.iscoroutine(r):
+            await r
+    except Exception as e:  # noqa: BLE001
+        log.warning("plugin on_ring failed: %s", e)
+    taken, gone, who = asyncio.Event(), asyncio.Event(), {"by": None}
+
+    def owner_in(p) -> None:  # noqa: ANN001
+        by = takeover_by_attributes(dict(p.attributes), p.identity)
+        if by:
+            who["by"] = by
+            taken.set()
+
+    def on_data(packet) -> None:  # noqa: ANN001
+        p = getattr(packet, "participant", None)
+        by = takeover_by(getattr(packet, "data", b""), getattr(packet, "topic", None), getattr(p, "identity", "") if p else "")
+        if by:
+            who["by"] = by
+            taken.set()
+
+    def on_left(p) -> None:  # noqa: ANN001
+        if is_phone_caller(p) and not any(is_phone_caller(q) for q in ctx.room.remote_participants.values()):
+            gone.set()
+
+    handlers = {"participant_attributes_changed": lambda _c, p: owner_in(p), "participant_connected": owner_in,
+                "data_received": on_data, "participant_disconnected": on_left, "disconnected": lambda *_: gone.set()}
+    for ev, fn in handlers.items():
+        ctx.room.on(ev, fn)
+    for p in list(ctx.room.remote_participants.values()):
+        owner_in(p)
+
+    async def ask_app() -> dict:
+        async with aiohttp.ClientSession() as h:
+            async with h.get(f"{host.url}/api/call-answer", params={"room": ctx.room.name}, headers=host.headers,
+                             timeout=aiohttp.ClientTimeout(total=plan["wait"] + 20)) as r:
+                return await r.json(content_type=None)
+
+    stop = asyncio.Event()
+    ring = asyncio.create_task(play_ringback(ctx.room, number, stop))
+    try:
+        out = await wait_to_answer(plan, ask_app, taken, gone, who)
+    finally:
+        stop.set()
+        try:
+            await asyncio.wait_for(ring, timeout=2)
+        except Exception as e:  # noqa: BLE001
+            log.warning("ringing tone: %s", e)
+        for ev, fn in handlers.items():
+            ctx.room.off(ev, fn)
+    log.info("who takes the call: %s", out.get("go"))
+    return out
+
+
+async def delete_room(name: str) -> None:
+    """Ends a call: everyone leaves its room (a phone caller is hung up on)."""
+    url = os.environ.get("LIVEKIT_URL", "").replace("ws://", "http://").replace("wss://", "https://")
+    lk = api.LiveKitAPI(url, os.environ.get("LIVEKIT_API_KEY"), os.environ.get("LIVEKIT_API_SECRET"))
+    try:
+        await lk.room.delete_room(api.DeleteRoomRequest(room=name))
+    finally:
+        await lk.aclose()
+
+
+async def report_not_taken(host: Host, room: str, number: str, started: float, out: dict) -> None:
+    """Tells the app about a call the AI never took (answered by a person, or missed)."""
+    go, by = out.get("go"), out.get("by") or "you"
+    what = {"person": f"Answered on {by}", "owner": f"Answered by {by}"}.get(go, "Missed: hung up while it was ringing")
+    body = {"room": room, "transcript": [{"role": "note", "text": what}], "answered": go in ("person", "owner"), "number": number,
+            "started_at": int(started * 1000), "duration_s": int(time.time() - started), "outcome": what}
+    if go == "owner":
+        body["taken_over_by"] = by  # (the owner is on the call now: it stays on their live view)
+    try:
+        async with aiohttp.ClientSession() as h:
+            await h.post(f"{host.url}/api/call-ended", json=body, headers=host.headers, timeout=aiohttp.ClientTimeout(total=10))
+    except Exception as e:  # noqa: BLE001
+        log.warning("could not report the call: %s", e)
 
 
 async def entrypoint(ctx: JobContext) -> None:
@@ -1219,25 +1482,55 @@ async def entrypoint(ctx: JobContext) -> None:
         mode = f"outbound#{ctx.room.name[9:]}"
     started = time.time()
     picked_up = {"yes": not ctx.room.name.startswith("pstn-out-")}
-    cfg = await app_config(mode, parts[2] if len(parts) > 3 and parts[0] == "talk" else "auto", ctx.room.name)
+    # The app this call talks to (the environment's, unless a plugin says otherwise).
+    host = plugin_call("host_for_job", getattr(ctx.job, "metadata", "") or "") or Host.from_env()
+    cfg = await app_config(host, mode, parts[2] if len(parts) > 3 and parts[0] == "talk" else "auto", ctx.room.name)
+    # Who takes this call (the line's "who takes calls"): nobody here, or ring the owner first.
+    plan = answer_plan(cfg) if phone_call and mode == "caller" and host.url else None
+    if plan and plan.get("off"):
+        log.info("calls on this line aren't answered here: hanging up")
+        try:
+            await delete_room(ctx.room.name)
+        except Exception as e:  # noqa: BLE001
+            log.warning("hang up failed: %s", e)
+        ctx.shutdown("line off")
+        return
+    if plan:
+        m = _re.match(r"^pstn-in-\d+-_(\+?\d{6,15})_", ctx.room.name)
+        out = await ring_first(ctx, host, plan, m[1] if m else "")
+        if out["go"] in ("person", "owner", "gone"):
+            # Someone else has the call (or the caller hung up): the AI never joins it.
+            await report_not_taken(host, ctx.room.name, m[1] if m else "", started, out)
+            try:
+                await ctx.room.disconnect()
+            except Exception as e:  # noqa: BLE001
+                log.warning("leaving the room: %s", e)
+            ctx.shutdown(f"call taken: {out['go']}")
+            return
+        if out["go"] == "message":
+            cfg["greeting"] = out.get("greeting") or "Hi, sorry, nobody can come to the phone right now. I can take a message. What's your name, and what's it about?"
     # Voices chosen in the app, per language.
     VOICE_CHOICE.clear()
     VOICE_CHOICE.update({k: v for k, v in (cfg.get("voices") or {}).items() if isinstance(v, str)})
     language = parts[2] if len(parts) > 3 and parts[0] == "talk" else cfg.get("language", LANGUAGE)
     vad = silero.VAD.load(min_silence_duration=0.35)
-    stt_ = WhisperStreamingSTT(vad=silero.VAD.load(min_silence_duration=0.4), language=language)
-    stt_.vocabulary = cfg.get("vocabulary") or ""
+    stt_ = plugin_call("make_stt", host, language, cfg.get("vocabulary") or "")
+    if stt_ is None:
+        stt_ = WhisperStreamingSTT(vad=silero.VAD.load(min_silence_duration=0.4), language=language)
+        stt_.vocabulary = cfg.get("vocabulary") or ""
+        # On a phone call the far end cancels its own echo; Ava's voice isn't in the room.
+        stt_.echo_check = not phone_call
     # Recording, when the owner turned it on (phone calls only; the caller is told in the greeting).
-    if cfg.get("record") and parts[0] == "pstn":
+    if cfg.get("record") and parts[0] == "pstn" and hasattr(stt_, "recorder"):
         stt_.recorder = CallRecorder()
-    # On a phone call the far end cancels its own echo; Ava's voice isn't in the room.
-    stt_.echo_check = not phone_call
-    model = mode if os.environ.get("LL_APP_URL") else os.environ.get("LL_LLM_MODEL", "qwen3:4b-instruct")
-    session = build_session(stt_, vad, model, phone_call=ctx.room.name.startswith("pstn"), room=ctx.room.name)
+    model = mode if host.url else os.environ.get("LL_LLM_MODEL", "qwen3:4b-instruct")
+    session = build_session(stt_, vad, model, host, phone_call=ctx.room.name.startswith("pstn"), room=ctx.room.name,
+                            tts_=plugin_call("make_tts", host, cfg.get("agentVoice") or "", language, stt_))
     if cfg.get("agentVoice"):
         session.tts.voice_override = cfg["agentVoice"]
     session.tts._language = language  # noqa: SLF001
     lang = language if language != "auto" else "en"
+    llm_turns = {"n": 0}  # requests to the brain on this call (told to the plugin at the end)
 
     # Timing of each turn, for tuning (end-of-turn wait, first token, first audio).
     @session.on("metrics_collected")
@@ -1247,6 +1540,7 @@ async def entrypoint(ctx: JobContext) -> None:
         if kind == "EOUMetrics":
             log.info("TIMING end_of_utterance_delay=%.0fms transcription_delay=%.0fms", m.end_of_utterance_delay * 1000, m.transcription_delay * 1000)
         elif kind == "LLMMetrics":
+            llm_turns["n"] += 1
             log.info("TIMING llm_ttft=%.0fms", m.ttft * 1000)
         elif kind == "TTSMetrics":
             log.info("TIMING tts_ttfb=%.0fms", m.ttfb * 1000)
@@ -1256,7 +1550,7 @@ async def entrypoint(ctx: JobContext) -> None:
     # Sent back in by the owner ("Hand back to AI"): talk to the caller, not to the owner still in the room.
     handback = handback_of(getattr(ctx.job, "metadata", "") or "")
     caller_id = next((p.identity for p in ctx.room.remote_participants.values() if not is_app_listener(p.identity)), None) if handback else None
-    spoken = room_io.TextOutputOptions(next_in_chain=SpokenText(ctx.room.name)) if phone_call else True
+    spoken = room_io.TextOutputOptions(next_in_chain=SpokenText(ctx.room.name, host)) if phone_call else True
     if caller_id:
         await session.start(agent=ava, room=ctx.room, room_options=room_io.RoomOptions(participant_identity=caller_id, text_output=spoken))
     else:
@@ -1298,6 +1592,8 @@ async def entrypoint(ctx: JobContext) -> None:
     session.on("agent_state_changed", sync_sound)
 
     def track_own_voice(ev) -> None:  # noqa: ANN001
+        if not hasattr(stt_, "play_end"):
+            return  # (a plugin's hearing that doesn't follow Ava's own voice)
         stt_.agent_speaking = ev.new_state == "speaking"
         if ev.new_state != "speaking":
             stt_.play_end = min(stt_.play_end, time.monotonic())  # interrupted: nothing more queued
@@ -1347,7 +1643,7 @@ async def entrypoint(ctx: JobContext) -> None:
         return known_number["n"]
 
     async def report() -> None:
-        base = os.environ.get("LL_APP_URL")
+        base = host.url
         if not base or not phone_call:
             return
         recording = None
@@ -1373,11 +1669,24 @@ async def entrypoint(ctx: JobContext) -> None:
                                                               "started_at": int(started * 1000), "duration_s": int(time.time() - started),
                                                               "recording": str(recording) if recording else None,
                                                               **({"taken_over_by": taken["by"]} if taken["by"] else {})},
-                             headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=10))
+                             headers=host.headers, timeout=aiohttp.ClientTimeout(total=10))
         except Exception as e:  # noqa: BLE001
             log.warning("could not report the call: %s", e)
 
     ctx.add_shutdown_callback(report)
+
+    async def tell_plugin() -> None:
+        stats = {"room": ctx.room.name, "phoneCall": phone_call, "answered": picked_up["yes"], "callSeconds": round(time.time() - started, 1),
+                 "llmTurns": llm_turns["n"], "stt": stt_, "tts": session.tts}
+        try:
+            res = plugin_call("on_call_end", host, stats)
+            if inspect.isawaitable(res):
+                await res
+        except Exception as e:  # noqa: BLE001
+            log.warning("plugin on_call_end failed: %s", e)
+
+    if plugin():
+        ctx.add_shutdown_callback(tell_plugin)
 
     # The owner takes over (the app's "Take over"): stop mid-word, say nothing more, and leave the
     # call to them. The caller stays connected; what was said so far is saved by report().
@@ -1464,13 +1773,13 @@ async def entrypoint(ctx: JobContext) -> None:
 
     # Live state for the app (how many calls, who is speaking): sent when it changes.
     async def send_state() -> None:
-        base = os.environ.get("LL_APP_URL")
+        base = host.url
         if not base:
             return
         try:
             async with aiohttp.ClientSession() as h:
                 await h.post(f"{base}/api/call-state", json={"room": ctx.room.name, "agent": str(session.agent_state), "caller": str(session.user_state), "number": caller_number()},
-                             headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=3))
+                             headers=host.headers, timeout=aiohttp.ClientTimeout(total=3))
         except Exception:  # noqa: BLE001
             pass
 
@@ -1481,19 +1790,24 @@ async def entrypoint(ctx: JobContext) -> None:
     last_words = {"text": "", "at": 0.0}
 
     async def send_words(text: str, final: bool) -> None:
-        base = os.environ.get("LL_APP_URL")
+        base = host.url
         if not base or not text.strip():
             return
         try:
             async with aiohttp.ClientSession() as h:
                 await h.post(f"{base}/api/call-text", json={"room": ctx.room.name, "text": text, "final": final},
-                             headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=3))
+                             headers=host.headers, timeout=aiohttp.ClientTimeout(total=3))
         except Exception:  # noqa: BLE001
             pass
 
     def on_words(ev) -> None:  # noqa: ANN001
         text = getattr(ev, "transcript", "") or ""
         final = bool(getattr(ev, "is_final", False))
+        # A plugin's hearing that reports the language: the answer follows it (whisper.cpp sets its own).
+        if final and language == "auto" and not isinstance(stt_, WhisperStreamingSTT) and text.strip():
+            heard = str(getattr(ev, "language", None) or "").lower().split("-")[0]
+            if heard and len(heard) <= 3:
+                stt_.detected_language = heard
         # Interim words change many times a second: send the new ones at most ~5 times a second.
         if not final and (text == last_words["text"] or time.time() - last_words["at"] < 0.2):
             return
@@ -1507,8 +1821,8 @@ async def entrypoint(ctx: JobContext) -> None:
         hold = background.play(AudioConfig(BuiltinAudioClip.HOLD_MUSIC, volume=0.5), loop=True)
         try:
             async with aiohttp.ClientSession() as h:
-                async with h.get(f"{os.environ['LL_APP_URL']}/api/connect", params={"room": ctx.room.name},
-                                 headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=90)) as r:
+                async with h.get(f"{host.url}/api/connect", params={"room": ctx.room.name},
+                                 headers=host.headers, timeout=aiohttp.ClientTimeout(total=90)) as r:
                     res = await r.json(content_type=None)
         except Exception as e:  # noqa: BLE001
             res = {"ok": False}
@@ -1532,11 +1846,11 @@ async def entrypoint(ctx: JobContext) -> None:
     session.on("agent_state_changed", maybe_connect)
 
     # Several calls at once, up to the limit set in the app; beyond it, callers hear "busy".
-    if phone_call and os.environ.get("LL_APP_URL"):
+    if phone_call and host.url:
         try:
             async with aiohttp.ClientSession() as h:
-                async with h.get(f"{os.environ['LL_APP_URL']}/api/call-slot", params={"room": ctx.room.name},
-                                 headers={"Authorization": f"Bearer {os.environ.get('LL_LLM_KEY', '')}"}, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                async with h.get(f"{host.url}/api/call-slot", params={"room": ctx.room.name},
+                                 headers=host.headers, timeout=aiohttp.ClientTimeout(total=5)) as r:
                     slot = await r.json(content_type=None)
             if not slot.get("ok", True):
                 await session.say("Sorry, all our lines are busy right now. Please call back in a few minutes. Goodbye.", allow_interruptions=False)
@@ -1599,22 +1913,32 @@ def prewarm(proc) -> None:  # noqa: ANN001
     # Load models once per call process, before the call: each call has its own process, so calls
     # hear and speak at the same time, and the first words don't wait for a voice to load.
     proc.userdata["vad"] = silero.VAD.load(min_silence_duration=0.35)
-    import piper  # noqa: F401, PLC0415
+    try:
+        import piper  # noqa: F401, PLC0415
+    except ImportError:  # (the local voices are optional when a plugin gives the voice)
+        if not plugin():
+            raise
 
     if KOKORO_DIR.joinpath("kokoro-v1.0.onnx").exists():
         load_kokoro()
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Runs the worker (`start`, `dev`, `download-files`, … as LiveKit's command line takes them)."""
     logging.basicConfig(level=logging.INFO)
+    plugin()  # (a missing or broken plugin stops the worker here, not on its first call)
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             prewarm_fnc=prewarm,
-            agent_name="",
+            agent_name=os.environ.get("LL_AGENT_NAME", ""),
             # A ready process per line, so several callers are answered at once.
             num_idle_processes=LINES,
             # Never turn a caller away because the processor is busy (the app limits the lines).
             load_threshold=1.0,
         )
     )
+
+
+if __name__ == "__main__":
+    main()

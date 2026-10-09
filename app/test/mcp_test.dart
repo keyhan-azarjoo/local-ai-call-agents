@@ -3,11 +3,11 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/agent_loop.dart';
-import 'package:localailine/services/mcp/mcp_auth.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
-import 'package:localailine/services/ollama.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/agent_loop.dart';
+import 'package:localailine_core/services/mcp/mcp_auth.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/services/ollama.dart';
 
 /// Runs against test/mcp_fixture/oauth_mcp_server.py — an MCP server with the
 /// same sign-in shape as a hosted one (401 → discovery → registration → PKCE).

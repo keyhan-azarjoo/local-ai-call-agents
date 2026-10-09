@@ -1,0 +1,38 @@
+# The gateway is a Go program. This file only lets the desktop app carry its source as package
+# assets (no copy in git): the app builds it with Go on first use, like its other phone parts.
+# Every non-test source file is listed; app/test/sip_gateway_test.dart checks the list is complete.
+name: localailine_sipgw
+description: "SIP gateway source (Go), shipped with the LocalAILine desktop app and built on the computer that runs it."
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+
+flutter:
+  assets:
+    - go.mod
+    - go.sum
+    - cmd/sipgw/main.go
+    - internal/account/account.go
+    - internal/account/e164.go
+    - internal/account/registry.go
+    - internal/api/api.go
+    - internal/bridge/call.go
+    - internal/bridge/dialog.go
+    - internal/bridge/inbound.go
+    - internal/bridge/leg.go
+    - internal/bridge/trust.go
+    - internal/config/config.go
+    - internal/digest/digest.go
+    - internal/dnscache/dnscache.go
+    - internal/gateway/gateway.go
+    - internal/metrics/metrics.go
+    - internal/outbound/addr.go
+    - internal/outbound/outbound.go
+    - internal/ratelimit/ratelimit.go
+    - internal/registrar/registrar.go
+    - internal/sipx/log.go
+    - internal/sipx/sipx.go
+    - internal/store/store.go
+    - internal/stun/stun.go

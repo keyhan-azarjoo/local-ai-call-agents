@@ -1,0 +1,11 @@
+name: localailine_model
+description: "LocalAILine's shared types and pure logic: chat messages, users and roles, MCP tools, business app specs, templates and generated websites, pages. No dart:io, so it runs in a browser too."
+version: 0.9.0
+repository: https://github.com/keyhan-azarjoo/local-ai-call-agents
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+
+dev_dependencies:
+  test: any

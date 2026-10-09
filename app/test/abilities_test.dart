@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/abilities.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/abilities.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {

@@ -6,8 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:integration_test/integration_test.dart';
 import 'package:livekit_client/livekit_client.dart';
-import 'package:localailine/services/voice_engine.dart';
-import 'package:localailine/state/call_monitor.dart';
+import 'package:localailine_core/services/voice_engine.dart';
+import 'package:localailine/state/app_state.dart' show LocalRooms;
+import 'package:localailine_ui/state/call_monitor.dart';
 
 /// The Calls page's Listen / Take over / Hand back / Speak as the caller, with the app's own
 /// LiveKit client, on a live voice test call (no real phone call). Needs LocalAILine running with
@@ -43,7 +44,7 @@ void main() {
 
     // Listen: a hidden listener hears the call.
     final listener = Room();
-    await listener.connect(v.livekitUrl, await CallMonitor.tokenFor(v, room, takeover: false, name: 'Keyhan'));
+    await listener.connect(v.livekitUrl, await CallMonitor.tokenFor(LocalRooms(() => v), room, takeover: false, name: 'Keyhan'));
     var loud = 0.0;
     for (var i = 0; i < 100 && loud < .01; i++) {
       await Future.delayed(const Duration(milliseconds: 150));
@@ -60,7 +61,7 @@ void main() {
 
     // Take over: as CallMonitor._tellAgent does.
     final owner = Room();
-    await owner.connect(v.livekitUrl, await CallMonitor.tokenFor(v, room, takeover: true, name: 'Keyhan'));
+    await owner.connect(v.livekitUrl, await CallMonitor.tokenFor(LocalRooms(() => v), room, takeover: true, name: 'Keyhan'));
     await owner.localParticipant!.setAttributes({CallMonitor.takeoverAttribute: 'Keyhan'});
     await owner.localParticipant!.publishData(CallMonitor.takeoverMessage('Keyhan'), reliable: true, topic: CallMonitor.topic);
     final t0 = DateTime.now();

@@ -2,8 +2,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/voice_engine.dart';
-import 'package:localailine/state/call_monitor.dart';
+import 'package:localailine_core/services/voice_engine.dart';
+import 'package:localailine/state/app_state.dart' show LocalRooms;
+import 'package:localailine_ui/state/call_monitor.dart';
 
 /// Listening in on a call, taking it over, and speaking as the caller on voice test calls:
 /// the tokens, the message to the AI, and the test caller's control server.
@@ -22,7 +23,7 @@ void main() {
   const room = 'pstn-in-1-_+447700900123_abc';
 
   test('listening: a hidden participant that can only hear', () async {
-    final c = claims(await CallMonitor.tokenFor(v, room, takeover: false, name: 'Keyhan', id: 'x1'));
+    final c = claims(await CallMonitor.tokenFor(LocalRooms(() => v), room, takeover: false, name: 'Keyhan', id: 'x1'));
     expect(c['sub'], 'listen-x1');
     final video = c['video'] as Map;
     expect(video['room'], room);
@@ -38,7 +39,7 @@ void main() {
   });
 
   test('taking over: the microphone, the message to the AI, and its own attribute', () async {
-    final c = claims(await CallMonitor.tokenFor(v, room, takeover: true, name: 'Keyhan', id: 'x2'));
+    final c = claims(await CallMonitor.tokenFor(LocalRooms(() => v), room, takeover: true, name: 'Keyhan', id: 'x2'));
     expect(c['sub'], 'owner-x2'); // the voice agent only steps out for "owner-…"
     expect(c['name'], 'Keyhan');
     final video = c['video'] as Map;

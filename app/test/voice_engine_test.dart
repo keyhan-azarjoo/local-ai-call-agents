@@ -3,8 +3,8 @@ import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/phone.dart';
-import 'package:localailine/services/voice_engine.dart';
+import 'package:localailine_core/services/phone.dart';
+import 'package:localailine_core/services/voice_engine.dart';
 import 'package:localailine/state/app_state.dart';
 
 void main() {
@@ -33,7 +33,7 @@ void main() {
     var sent = '';
     final said = StringBuffer();
     for (var i = 1; i <= reply.length; i++) {
-      final t = AppState.spokenText(reply.substring(0, i));
+      final t = AppEngine.spokenText(reply.substring(0, i));
       if (t.length > sent.length) {
         said.write(t.substring(sent.length));
         sent = t;
@@ -54,7 +54,7 @@ void main() {
     var sent = '';
     final chunks = <String>[];
     for (var i = 1; i <= reply.length; i++) {
-      final t = AppState.spokenText(reply.substring(0, i));
+      final t = AppEngine.spokenText(reply.substring(0, i));
       if (t.length > sent.length) {
         chunks.add(t.substring(sent.length));
         sent = t;

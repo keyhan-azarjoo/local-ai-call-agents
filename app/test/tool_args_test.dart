@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/tool_args.dart';
+import 'package:localailine_core/services/tool_args.dart';
 
 final schema = {
   'type': 'object',

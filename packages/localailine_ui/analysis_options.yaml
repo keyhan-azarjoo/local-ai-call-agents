@@ -1,0 +1,7 @@
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  # Generated and downloaded code (Flutter puts Swift packages, with their examples, under build/).
+  exclude:
+    - build/**
+    - "**/*.g.dart"

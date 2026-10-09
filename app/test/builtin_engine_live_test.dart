@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/agent_loop.dart';
-import 'package:localailine/services/builtin_llm.dart';
-import 'package:localailine/services/mcp/mcp_client.dart';
-import 'package:localailine/services/ollama.dart' show ChatMessage;
-import 'package:localailine/services/openai_compat.dart';
+import 'package:localailine_core/services/agent_loop.dart';
+import 'package:localailine_core/services/builtin_llm.dart';
+import 'package:localailine_core/services/mcp/mcp_client.dart';
+import 'package:localailine_core/services/ollama.dart' show ChatMessage;
+import 'package:localailine_core/services/openai_compat.dart';
 
 /// The built-in engine for real: starts llama.cpp's server on port 8940 with a small model, asks a
 /// question that needs a tool, and stops it. Skipped when llama.cpp or the model file isn't there.

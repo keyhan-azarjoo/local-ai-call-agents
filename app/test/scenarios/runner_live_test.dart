@@ -19,10 +19,10 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/auth.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_core/services/auth.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:localailine/state/scenario_runner.dart';
+import 'package:localailine_engine/scenario_runner.dart';
 
 final env = Platform.environment;
 final here = '${Directory.current.path}/test/scenarios';

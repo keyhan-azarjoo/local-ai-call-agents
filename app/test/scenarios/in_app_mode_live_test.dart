@@ -4,12 +4,12 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_spec.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/auth.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_spec.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_core/services/auth.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:localailine/state/scenario_runner.dart';
+import 'package:localailine_engine/scenario_runner.dart';
 
 /// "Run test scenarios" in the app: on your own apps (an older restaurant app is brought up to
 /// date, a barber shop is made), your own assistant, results checked on the websites.

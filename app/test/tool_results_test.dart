@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/tool_results.dart';
+import 'package:localailine_core/services/tool_results.dart';
 
 String user(int i, String group, {bool big = false}) => const JsonEncoder.withIndent('  ').convert({
       'id': 'u$i',

@@ -4,10 +4,10 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
+import 'package:localailine_core/data/db.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:localailine/theme/tokens.dart';
-import 'package:localailine/ui/pages/test_runs_section.dart';
+import 'package:localailine_ui/theme/tokens.dart';
+import 'package:localailine/ui/desktop/test_runs_section.dart';
 import 'package:provider/provider.dart';
 
 /// The Calls → Tests view: phone-call scenario results as conversations.
@@ -51,7 +51,7 @@ void main() {
       });
     }
 
-    await t.pumpWidget(ChangeNotifierProvider.value(
+    await t.pumpWidget(ListenableProvider<AppState>.value(
       value: s,
       child: MaterialApp(
         theme: buildTheme(Brightness.light),

@@ -7,12 +7,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_spec.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/apps/apps_manager.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_spec.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_apps/apps_manager.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
 import 'package:localailine/state/app_state.dart';
 
 String ymd(DateTime d) => d.toIso8601String().substring(0, 10);
@@ -333,9 +333,9 @@ void main() {
   });
 
   test('what the caller hears once it is saved', () {
-    expect(AppState.doneLine('Done. Added to reservations with id 9:\nid 9 · Name: Freya Moreau · Phone: 0772 · Date: Saturday 2026-10-10 · Time: 19:10 · Guests: 2 · Table: 1 · Status: Confirmed'),
+    expect(AppEngine.doneLine('Done. Added to reservations with id 9:\nid 9 · Name: Freya Moreau · Phone: 0772 · Date: Saturday 2026-10-10 · Time: 19:10 · Guests: 2 · Table: 1 · Status: Confirmed'),
         'That’s all done: Saturday 10 October at 7:10 pm, for 2, table 1.');
-    expect(AppState.doneLine('Cancelled. id 9 · Name: X'), 'That’s cancelled for you.');
+    expect(AppEngine.doneLine('Cancelled. id 9 · Name: X'), 'That’s cancelled for you.');
   });
 
   test('the stylist, doctor or barber the caller asked for is kept', () async {
@@ -373,14 +373,14 @@ void main() {
 
   test('the caller is done: goodbye and hang up', () {
     for (final s in ['No, that\'s all, thanks. Bye!', 'Great, thank you, goodbye.', 'Gracias, adiós.', 'Merci, au revoir', 'Nothing else, have a good day']) {
-      expect(AppState.callerDone(s), true, reason: s);
+      expect(AppEngine.callerDone(s), true, reason: s);
     }
     for (final s in ['Bye the way, can I also order a pizza?', 'That\'s all correct, but can I change the time?', 'Is that all?', 'Yes please book it', 'I\'d like to order, then bye']) {
-      expect(AppState.callerDone(s), false, reason: s);
+      expect(AppEngine.callerDone(s), false, reason: s);
     }
     // Just thanks: asked "anything else?" first; a thanks after that ends it.
-    expect(AppState.callerDone('Perfect, cheers!'), false);
-    expect(AppState.callerDone('Perfect, cheers!', asked: 'Is there anything else I can help you with?'), true);
+    expect(AppEngine.callerDone('Perfect, cheers!'), false);
+    expect(AppEngine.callerDone('Perfect, cheers!', asked: 'Is there anything else I can help you with?'), true);
   });
 
   test('the day a caller means', () {

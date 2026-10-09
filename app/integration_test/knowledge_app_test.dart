@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:localailine/services/agent_loop.dart';
-import 'package:localailine/services/auth.dart';
-import 'package:localailine/services/knowledge/extract.dart';
-import 'package:localailine/services/ollama.dart';
-import 'package:localailine/services/persona.dart';
+import 'package:localailine_core/services/agent_loop.dart';
+import 'package:localailine_core/services/auth.dart';
+import 'package:localailine_core/services/knowledge/extract.dart';
+import 'package:localailine_core/services/ollama.dart';
+import 'package:localailine_core/services/persona.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:localailine/ui/pages/knowledge_page.dart' show skillFrom;
+import 'package:localailine_ui/ui/pages/knowledge_page.dart' show skillFrom;
 
 // ignore_for_file: avoid_print
 /// Adds the restaurant PDF as a skill (like "Add skill") and asks Ava real calls.

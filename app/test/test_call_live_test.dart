@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/auth.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_core/services/auth.dart';
 import 'package:localailine/state/app_state.dart';
 
 /// Calls → Tests → "Run a test call", end to end with a real local model.

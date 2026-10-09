@@ -749,12 +749,7 @@ class ToolLoop {
         .post(Uri.parse(url), headers: {'Content-Type': 'application/json', ...headers}, body: jsonEncode(body))
         .timeout(const Duration(minutes: 3));
     if (r.statusCode != 200) {
-      var detail = r.body;
-      try {
-        final j = jsonDecode(r.body);
-        detail = (j['error']?['message'] ?? j['error'] ?? r.body).toString();
-      } catch (_) {}
-      throw CloudError('Model error ${r.statusCode}: ${detail.length > 300 ? detail.substring(0, 300) : detail}');
+      throw modelError(r.statusCode, r.body);
     }
     return jsonDecode(r.body) as Map<String, dynamic>;
   }

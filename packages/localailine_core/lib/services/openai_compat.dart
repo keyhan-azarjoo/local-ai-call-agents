@@ -161,13 +161,7 @@ class OpenAiCompat {
       res = await _c.send(req()).timeout(const Duration(minutes: 3));
     }
     if (res.statusCode != 200) {
-      final b = await res.stream.bytesToString();
-      var detail = b;
-      try {
-        final j = jsonDecode(b);
-        detail = '${(j['error'] is Map ? j['error']['message'] : j['error']) ?? b}';
-      } catch (_) {}
-      throw CloudError('Model error ${res.statusCode}: ${detail.length > 300 ? detail.substring(0, 300) : detail}');
+      throw modelError(res.statusCode, await res.stream.bytesToString());
     }
     final out = StreamedReply();
     if (body['stream'] == false) {
@@ -258,4 +252,16 @@ class LlmOverride {
     }
     return null;
   }
+}
+
+/// A model server's refusal in words a person can read: the server's own message when it
+/// sent one (e.g. "Your free minutes are used…"), else the status and the start of the body.
+CloudError modelError(int status, String body) {
+  try {
+    final j = jsonDecode(body);
+    final e = j is Map ? j['error'] : null;
+    final m = e is Map ? e['message'] : e;
+    if (m is String && m.trim().isNotEmpty) return CloudError(m.trim().length > 300 ? m.trim().substring(0, 300) : m.trim());
+  } catch (_) {}
+  return CloudError('Model error $status: ${body.length > 300 ? body.substring(0, 300) : body}');
 }

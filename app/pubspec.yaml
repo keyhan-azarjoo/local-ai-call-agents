@@ -54,8 +54,12 @@ flutter:
 
   assets:
     - assets/catalog/
-    - assets/engine/
-    - assets/engine/sipreg/
+    # The voice engine's scripts run on a computer only. The App Store refuses an iPhone app
+    # that carries .py files, so phones and the web don't get them.
+    - path: assets/engine/
+      platforms: [macos, windows, linux]
+    - path: assets/engine/sipreg/
+      platforms: [macos, windows, linux]
     - assets/scenarios/
 
   fonts:

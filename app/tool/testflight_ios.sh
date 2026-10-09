@@ -5,8 +5,8 @@
 # needed. The key comes from the owner's private vault (~/.myotgo-secrets), never from git.
 # Build numbers are the date and time (YYYYMMDDHHMM), so each is higher than every earlier one.
 #   app/tool/testflight_ios.sh
-# Under another App Store Connect app you own (its bundle ID; a version above that app's builds):
-#   BUNDLE_ID=com.example.app BUILD_NAME=2.1.0 app/tool/testflight_ios.sh
+# The iPhone app uses the App Store Connect app (and bundle ID) that was MyOTGO's, so its version
+# continues from there: 2.1 and up (BUILD_NAME=… to set another).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VAULT="${LOCALAILINE_SECRETS:-$HOME/.myotgo-secrets}"
@@ -16,8 +16,9 @@ P8="$VAULT/files/AuthKey_${KEY_ID}.p8"
 BUILD="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$P8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER")
 
-OWN_ID=com.localailine.localailine
+OWN_ID=com.myotgo.myotgo
 BUNDLE_ID="${BUNDLE_ID:-$OWN_ID}"
+BUILD_NAME="${BUILD_NAME:-2.1}"
 PBX=ios/Runner.xcodeproj/project.pbxproj
 if [ "$BUNDLE_ID" != "$OWN_ID" ]; then
   # Only for this build: the app's own ID comes back afterwards, whatever happens.

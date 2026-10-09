@@ -5,6 +5,8 @@
 # needed. The key comes from the owner's private vault (~/.myotgo-secrets), never from git.
 # Build numbers are the date and time (YYYYMMDDHHMM), so each is higher than every earlier one.
 #   app/tool/testflight_ios.sh
+# Under another App Store Connect app you own (its bundle ID; a version above that app's builds):
+#   BUNDLE_ID=com.example.app BUILD_NAME=2.1.0 app/tool/testflight_ios.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 VAULT="${LOCALAILINE_SECRETS:-$HOME/.myotgo-secrets}"
@@ -14,9 +16,19 @@ P8="$VAULT/files/AuthKey_${KEY_ID}.p8"
 BUILD="${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}"
 AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$P8" -authenticationKeyID "$KEY_ID" -authenticationKeyIssuerID "$ISSUER")
 
-echo "Building LocalAILine for iPhone, build $BUILD"
+OWN_ID=com.localailine.localailine
+BUNDLE_ID="${BUNDLE_ID:-$OWN_ID}"
+PBX=ios/Runner.xcodeproj/project.pbxproj
+if [ "$BUNDLE_ID" != "$OWN_ID" ]; then
+  # Only for this build: the app's own ID comes back afterwards, whatever happens.
+  cp "$PBX" "$PBX.keep"
+  trap 'mv -f "$PBX.keep" "$PBX"' EXIT
+  sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = $OWN_ID;/PRODUCT_BUNDLE_IDENTIFIER = $BUNDLE_ID;/" "$PBX"
+fi
+
+echo "Building LocalAILine for iPhone ($BUNDLE_ID), build $BUILD"
 flutter pub get >/dev/null
-flutter build ios --release --config-only --build-number="$BUILD"
+flutter build ios --release --config-only --build-number="$BUILD" ${BUILD_NAME:+--build-name="$BUILD_NAME"}
 rm -rf build/ios/archive/Runner.xcarchive
 xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -destination 'generic/platform=iOS' \
   -archivePath build/ios/archive/Runner.xcarchive archive "${AUTH[@]}" DEVELOPMENT_TEAM=4AUJB659UV CODE_SIGN_STYLE=Automatic | grep -E "error|warning: .*sign|ARCHIVE (SUCCEEDED|FAILED)" || true

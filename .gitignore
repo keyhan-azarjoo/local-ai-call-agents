@@ -4,3 +4,6 @@ build/
 .dart_tool/
 __pycache__/
 .venv/
+
+# Packages are libraries: no lock files
+packages/*/pubspec.lock

@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/companion/host_client.dart';
-import 'package:localailine/services/companion/host_server.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/companion/host_client.dart';
+import 'package:localailine_core/services/companion/host_server.dart';
 
 void main() {
   late Db db;

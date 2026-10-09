@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:localailine/main.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:provider/provider.dart';
 
 /// Run on a phone/simulator while the main computer runs LocalAILine with
 /// LOCALAILINE_DEV_PAIRCODE=246810 and LOCALAILINE_DEV_RING=1.
@@ -33,7 +32,7 @@ void main() {
     final dir = await Directory.systemTemp.createTemp('ll_phone');
     final state = AppState(dbPath: '${dir.path}/phone.db');
     await state.init();
-    await t.pumpWidget(ChangeNotifierProvider.value(value: state, child: const LocalAILineApp()));
+    await t.pumpWidget(withState(state, const LocalAILineApp()));
 
     await waitFor(t, find.text('Connect to your LocalAILine computer'));
     final fields = find.byType(TextField);

@@ -2,8 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/theme/tokens.dart';
-import 'package:localailine/ui/pages/chat_page.dart';
+import 'package:localailine_ui/theme/tokens.dart';
+import 'package:localailine_ui/ui/pages/chat_page.dart';
 
 String note({bool ok = true, bool denied = false, String result = '{"id": "1"}'}) =>
     jsonEncode({'server': 'Shop', 'tool': 'list_users', 'args': {}, 'ok': ok, 'denied': denied, 'result': result});

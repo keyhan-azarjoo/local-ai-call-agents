@@ -2,11 +2,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/apps/apps_manager.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
-import 'package:localailine/services/ollama.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_apps/apps_manager.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/services/ollama.dart';
 
 /// "Describe a change" with a real local model.
 /// LOCALAILINE_LIVE_MODEL=qwen3:4b-instruct flutter test test/apps_change_live_test.dart

@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_server.dart';
-import 'package:localailine/services/apps/app_spec.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/mcp/mcp_client.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_server.dart';
+import 'package:localailine_apps/app_spec.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_core/services/mcp/mcp_client.dart';
 import 'package:localailine/state/app_state.dart';
 
 /// Attacks on a business app: nobody gets at anyone else's data, whatever they try — the tools
@@ -179,9 +179,9 @@ void main() {
   });
 
   test('a caller\'s name is only taken from what they said', () {
-    expect(AppState.saidName('Hi, my name is Hugo Khan and I want to cancel'), 'Hugo Khan');
-    expect(AppState.saidName("It's under Patel, please"), 'Patel');
-    expect(AppState.saidName("I'm calling from this phone number"), isNull);
+    expect(AppEngine.saidName('Hi, my name is Hugo Khan and I want to cancel'), 'Hugo Khan');
+    expect(AppEngine.saidName("It's under Patel, please"), 'Patel');
+    expect(AppEngine.saidName("I'm calling from this phone number"), isNull);
     expect(sameName('Siobhan Evans', 'siobhan'), isTrue);
     expect(sameName('Tariq Ahmad', 'Tarek'), isTrue);
     expect(sameName('Victoria Stone', 'Mark Jones'), isFalse);

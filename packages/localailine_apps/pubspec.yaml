@@ -1,0 +1,18 @@
+name: localailine_apps
+description: "LocalAILine business apps: describe a business and get its data tables, a public website, a management website and MCP tools for call agents, all from one spec. Pure Dart, no Flutter."
+version: 0.9.0
+repository: https://github.com/keyhan-azarjoo/local-ai-call-agents
+publish_to: none
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  localailine_model:
+    path: ../localailine_model
+  http: ^1.6.0
+  localailine_core:
+    path: ../localailine_core
+
+dev_dependencies:
+  test: any

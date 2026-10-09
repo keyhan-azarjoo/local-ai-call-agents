@@ -2,15 +2,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/agent_loop.dart';
-import 'package:localailine/services/builtin_llm.dart';
-import 'package:localailine/services/catalog.dart';
-import 'package:localailine/services/cloud_llm.dart';
-import 'package:localailine/services/hardware.dart';
-import 'package:localailine/services/mcp/mcp_client.dart';
-import 'package:localailine/services/ollama.dart' show ChatMessage;
-import 'package:localailine/services/openai_compat.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/agent_loop.dart';
+import 'package:localailine_core/services/builtin_llm.dart';
+import 'package:localailine_core/services/catalog.dart';
+import 'package:localailine_core/services/cloud_llm.dart';
+import 'package:localailine_core/services/hardware.dart';
+import 'package:localailine_core/services/mcp/mcp_client.dart';
+import 'package:localailine_core/services/ollama.dart' show ChatMessage;
+import 'package:localailine_core/services/openai_compat.dart';
 
 /// A tiny OpenAI-compatible server (like llama.cpp's or vLLM's): each chat request is answered
 /// with the next scripted reply, streamed as SSE chunks. Requests are kept to check what we sent.

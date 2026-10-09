@@ -7,7 +7,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/auth.dart';
+import 'package:localailine_core/services/auth.dart';
 import 'package:localailine/state/app_state.dart';
 
 /// A landline, end to end, with no real phone call: a simulated gateway box (SIPp) on this

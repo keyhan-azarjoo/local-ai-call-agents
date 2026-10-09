@@ -2,14 +2,14 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/agent_loop.dart';
-import 'package:localailine/services/apps/app_data.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/apps/apps_manager.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
-import 'package:localailine/services/ollama.dart';
-import 'package:localailine/services/persona.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_core/services/agent_loop.dart';
+import 'package:localailine_apps/app_data.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_apps/apps_manager.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/services/ollama.dart';
+import 'package:localailine_core/services/persona.dart';
 import 'package:localailine/state/app_state.dart';
 
 /// The caller's real conversation (6 Oct), replayed with a real local model and the restaurant app.
@@ -29,7 +29,7 @@ void main() {
     final today = DateTime.now();
     final system = '${Persona.callerSystem({'name': 'Sam', 'instructions': 'You are Sam, who takes bookings and orders.'})} '
         'This is a live voice conversation: answer in one to three short spoken sentences. Today is ${today.toIso8601String().substring(0, 10)} (${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][today.weekday - 1]}).'
-        '${AppState.appRulesText(tools)}';
+        '${AppEngine.appRulesText(tools)}';
     final convo = [ChatMessage('system', system), ChatMessage('assistant', 'Hi, thanks for calling Pasargad. How can I help?')];
     final loop = ToolLoop();
     for (final heard in [
@@ -56,7 +56,7 @@ void main() {
       if (!used.any((u) => u.startsWith('add_'))) {
         final tool = tools.firstWhere((t) => t.tool.name == 'add_reservations');
         if (RegExp(r'\b(confirmed|saved|booked|placed|reserved)\b', caseSensitive: false).hasMatch(reply)) {
-          final c = await AppState.commitWith(loop, LocalTarget(model, maxCtx: 8192), tool, [...convo, ChatMessage('assistant', reply)], (args) {
+          final c = await AppEngine.commitWith(loop, LocalTarget(model, maxCtx: 8192), tool, [...convo, ChatMessage('assistant', reply)], (args) {
             used.add('NET add_reservations(${args.entries.map((e) => '${e.key}=${e.value}').join(', ')})');
             return mcp.call(tool.serverId, tool.tool.name, args);
           });

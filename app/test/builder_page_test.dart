@@ -6,16 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/data/db.dart';
-import 'package:localailine/services/apps/app_builder.dart';
-import 'package:localailine/services/apps/app_spec.dart';
-import 'package:localailine/services/apps/app_templates.dart';
-import 'package:localailine/services/apps/apps_manager.dart';
-import 'package:localailine/services/mcp/mcp_manager.dart';
-import 'package:localailine/services/ollama.dart';
+import 'package:localailine_core/data/db.dart';
+import 'package:localailine_apps/app_builder.dart';
+import 'package:localailine_apps/app_spec.dart';
+import 'package:localailine_apps/app_templates.dart';
+import 'package:localailine_apps/apps_manager.dart';
+import 'package:localailine_core/services/mcp/mcp_manager.dart';
+import 'package:localailine_core/services/ollama.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:localailine/theme/tokens.dart';
-import 'package:localailine/ui/pages/builder_page.dart';
+import 'package:localailine_ui/app_model.dart';
+import 'package:localailine_ui/theme/tokens.dart';
+import 'package:localailine_ui/ui/pages/builder_page.dart';
 import 'package:provider/provider.dart';
 
 import 'apps_test.dart' show restaurant;
@@ -79,7 +80,7 @@ void main() {
       });
     }
 
-    await t.pumpWidget(ChangeNotifierProvider.value(
+    await t.pumpWidget(ListenableProvider<AppModel>.value(
       value: s,
       child: MaterialApp(
         theme: buildTheme(Brightness.light),

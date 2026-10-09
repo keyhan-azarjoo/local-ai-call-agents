@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:localailine/services/agent_loop.dart';
+import 'package:localailine_core/services/agent_loop.dart';
 
 void main() {
   test('calculator', () {

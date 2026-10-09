@@ -1,17 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import 'state/app_state.dart';
-import 'theme/tokens.dart';
-import 'ui/auth_pages.dart';
-import 'ui/companion.dart';
-import 'ui/shell.dart';
+import 'package:localailine/state/app_state.dart';
+import 'package:localailine_ui/app_model.dart';
+import 'package:localailine_ui/theme/tokens.dart';
+import 'package:localailine_ui/ui/auth_pages.dart';
+import 'package:localailine_ui/ui/extras.dart';
+import 'package:localailine_ui/ui/shell.dart';
+
+import 'ui/desktop/companion.dart';
+import 'ui/desktop/extras.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   final state = AppState()..init();
-  runApp(ChangeNotifierProvider.value(value: state, child: const LocalAILineApp()));
+  runApp(withState(state, const LocalAILineApp()));
 }
+
+/// The app's state for the pages: as the desktop's own [AppState], as the shared [AppModel], and
+/// the desktop's extra pages.
+Widget withState(AppState state, Widget child) => MultiProvider(
+      providers: [
+        ListenableProvider<AppState>.value(value: state),
+        ListenableProvider<AppModel>.value(value: state),
+        Provider<UiExtras>.value(value: desktopExtras()),
+      ],
+      child: child,
+    );
 
 class LocalAILineApp extends StatelessWidget {
   const LocalAILineApp({super.key});

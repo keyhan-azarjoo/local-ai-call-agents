@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:localailine/main.dart';
-import 'package:localailine/services/auth.dart';
+import 'package:localailine_core/services/auth.dart';
 import 'package:localailine/state/app_state.dart';
-import 'package:provider/provider.dart';
 // ignore_for_file: avoid_print
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -29,7 +28,7 @@ void main() {
     print('MCP ${state.mcp.status[id]}');
     state.go(PageId.chat);
     await t.binding.setSurfaceSize(const Size(1300, 900));
-    await t.pumpWidget(ChangeNotifierProvider.value(value: state, child: const LocalAILineApp()));
+    await t.pumpWidget(withState(state, const LocalAILineApp()));
     for (var i = 0; i < 30; i++) { await t.pump(const Duration(milliseconds: 100)); }
     final errors = <String>[];
     final prev = FlutterError.onError;
